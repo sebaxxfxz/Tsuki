@@ -129,8 +129,7 @@ TSuki stands on the shoulders of several excellent open-source projects. Sincere
 
 ### Historial de Estrellas (Star History)
 
-[[![Star History Chart](https://api.star-history.com/svg?repos=sebaxxfxz/TSuki&type=Date)](https://star-history.com/#sebaxxfxz/TSuki&Date)](https://www.star-history.com/?repos=tsuki%2Ftsuki%2Csebaxxfxz%2FTsuki&type=date&legend=top-left)
-
+[[![Star History Chart](https://api.star-history.com/svg?repos=sebaxxfxz/TSuki&type=Date)](https://star-history.com/#sebaxxfxz/TSuki&Date)]
 ### Métricas del Proyecto
 
 <div align="center">
