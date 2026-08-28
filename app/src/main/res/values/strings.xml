@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">TSuki</string>
+    <string name="notification_channel_playback">Reproducción</string>
+    <string name="notification_channel_playback_desc">Control de la reproducción de música y video</string>
+</resources>

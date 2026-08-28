@@ -1,0 +1,113 @@
+package com.example.tsuki.ui.player.lyrics
+
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.example.tsuki.domain.model.LyricsEntry
+
+@Composable
+fun KaraokeLyricRow(
+    entry: LyricsEntry,
+    isActive: Boolean,
+    distance: Int,
+    currentPositionMs: Long,
+    isManualScrolling: Boolean,
+    accentColor: Color,
+    onSeekTo: (Long) -> Unit,
+    modifier: Modifier = Modifier,
+    textSizeSp: Int = 30
+) {
+    val haptic = LocalHapticFeedback.current
+    val interactionSource = remember { MutableInteractionSource() }
+
+    val targetBlur = when (distance) {
+        0 -> 0f
+        1 -> 1f
+        2 -> 2f
+        else -> 3f
+    }
+    
+    val targetVisibility = if (isManualScrolling) {
+        when (distance) {
+            0 -> 1.00f
+            1 -> 0.72f
+            2 -> 0.56f
+            3 -> 0.40f
+            else -> 0.28f
+        }
+    } else {
+        when (distance) {
+            0 -> 1.00f
+            1 -> 0.52f
+            2 -> 0.30f
+            3 -> 0.18f
+            else -> 0.10f
+        }
+    }
+    
+    val targetScale = if (isActive) 1.0f else 0.95f
+
+    val blur by animateFloatAsState(
+        targetValue = targetBlur,
+        animationSpec = tween(300, easing = FastOutSlowInEasing),
+        label = "blur"
+    )
+    val rowVisibility by animateFloatAsState(
+        targetValue = targetVisibility,
+        animationSpec = tween(400, easing = CubicBezierEasing(0.0f, 0.0f, 0.2f, 1.0f)),
+        label = "row_visibility"
+    )
+    val scale by animateFloatAsState(
+        targetValue = targetScale,
+        animationSpec = tween(166, easing = FastOutSlowInEasing),
+        label = "scale"
+    )
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .alpha(rowVisibility)
+            .blur(blur.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null
+            ) {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                onSeekTo(entry.time)
+            }
+    ) {
+        Text(
+            text = entry.text,
+            color = Color.White,
+            style = MaterialTheme.typography.headlineMedium.copy(
+                fontWeight = if (isActive) FontWeight.ExtraBold else FontWeight.Bold,
+                fontSize = (if (isActive) textSizeSp.toFloat() else textSizeSp * 0.8f).sp,
+                lineHeight = ((if (isActive) textSizeSp + 8 else textSizeSp + 2)).sp
+            )
+        )
+    }
+}
