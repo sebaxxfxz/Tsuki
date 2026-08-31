@@ -120,18 +120,14 @@ class TSukiPlaybackService : MediaLibraryService() {
                     eqPrefs.eqVirtualizer,
                     eqPrefs.eqOutputGainMb
                 ) { enabled, bands, bass, virt, gain ->
-                    listOf(enabled.toString(), bands.joinToString(","), bass.toString(), virt.toString(), gain.toString())
-                }.collect { values ->
-                    val enabled = values[0].toBoolean()
-                    val bandList = values[1].split(",").mapNotNull { it.toIntOrNull() }
                     AudioEqualizerHelper.setEnabled(enabled)
                     if (enabled) {
-                        bandList.forEachIndexed { index, level -> AudioEqualizerHelper.setBandLevel(index, level) }
-                        AudioEqualizerHelper.setBassBoostStrength(values[2].toIntOrNull() ?: 0)
-                        AudioEqualizerHelper.setVirtualizerStrength(values[3].toIntOrNull() ?: 0)
-                        AudioEqualizerHelper.setOutputGainMb(values[4].toIntOrNull() ?: 0)
+                        bands.forEachIndexed { index, level -> AudioEqualizerHelper.setBandLevel(index, level) }
+                        AudioEqualizerHelper.setBassBoostStrength(bass)
+                        AudioEqualizerHelper.setVirtualizerStrength(virt)
+                        AudioEqualizerHelper.setOutputGainMb(gain)
                     }
-                }
+                }.collect {}
             }
         } catch (e: Exception) {
             android.util.Log.w("TSukiPlaybackService", "EQ init failed: ${e.message}")
@@ -231,6 +227,7 @@ class TSukiPlaybackService : MediaLibraryService() {
                 player.pause()
                 player.stop()
                 player.clearMediaItems()
+                stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
         }

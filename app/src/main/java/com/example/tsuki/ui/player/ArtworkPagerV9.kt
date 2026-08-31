@@ -2,7 +2,7 @@ package com.example.tsuki.ui.player
 
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -45,15 +45,21 @@ fun ArtworkPagerV9(
 ) {
     val scale by animateFloatAsState(
         targetValue = if (isPlaying) 1f else 0.96f,
-        animationSpec = tween(600, easing = androidx.compose.animation.core.CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f)),
+        animationSpec = spring(dampingRatio = 0.6f, stiffness = 300f),
         label = "artworkScaleV9"
     )
     val corner by animateDpAsState(
         targetValue = if (isPlaying) 32.dp else 36.dp,
-        animationSpec = tween(600),
+        animationSpec = spring(dampingRatio = 0.7f, stiffness = 400f),
         label = "cornerV9"
     )
     var dragAccum by remember { mutableFloatStateOf(0f) }
+    val currentOnSwipeNext by androidx.compose.runtime.rememberUpdatedState(onSwipeNext)
+    val currentOnSwipePrevious by androidx.compose.runtime.rememberUpdatedState(onSwipePrevious)
+    val currentOnSeekForward by androidx.compose.runtime.rememberUpdatedState(onSeekForward)
+    val currentOnSeekBackward by androidx.compose.runtime.rememberUpdatedState(onSeekBackward)
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val swipeThresholdPx = with(density) { 48.dp.toPx() }
 
     Box(
         modifier = modifier
@@ -67,12 +73,13 @@ fun ArtworkPagerV9(
                 shadowElevation = 20.dp.toPx()
             }
             .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f))
-            .pointerInput(Unit) {
+            .pointerInput(swipeThresholdPx) {
                 detectHorizontalDragGestures(
+                    onDragCancel = { dragAccum = 0f },
                     onDragEnd = {
                         when {
-                            dragAccum < -80 -> onSwipeNext()
-                            dragAccum > 80 -> onSwipePrevious()
+                            dragAccum < -swipeThresholdPx -> currentOnSwipeNext()
+                            dragAccum > swipeThresholdPx -> currentOnSwipePrevious()
                         }
                         dragAccum = 0f
                     },
@@ -85,7 +92,7 @@ fun ArtworkPagerV9(
             .pointerInput(Unit) {
                 detectTapGestures(
                     onDoubleTap = { offset ->
-                        if (offset.x < size.width / 2) onSeekBackward() else onSeekForward()
+                        if (offset.x < size.width / 2) currentOnSeekBackward() else currentOnSeekForward()
                     }
                 )
             },

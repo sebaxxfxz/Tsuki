@@ -2,6 +2,7 @@ package com.example.tsuki.ui.components
 
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -10,9 +11,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
+import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.QueueMusic
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -37,7 +38,7 @@ fun AddToPlaylistSheet(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val playlistManager = remember { LocalPlaylistManager.getInstance(context) }
-    val playlists by playlistManager.playlists.collectAsState()
+    val playlists by playlistManager.playlists.collectAsStateWithLifecycle()
 
     var isCreatingNew by remember { mutableStateOf(false) }
     var newPlaylistName by remember { mutableStateOf("") }
@@ -226,7 +227,7 @@ fun AddToPlaylistSheet(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
-                                    imageVector = Icons.Rounded.QueueMusic,
+                                    imageVector = Icons.AutoMirrored.Rounded.QueueMusic,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.size(24.dp)

@@ -109,19 +109,17 @@ object AudioEqualizerHelper {
     }
 
     fun setOutputGainMb(gainMb: Int) {
+        val clamped = gainMb.coerceIn(-1500, 1500)
+        lastOutputGainMb = clamped
         try {
-            loudness?.setTargetGain(gainMb.coerceIn(-1500, 1500))
+            loudness?.setTargetGain(clamped)
         } catch (e: Exception) {
             Log.w(TAG, "setOutputGain failed: ${e.message}")
         }
     }
 
     fun setOutputGainDb(gainDb: Float) {
-        try {
-            loudness?.setTargetGain((gainDb * 100).toInt())
-        } catch (e: Exception) {
-            Log.w(TAG, "setOutputGain failed: ${e.message}")
-        }
+        setOutputGainMb((gainDb * 100).toInt())
     }
 
     fun useSystemPreset(presetIndex: Int) {

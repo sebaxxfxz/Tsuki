@@ -42,10 +42,10 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.LockOpen
 import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.SkipPrevious
-import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -89,10 +89,11 @@ private const val SHAKE_THRESHOLD = 18f
 private const val SLIDE_MAX_PX = 360f
 
 private fun formatAodTime(ms: Long): String {
-    val totalSeconds = ms / 1000
+    val validMs = ms.coerceAtLeast(0L)
+    val totalSeconds = validMs / 1000
     val minutes = totalSeconds / 60
     val seconds = totalSeconds % 60
-    return "%d:%02d".format(minutes, seconds)
+    return String.format(java.util.Locale.US, "%d:%02d", minutes, seconds)
 }
 
 @Composable
@@ -117,24 +118,45 @@ fun AodPlayerScreen(
     var batteryLevel by remember { mutableIntStateOf(-1) }
     var clockStyle by remember { mutableIntStateOf(0) }
 
+    val activity = remember(context) {
+        var currentContext = context
+        while (currentContext is android.content.ContextWrapper) {
+            if (currentContext is Activity) break
+            currentContext = currentContext.baseContext
+        }
+        currentContext as? Activity
+    }
+
     fun resetInteraction() {
         lastInteractionAt = System.currentTimeMillis()
         isDimmed = false
     }
 
     DisposableEffect(Unit) {
-        val window = (context as? Activity)?.window
+        val window = activity?.window
         window?.addFlags(
             WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
-                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
                 WindowManager.LayoutParams.FLAG_ALLOW_LOCK_WHILE_SCREEN_ON
         )
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O_MR1) {
+            activity?.setShowWhenLocked(true)
+            activity?.setTurnScreenOn(true)
+        } else {
+            @Suppress("DEPRECATION")
+            window?.addFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED)
+        }
         onDispose {
             window?.clearFlags(
                 WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
-                    WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
                     WindowManager.LayoutParams.FLAG_ALLOW_LOCK_WHILE_SCREEN_ON
             )
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O_MR1) {
+                activity?.setShowWhenLocked(false)
+                activity?.setTurnScreenOn(false)
+            } else {
+                @Suppress("DEPRECATION")
+                window?.clearFlags(WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED)
+            }
             window?.attributes = window?.attributes?.apply {
                 screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
             }
@@ -142,11 +164,15 @@ fun AodPlayerScreen(
     }
 
     DisposableEffect(isDimmed) {
-        val window = (context as? Activity)?.window ?: return@DisposableEffect onDispose { }
+        val window = activity?.window ?: return@DisposableEffect onDispose { }
         window.attributes = window.attributes.apply {
             screenBrightness = if (isDimmed) DIM_BRIGHTNESS else WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
         }
-        onDispose { }
+        onDispose {
+            window.attributes = window.attributes.apply {
+                screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+            }
+        }
     }
 
     LaunchedEffect(lastInteractionAt, isLocked) {
@@ -157,8 +183,9 @@ fun AodPlayerScreen(
     }
 
     DisposableEffect(isLocked) {
-        val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
-        val accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
+        val accelerometer = sensorManager?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        if (accelerometer == null) return@DisposableEffect onDispose { }
         var lastX = 0f
         var lastY = 0f
         var lastZ = 0f
@@ -433,7 +460,7 @@ fun AodPlayerScreen(
                     modifier = Modifier.padding(horizontal = 22.dp, vertical = 14.dp)
                 ) {
                     Icon(
-                        Icons.Rounded.VolumeUp,
+                        Icons.AutoMirrored.Rounded.VolumeUp,
                         contentDescription = null,
                         tint = accentColor,
                         modifier = Modifier.size(28.dp)

@@ -23,10 +23,14 @@ class RecommendationEngine(private val context: Context) {
         val blockedVideos  = try { homePrefs.blockedVideos.first()  } catch (_: Exception) { emptySet() }
         val blockedChannels = try { homePrefs.blockedChannels.first() } catch (_: Exception) { emptySet() }
 
-        val filtered = candidateTracks.filter {
-            it.id !in blockedVideos && (it.channelId ?: "") !in blockedChannels
+        val filtered = candidateTracks.filter { track ->
+            val vid = track.videoId ?: track.id
+            vid.isNotBlank() &&
+            vid !in blockedVideos &&
+            track.id !in blockedVideos &&
+            (track.channelId ?: "") !in blockedChannels
         }
 
-        engine.rank(filtered.ifEmpty { candidateTracks })
+        if (filtered.isEmpty()) emptyList() else engine.rank(filtered)
     }
 }

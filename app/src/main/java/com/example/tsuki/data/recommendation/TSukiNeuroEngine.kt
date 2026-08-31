@@ -83,7 +83,7 @@ class TSukiNeuroEngine private constructor(private val appContext: Context) {
             getInstance(context).bootstrapFromSubscriptions(channelNames)
         suspend fun getBrainSnapshot(): TSukiBrain = requireInstance().getBrainSnapshot()
         fun getPersona(brain: TSukiBrain): TSukiPersona = requireInstance().getPersona(brain)
-        suspend fun resetBrain() = requireInstance().resetBrain()
+        suspend fun resetBrain(context: Context? = null) = if (context != null) getInstance(context).resetBrain() else requireInstance().resetBrain()
         val TOPIC_CATEGORIES get() = TSukiTopicCatalog.TOPIC_CATEGORIES
     }
 
@@ -186,14 +186,18 @@ class TSukiNeuroEngine private constructor(private val appContext: Context) {
             for (t in brainSnap.preferredTopics) prefLemmas.add(textTokenizer.normalizeLemma(t))
             val blockedIds = resolveSuppressedVideoSet(brainSnap, nowMs)
             val blockedChans = resolveSuppressedChannelSet(brainSnap, nowMs)
+            val blockedTopicsLower = brainSnap.blockedTopics.map { it.lowercase() }.toSet()
             val eligible = ArrayList<MediaTrack>(candidates.size)
             for (c in candidates) {
                 val vid = c.videoId ?: c.id
                 val ch = c.channelId ?: ""
-                if (vid in brainSnap.blockedTopics) continue
                 if (ch in brainSnap.blockedChannels) continue
                 if (vid in blockedIds) continue
                 if (ch in blockedChans) continue
+                if (blockedTopicsLower.isNotEmpty()) {
+                    val text = "${c.title} ${c.artist} ${c.album}".lowercase()
+                    if (blockedTopicsLower.any { topic -> text.contains(topic) }) continue
+                }
                 eligible.add(c)
             }
             val scored = ArrayList<Pair<MediaTrack, Double>>(eligible.size)

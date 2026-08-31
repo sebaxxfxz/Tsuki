@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -281,7 +282,7 @@ fun ChannelScreen(
                     Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("Inicio") })
                     Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text("Videos") })
                     Tab(selected = selectedTab == 2, onClick = { selectedTab = 2 }, text = { Text("Playlists") })
-                    Tab(selected = selectedTab == 2, onClick = { selectedTab = 2 }, text = { Text("Acerca de") })
+                    Tab(selected = selectedTab == 3, onClick = { selectedTab = 3 }, text = { Text("Acerca de") })
                 }
             }
 
@@ -302,7 +303,7 @@ fun ChannelScreen(
                                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                             )
                         }
-                        items(videos.drop(1).take(9), key = { "home_${it.id}" }) { video ->
+                        itemsIndexed(videos.drop(1).take(9), key = { index, video -> "home_${video.id}_$index" }) { _, video ->
                             ChannelVideoRow(video = video, onClick = { onPlayVideo(video, videos) })
                         }
                     }
@@ -364,7 +365,7 @@ fun ChannelScreen(
                             }
                         }
                     } else {
-                        items(filteredVideos, key = { "vid_${it.id}" }) { video ->
+                        itemsIndexed(filteredVideos, key = { index, video -> "vid_${video.id}_$index" }) { _, video ->
                             ChannelVideoRow(video = video, onClick = { onPlayVideo(video, filteredVideos) })
                         }
                         if (!channelSearchQuery.isBlank() && filteredVideos.size < videos.size) {

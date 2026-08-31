@@ -111,19 +111,20 @@ class WatchHistoryManager private constructor(context: Context) {
 
             db.beginTransaction()
             try {
-                val cursor = db.query(
+                var playCount = 1
+                var existingDuration = 0L
+                db.query(
                     WatchHistoryDbHelper.TABLE_HISTORY,
-                    arrayOf("play_count"),
+                    arrayOf("play_count", "watch_duration"),
                     "video_id = ?",
                     arrayOf(videoId),
                     null, null, null
-                )
-
-                var playCount = 1
-                if (cursor.moveToFirst()) {
-                    playCount = cursor.getInt(0) + 1
+                ).use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        playCount = cursor.getInt(0) + 1
+                        existingDuration = cursor.getLong(1)
+                    }
                 }
-                cursor.close()
 
                 val values = ContentValues().apply {
                     put("video_id", videoId)
@@ -133,7 +134,7 @@ class WatchHistoryManager private constructor(context: Context) {
                     put("is_video", if (track.isVideoItem) 1 else 0)
                     put("play_count", playCount)
                     put("last_played", now)
-                    put("watch_duration", watchDurationMs)
+                    put("watch_duration", existingDuration + watchDurationMs)
                 }
 
                 db.insertWithOnConflict(
@@ -156,28 +157,27 @@ class WatchHistoryManager private constructor(context: Context) {
         val list = mutableListOf<WatchHistoryEntry>()
         try {
             val db = dbHelper.readableDatabase
-            val cursor = db.query(
+            db.query(
                 WatchHistoryDbHelper.TABLE_HISTORY,
                 null, null, null, null, null,
                 "last_played DESC",
                 limit.toString()
-            )
-
-            while (cursor.moveToNext()) {
-                list.add(
-                    WatchHistoryEntry(
-                        videoId = cursor.getString(cursor.getColumnIndexOrThrow("video_id")),
-                        title = cursor.getString(cursor.getColumnIndexOrThrow("title")),
-                        artist = cursor.getString(cursor.getColumnIndexOrThrow("artist")),
-                        artworkUrl = cursor.getString(cursor.getColumnIndexOrThrow("artwork_url")),
-                        isVideoItem = cursor.getInt(cursor.getColumnIndexOrThrow("is_video")) == 1,
-                        playCount = cursor.getInt(cursor.getColumnIndexOrThrow("play_count")),
-                        lastPlayedTimestamp = cursor.getLong(cursor.getColumnIndexOrThrow("last_played")),
-                        watchDurationMs = cursor.getLong(cursor.getColumnIndexOrThrow("watch_duration"))
+            ).use { cursor ->
+                while (cursor.moveToNext()) {
+                    list.add(
+                        WatchHistoryEntry(
+                            videoId = cursor.getString(cursor.getColumnIndexOrThrow("video_id")),
+                            title = cursor.getString(cursor.getColumnIndexOrThrow("title")),
+                            artist = cursor.getString(cursor.getColumnIndexOrThrow("artist")),
+                            artworkUrl = cursor.getString(cursor.getColumnIndexOrThrow("artwork_url")),
+                            isVideoItem = cursor.getInt(cursor.getColumnIndexOrThrow("is_video")) == 1,
+                            playCount = cursor.getInt(cursor.getColumnIndexOrThrow("play_count")),
+                            lastPlayedTimestamp = cursor.getLong(cursor.getColumnIndexOrThrow("last_played")),
+                            watchDurationMs = cursor.getLong(cursor.getColumnIndexOrThrow("watch_duration"))
+                        )
                     )
-                )
+                }
             }
-            cursor.close()
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -189,7 +189,7 @@ class WatchHistoryManager private constructor(context: Context) {
         try {
             val db = dbHelper.readableDatabase
             val cutoff = System.currentTimeMillis() - days * 24L * 3600L * 1000L
-            val cursor = db.query(
+            db.query(
                 WatchHistoryDbHelper.TABLE_HISTORY,
                 null,
                 "last_played > ?",
@@ -197,22 +197,22 @@ class WatchHistoryManager private constructor(context: Context) {
                 null, null,
                 "play_count DESC, last_played DESC",
                 limit.toString()
-            )
-            while (cursor.moveToNext()) {
-                list.add(
-                    WatchHistoryEntry(
-                        videoId = cursor.getString(cursor.getColumnIndexOrThrow("video_id")),
-                        title = cursor.getString(cursor.getColumnIndexOrThrow("title")),
-                        artist = cursor.getString(cursor.getColumnIndexOrThrow("artist")),
-                        artworkUrl = cursor.getString(cursor.getColumnIndexOrThrow("artwork_url")),
-                        isVideoItem = cursor.getInt(cursor.getColumnIndexOrThrow("is_video")) == 1,
-                        playCount = cursor.getInt(cursor.getColumnIndexOrThrow("play_count")),
-                        lastPlayedTimestamp = cursor.getLong(cursor.getColumnIndexOrThrow("last_played")),
-                        watchDurationMs = cursor.getLong(cursor.getColumnIndexOrThrow("watch_duration"))
+            ).use { cursor ->
+                while (cursor.moveToNext()) {
+                    list.add(
+                        WatchHistoryEntry(
+                            videoId = cursor.getString(cursor.getColumnIndexOrThrow("video_id")),
+                            title = cursor.getString(cursor.getColumnIndexOrThrow("title")),
+                            artist = cursor.getString(cursor.getColumnIndexOrThrow("artist")),
+                            artworkUrl = cursor.getString(cursor.getColumnIndexOrThrow("artwork_url")),
+                            isVideoItem = cursor.getInt(cursor.getColumnIndexOrThrow("is_video")) == 1,
+                            playCount = cursor.getInt(cursor.getColumnIndexOrThrow("play_count")),
+                            lastPlayedTimestamp = cursor.getLong(cursor.getColumnIndexOrThrow("last_played")),
+                            watchDurationMs = cursor.getLong(cursor.getColumnIndexOrThrow("watch_duration"))
+                        )
                     )
-                )
+                }
             }
-            cursor.close()
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -235,7 +235,7 @@ class WatchHistoryManager private constructor(context: Context) {
         try {
             val db = dbHelper.readableDatabase
             val cutoff = System.currentTimeMillis() - 14L * 24L * 3600L * 1000L
-            val cursor = db.query(
+            db.query(
                 WatchHistoryDbHelper.TABLE_HISTORY,
                 null,
                 "last_played < ? AND play_count >= 2",
@@ -243,22 +243,22 @@ class WatchHistoryManager private constructor(context: Context) {
                 null, null,
                 "play_count DESC",
                 (limit * 3).toString()
-            )
-            while (cursor.moveToNext()) {
-                list.add(
-                    WatchHistoryEntry(
-                        videoId = cursor.getString(cursor.getColumnIndexOrThrow("video_id")),
-                        title = cursor.getString(cursor.getColumnIndexOrThrow("title")),
-                        artist = cursor.getString(cursor.getColumnIndexOrThrow("artist")),
-                        artworkUrl = cursor.getString(cursor.getColumnIndexOrThrow("artwork_url")),
-                        isVideoItem = cursor.getInt(cursor.getColumnIndexOrThrow("is_video")) == 1,
-                        playCount = cursor.getInt(cursor.getColumnIndexOrThrow("play_count")),
-                        lastPlayedTimestamp = cursor.getLong(cursor.getColumnIndexOrThrow("last_played")),
-                        watchDurationMs = cursor.getLong(cursor.getColumnIndexOrThrow("watch_duration"))
+            ).use { cursor ->
+                while (cursor.moveToNext()) {
+                    list.add(
+                        WatchHistoryEntry(
+                            videoId = cursor.getString(cursor.getColumnIndexOrThrow("video_id")),
+                            title = cursor.getString(cursor.getColumnIndexOrThrow("title")),
+                            artist = cursor.getString(cursor.getColumnIndexOrThrow("artist")),
+                            artworkUrl = cursor.getString(cursor.getColumnIndexOrThrow("artwork_url")),
+                            isVideoItem = cursor.getInt(cursor.getColumnIndexOrThrow("is_video")) == 1,
+                            playCount = cursor.getInt(cursor.getColumnIndexOrThrow("play_count")),
+                            lastPlayedTimestamp = cursor.getLong(cursor.getColumnIndexOrThrow("last_played")),
+                            watchDurationMs = cursor.getLong(cursor.getColumnIndexOrThrow("watch_duration"))
+                        )
                     )
-                )
+                }
             }
-            cursor.close()
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -279,7 +279,14 @@ class WatchHistoryManager private constructor(context: Context) {
     suspend fun clearHistory() = withContext(Dispatchers.IO) {
         try {
             val db = dbHelper.writableDatabase
-            db.delete(WatchHistoryDbHelper.TABLE_HISTORY, null, null)
+            db.beginTransaction()
+            try {
+                db.delete(WatchHistoryDbHelper.TABLE_HISTORY, null, null)
+                db.delete(WatchHistoryDbHelper.TABLE_PLAY_EVENTS, null, null)
+                db.setTransactionSuccessful()
+            } finally {
+                db.endTransaction()
+            }
             _historyVersion.value = System.currentTimeMillis()
         } catch (e: Exception) {
             e.printStackTrace()
@@ -329,7 +336,7 @@ class WatchHistoryManager private constructor(context: Context) {
         var totals = ListeningTotals(0, 0L, 0, 0)
         try {
             val db = dbHelper.readableDatabase
-            val cursor = db.rawQuery(
+            db.rawQuery(
                 """
                 SELECT COUNT(1),
                        COALESCE(SUM(play_time_ms),0),
@@ -338,11 +345,11 @@ class WatchHistoryManager private constructor(context: Context) {
                 FROM play_events WHERE timestamp >= ?
                 """.trimIndent(),
                 arrayOf(fromTimestamp.toString())
-            )
-            if (cursor.moveToFirst()) {
-                totals = ListeningTotals(cursor.getInt(0), cursor.getLong(1), cursor.getInt(2), cursor.getInt(3))
+            ).use { cursor ->
+                if (cursor.moveToFirst()) {
+                    totals = ListeningTotals(cursor.getInt(0), cursor.getLong(1), cursor.getInt(2), cursor.getInt(3))
+                }
             }
-            cursor.close()
         } catch (_: Exception) {}
         totals
     }
@@ -353,18 +360,18 @@ class WatchHistoryManager private constructor(context: Context) {
         val list = mutableListOf<TopEntry>()
         try {
             val db = dbHelper.readableDatabase
-            val cursor = db.rawQuery(
+            db.rawQuery(
                 """
                 SELECT title, artist, artwork_url, COUNT(1), SUM(play_time_ms)
                 FROM play_events WHERE timestamp >= ?
                 GROUP BY video_id ORDER BY COUNT(1) DESC, SUM(play_time_ms) DESC LIMIT ?
                 """.trimIndent(),
                 arrayOf(fromTimestamp.toString(), limit.toString())
-            )
-            while (cursor.moveToNext()) {
-                list.add(TopEntry(cursor.getString(0), cursor.getString(1), cursor.getString(2), cursor.getInt(3), cursor.getLong(4)))
+            ).use { cursor ->
+                while (cursor.moveToNext()) {
+                    list.add(TopEntry(cursor.getString(0), cursor.getString(1), cursor.getString(2), cursor.getInt(3), cursor.getLong(4)))
+                }
             }
-            cursor.close()
         } catch (_: Exception) {}
         list
     }
@@ -373,18 +380,18 @@ class WatchHistoryManager private constructor(context: Context) {
         val list = mutableListOf<TopEntry>()
         try {
             val db = dbHelper.readableDatabase
-            val cursor = db.rawQuery(
+            db.rawQuery(
                 """
                 SELECT artist, MAX(COALESCE(artwork_url,'')), COUNT(DISTINCT video_id), SUM(play_time_ms)
                 FROM play_events WHERE timestamp >= ?
                 GROUP BY artist ORDER BY SUM(play_time_ms) DESC LIMIT ?
                 """.trimIndent(),
                 arrayOf(fromTimestamp.toString(), limit.toString())
-            )
-            while (cursor.moveToNext()) {
-                list.add(TopEntry(cursor.getString(0), "${cursor.getInt(2)} canciones", cursor.getString(1), cursor.getInt(2), cursor.getLong(3)))
+            ).use { cursor ->
+                while (cursor.moveToNext()) {
+                    list.add(TopEntry(cursor.getString(0), "${cursor.getInt(2)} canciones", cursor.getString(1), cursor.getInt(2), cursor.getLong(3)))
+                }
             }
-            cursor.close()
         } catch (_: Exception) {}
         list
     }
@@ -393,18 +400,18 @@ class WatchHistoryManager private constructor(context: Context) {
         val buckets = MutableList(24) { 0L }
         try {
             val db = dbHelper.readableDatabase
-            val cursor = db.rawQuery(
+            db.rawQuery(
                 """
                 SELECT CAST(strftime('%H', datetime(timestamp/1000,'unixepoch','localtime')) AS INTEGER), SUM(play_time_ms)
                 FROM play_events WHERE timestamp >= ? GROUP BY 1
                 """.trimIndent(),
                 arrayOf(fromTimestamp.toString())
-            )
-            while (cursor.moveToNext()) {
-                val hour = cursor.getInt(0).coerceIn(0, 23)
-                buckets[hour] = cursor.getLong(1)
+            ).use { cursor ->
+                while (cursor.moveToNext()) {
+                    val hour = cursor.getInt(0).coerceIn(0, 23)
+                    buckets[hour] = cursor.getLong(1)
+                }
             }
-            cursor.close()
         } catch (_: Exception) {}
         buckets
     }
@@ -413,18 +420,18 @@ class WatchHistoryManager private constructor(context: Context) {
         val buckets = MutableList(7) { 0L }
         try {
             val db = dbHelper.readableDatabase
-            val cursor = db.rawQuery(
+            db.rawQuery(
                 """
                 SELECT CAST(strftime('%w', datetime(timestamp/1000,'unixepoch','localtime')) AS INTEGER), SUM(play_time_ms)
                 FROM play_events WHERE timestamp >= ? GROUP BY 1
                 """.trimIndent(),
                 arrayOf(fromTimestamp.toString())
-            )
-            while (cursor.moveToNext()) {
-                val day = cursor.getInt(0).coerceIn(0, 6)
-                buckets[day] = cursor.getLong(1)
+            ).use { cursor ->
+                while (cursor.moveToNext()) {
+                    val day = cursor.getInt(0).coerceIn(0, 6)
+                    buckets[day] = cursor.getLong(1)
+                }
             }
-            cursor.close()
         } catch (_: Exception) {}
         buckets
     }

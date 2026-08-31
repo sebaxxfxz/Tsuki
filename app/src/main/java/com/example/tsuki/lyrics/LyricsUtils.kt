@@ -50,14 +50,17 @@ object LyricsUtils {
         lyrics.lineSequence().any { LINE_REGEX.matches(it.trim()) }
 
     fun hasWordSyncedLyrics(lyrics: String): Boolean {
-
+        if (isTtmlLyrics(lyrics)) return true
         return lyrics.lineSequence().any { line ->
-            LINE_REGEX.matches(line.trim()) && ENHANCED_LRC_WORD_TIME_REGEX.containsMatchIn(line)
+            (LINE_REGEX.matches(line.trim()) || line.trim().startsWith("[")) && ENHANCED_LRC_WORD_TIME_REGEX.containsMatchIn(line)
         }
     }
 
     fun isTtmlLyrics(lyrics: String): Boolean =
-        TTML_DETECT_REGEX.containsMatchIn(lyrics) || TTML_P_BEGIN_DETECT_REGEX.containsMatchIn(lyrics)
+        TTML_DETECT_REGEX.containsMatchIn(lyrics) ||
+            TTML_P_BEGIN_DETECT_REGEX.containsMatchIn(lyrics) ||
+            lyrics.contains("<tt") ||
+            lyrics.contains("<p begin=")
 
     fun parseTtmlLyrics(lyrics: String): List<LyricsEntry> {
         val withoutComments = lyrics.replace(Regex("""<!--.*?-->"""), "")
@@ -193,7 +196,7 @@ object LyricsUtils {
                 1 -> milStr.toLong() * 100
                 2 -> milStr.toLong() * 10
                 3 -> milStr.toLong()
-                else -> 0L
+                else -> milStr.take(3).padEnd(3, '0').toLongOrNull() ?: 0L
             }
             min * 60000 + sec * 1000 + mil
         }.toList()
@@ -220,74 +223,68 @@ object LyricsUtils {
         if (wordMatches.isEmpty()) return null
 
         val segments = mutableListOf<WordTimestamp>()
-        var lastEnd = 0
+
+        if (wordMatches.first().range.first > 0) {
+            val prefix = textWithTimestamps.substring(0, wordMatches.first().range.first)
+            val cleanPrefix = unescapeHtml(prefix.trim())
+            if (cleanPrefix.isNotEmpty()) {
+                val firstMatchTime = parseLrcMatchTimeSec(wordMatches.first())
+                val startSec = lineStartMs / 1000.0
+                val endSec = if (firstMatchTime > startSec) firstMatchTime else startSec + 1.0
+                val spaced = if (prefix.last().isWhitespace()) "$cleanPrefix " else cleanPrefix
+                segments.add(WordTimestamp(text = spaced, startTime = startSec, endTime = endSec))
+            }
+        }
 
         for (i in wordMatches.indices) {
             val wMatch = wordMatches[i]
+            val wordStartSec = parseLrcMatchTimeSec(wMatch)
+            val nextStart = if (i + 1 < wordMatches.size) {
+                parseLrcMatchTimeSec(wordMatches[i + 1])
+            } else null
 
-            val rawWordText = textWithTimestamps.substring(lastEnd, wMatch.range.first)
-            val wordText = rawWordText.trimStart()
+            val textStart = wMatch.range.last + 1
+            val textEnd = if (i + 1 < wordMatches.size) wordMatches[i + 1].range.first else textWithTimestamps.length
+            if (textStart >= textEnd) continue
+
+            val rawWordText = textWithTimestamps.substring(textStart, textEnd)
+            val wordText = rawWordText.trim()
+            if (wordText.isEmpty()) continue
+
             val hadTrailingSpace = rawWordText.isNotEmpty() && rawWordText.last().isWhitespace()
-            lastEnd = wMatch.range.last + 1
+            val wordEndSec = nextStart ?: (wordStartSec + 1.0)
+            val unescaped = unescapeHtml(wordText)
+            val spacedText = if (hadTrailingSpace) "$unescaped " else unescaped
 
+            val prev = segments.lastOrNull()
+            val isContinuation = prev != null &&
+                !prev.text.endsWith(" ") &&
+                wordStartSec - prev.endTime <= CONTINUATION_GAP_SEC
 
-            val min = wMatch.groupValues[1].toLongOrNull() ?: 0L
-            val sec = wMatch.groupValues[2].toLongOrNull() ?: 0L
-            val milStr = wMatch.groupValues[3]
-            val mil = when (milStr.length) {
-                1 -> milStr.toLong() * 100
-                2 -> milStr.toLong() * 10
-                3 -> milStr.toLong()
-                else -> 0L
+            if (isContinuation) {
+                segments[segments.size - 1] = prev!!.copy(
+                    text = prev.text + spacedText,
+                    endTime = wordEndSec
+                )
+            } else {
+                segments.add(WordTimestamp(text = spacedText, startTime = wordStartSec, endTime = wordEndSec))
             }
-            val wordStartMs = min * 60000 + sec * 1000 + mil
-
-            if (wordText.isNotEmpty()) {
-                val wordStartSec = wordStartMs / 1000.0
-                val nextStartSec = if (i + 1 < wordMatches.size) {
-                    val nm = wordMatches[i + 1]
-                    val nMin = nm.groupValues[1].toLongOrNull() ?: 0L
-                    val nSec = nm.groupValues[2].toLongOrNull() ?: 0L
-                    val nMilStr = nm.groupValues[3]
-                    val nMil = when (nMilStr.length) {
-                        1 -> nMilStr.toLong() * 100
-                        2 -> nMilStr.toLong() * 10
-                        3 -> nMilStr.toLong()
-                        else -> 0L
-                    }
-                    (nMin * 60000 + nSec * 1000 + nMil) / 1000.0
-                } else {
-                    wordStartSec + 1.0
-                }
-                val unescaped = unescapeHtml(wordText)
-                val spacedText = if (hadTrailingSpace) "$unescaped " else unescaped
-
-                val previous = segments.lastOrNull()
-                val isContinuation = previous != null &&
-                    !hadTrailingSpace &&
-                    !previous.text.endsWith(" ") &&
-                    (wordStartMs / 1000.0) - previous.endTime <= CONTINUATION_GAP_SEC
-
-                if (isContinuation && previous != null) {
-                    segments[segments.size - 1] = previous.copy(
-                        text = previous.text + spacedText,
-                        endTime = nextStartSec
-                    )
-                } else {
-                    segments.add(WordTimestamp(text = spacedText, startTime = wordStartSec, endTime = nextStartSec))
-                }
-            }
-        }
-
-
-        val rawRemaining = textWithTimestamps.substring(lastEnd)
-        val remaining = unescapeHtml(rawRemaining.trim())
-        if (remaining.isNotEmpty() && segments.isNotEmpty()) {
-            val lastStart = segments.last().endTime
-            segments.add(WordTimestamp(text = remaining, startTime = lastStart, endTime = lastStart + 1.0))
         }
 
         return segments.takeIf { it.isNotEmpty() }
+    }
+
+    private fun parseLrcMatchTimeSec(match: MatchResult): Double {
+        val min = match.groupValues[1].toLongOrNull() ?: 0L
+        val sec = match.groupValues[2].toLongOrNull() ?: 0L
+        val milStr = match.groupValues[3]
+        val mil = when (milStr.length) {
+            1 -> milStr.toLong() * 100
+            2 -> milStr.toLong() * 10
+            3 -> milStr.toLong()
+            else -> milStr.take(3).padEnd(3, '0').toLongOrNull() ?: 0L
+        }
+        return (min * 60000 + sec * 1000 + mil) / 1000.0
     }
 
     fun normalizeLyricsText(lyrics: String): String =

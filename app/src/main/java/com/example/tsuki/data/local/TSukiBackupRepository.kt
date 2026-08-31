@@ -147,7 +147,11 @@ class TSukiBackupRepository(private val context: Context) {
 
     private suspend fun fetchAvatar(channelId: String): String = withContext(Dispatchers.IO) {
         try {
-            val url = "https://www.youtube.com/channel/$channelId"
+            val url = if (channelId.startsWith("@")) {
+                "https://www.youtube.com/$channelId"
+            } else {
+                "https://www.youtube.com/channel/$channelId"
+            }
             val extractor = org.schabi.newpipe.extractor.ServiceList.YouTube.getChannelExtractor(url)
             extractor.fetchPage()
             extractor.avatars.maxByOrNull { it.height }?.url ?: ""

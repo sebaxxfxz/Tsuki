@@ -29,12 +29,7 @@ class TSukiApp : Application(), SingletonImageLoader.Factory {
         createNotificationChannels()
         com.example.tsuki.ui.player.canvas.CanvasDiskCache.init(this)
         val homePrefs = com.example.tsuki.data.local.HomePreferences(this)
-        val initialLocale = kotlinx.coroutines.runBlocking {
-            withTimeoutOrNull(250) {
-                homePrefs.contentLanguageTag.first() to homePrefs.contentCountry.first()
-            } ?: ("es" to "ES")
-        }
-        applyContentLocale(initialLocale.first, initialLocale.second)
+        applyContentLocale("es", "ES")
         MainScope().launch(Dispatchers.IO) {
             combine(homePrefs.contentLanguageTag, homePrefs.contentCountry) { lang, country -> lang to country }
                 .collect { (lang, country) -> applyContentLocale(lang, country) }

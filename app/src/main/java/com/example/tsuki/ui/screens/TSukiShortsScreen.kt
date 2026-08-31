@@ -112,7 +112,7 @@ fun TSukiShortsScreen(
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         VerticalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
             val track = shorts[page]
-            ShortPage(track = track, extractor = extractor)
+            ShortPage(track = track, isCurrentPage = pagerState.currentPage == page, extractor = extractor)
         }
         IconButton(onClick = onBack, modifier = Modifier.align(Alignment.TopStart).padding(top = 32.dp, start = 8.dp)) {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = Color.White)
@@ -121,7 +121,7 @@ fun TSukiShortsScreen(
 }
 
 @Composable
-private fun ShortPage(track: MediaTrack, extractor: YouTubeExtractor) {
+private fun ShortPage(track: MediaTrack, isCurrentPage: Boolean, extractor: YouTubeExtractor) {
     val context = LocalContext.current
     var streamUrl by remember(track.id) { mutableStateOf<String?>(null) }
     var isBuffering by remember { mutableStateOf(true) }
@@ -130,6 +130,10 @@ private fun ShortPage(track: MediaTrack, extractor: YouTubeExtractor) {
         ExoPlayer.Builder(context).build().apply {
             repeatMode = Player.REPEAT_MODE_ONE
         }
+    }
+
+    LaunchedEffect(isCurrentPage, isPlaying) {
+        player.playWhenReady = isCurrentPage && isPlaying
     }
 
     LaunchedEffect(track.id) {
@@ -141,7 +145,7 @@ private fun ShortPage(track: MediaTrack, extractor: YouTubeExtractor) {
                 if (url != null) {
                     player.setMediaItem(MediaItem.fromUri(url))
                     player.prepare()
-                    player.playWhenReady = true
+                    player.playWhenReady = isCurrentPage && isPlaying
                 }
                 isBuffering = false
             }
@@ -155,8 +159,9 @@ private fun ShortPage(track: MediaTrack, extractor: YouTubeExtractor) {
     }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black).clickable {
-        if (isPlaying) player.pause() else player.play()
-        isPlaying = !isPlaying
+        val next = !isPlaying
+        isPlaying = next
+        player.playWhenReady = isCurrentPage && next
     }) {
         AsyncImage(
             model = track.artworkUrl,

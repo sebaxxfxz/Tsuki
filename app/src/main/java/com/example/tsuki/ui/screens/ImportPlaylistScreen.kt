@@ -5,6 +5,7 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,9 +22,11 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.PlaylistAddCheck
 import androidx.compose.material.icons.filled.CheckCircle
@@ -93,12 +96,62 @@ fun ImportPlaylistScreen(
     ) { uri: Uri? ->
         if (uri == null) return@rememberLauncherForActivityResult
         scope.launch {
-            val content = withContext(Dispatchers.IO) {
+            val rawBytes = withContext(Dispatchers.IO) {
                 runCatching {
-                    context.contentResolver.openInputStream(uri)?.use { stream ->
-                        stream.bufferedReader().readText()
-                    }
+                    val sizeBytes = context.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize } ?: 0L
+                    if (sizeBytes > 30 * 1024 * 1024) return@runCatching null
+                    context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
                 }.getOrNull()
+            }
+            if (rawBytes == null || rawBytes.isEmpty()) {
+                Toast.makeText(context, "No se pudo leer el archivo seleccionado", Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            var content: String? = null
+            var zipName: String? = null
+            var dbParsed: List<ImportedSong>? = null
+            if (com.example.tsuki.playlistimport.ArchiveTuneBackupParser.isZip(rawBytes)) {
+                val dbResult = withContext(Dispatchers.IO) {
+                    com.example.tsuki.playlistimport.ArchiveTuneBackupParser.extractArchiveTuneDbPlaylists(context, rawBytes)
+                }
+                if (dbResult != null && dbResult.songs.isNotEmpty()) {
+                    playlistName = dbResult.playlistName
+                    dbParsed = dbResult.songs
+                    zipName = dbResult.playlistName
+                } else {
+                    content = com.example.tsuki.playlistimport.ArchiveTuneBackupParser.extractTextFromZip(rawBytes)
+                    zipName = "Importado ZIP"
+                    if (content == null) {
+                        Toast.makeText(context, "ZIP sin playlists compatibles (JSON/CSV/M3U/DB)", Toast.LENGTH_LONG).show()
+                        return@launch
+                    }
+                }
+            } else {
+                content = rawBytes.toString(Charsets.UTF_8)
+            }
+            if (dbParsed != null) {
+                importedSongs = dbParsed
+                songResults = dbParsed.map { song ->
+    if (!song.videoId.isNullOrBlank() && song.videoId.length == 11) {
+        val track = com.example.tsuki.domain.model.MediaTrack(
+            id = song.videoId,
+            title = song.title,
+            artist = song.artistsText.ifBlank { "YouTube Music" },
+            artworkUrl = song.thumbnailUrl ?: "https://i.ytimg.com/vi/${song.videoId}/hqdefault.jpg",
+            isLocal = false,
+            mediaType = com.example.tsuki.domain.model.MediaType.STREAM_AUDIO,
+            videoId = song.videoId,
+            durationMs = song.durationMs?.toLong() ?: 0L,
+            durationSeconds = song.durationMs?.let { it / 1000 } ?: 0
+        )
+        ImportedSongResult(song, track, ImportedSongResult.Status.MATCHED)
+    } else {
+        ImportedSongResult(song, null, ImportedSongResult.Status.PENDING)
+    }
+}
+                isSaved = false
+                Toast.makeText(context, "Se cargaron ${dbParsed.size} pistas desde backup ArchiveTune", Toast.LENGTH_SHORT).show()
+                return@launch
             }
 
             if (content.isNullOrBlank()) {
@@ -106,23 +159,40 @@ fun ImportPlaylistScreen(
                 return@launch
             }
 
-
-            val trimmed = content.trim()
+            val trimmed = content.trim().trimStart('\uFEFF')
             val parsed = if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
-                val spResult = SpotifyPlaylistParser.parse(trimmed, defaultName = "Spotify Playlist")
+                val spResult = SpotifyPlaylistParser.parse(trimmed, defaultName = zipName ?: "Spotify Playlist")
                 if (spResult.playlistName.isNotBlank()) playlistName = spResult.playlistName
-                spResult.songs
+                if (spResult.songs.isNotEmpty()) spResult.songs else com.example.tsuki.playlistimport.PlaylistCsvParser.parse(trimmed)
             } else if (trimmed.contains("#EXTM3U")) {
                 PlaylistM3uParser.parse(trimmed)
             } else {
-                PlaylistCsvParser.parse(trimmed)
+                val csv = PlaylistCsvParser.parse(trimmed)
+                if (csv.isNotEmpty()) csv else PlaylistM3uParser.parse(trimmed)
             }
 
             if (parsed.isEmpty()) {
                 Toast.makeText(context, "No se encontraron pistas válidas en el archivo", Toast.LENGTH_LONG).show()
             } else {
                 importedSongs = parsed
-                songResults = parsed.map { ImportedSongResult(it, null, ImportedSongResult.Status.PENDING) }
+                songResults = parsed.map { song ->
+    if (!song.videoId.isNullOrBlank() && song.videoId.length == 11) {
+        val track = com.example.tsuki.domain.model.MediaTrack(
+            id = song.videoId,
+            title = song.title,
+            artist = song.artistsText.ifBlank { "YouTube Music" },
+            artworkUrl = song.thumbnailUrl ?: "https://i.ytimg.com/vi/${song.videoId}/hqdefault.jpg",
+            isLocal = false,
+            mediaType = com.example.tsuki.domain.model.MediaType.STREAM_AUDIO,
+            videoId = song.videoId,
+            durationMs = song.durationMs?.toLong() ?: 0L,
+            durationSeconds = song.durationMs?.let { it / 1000 } ?: 0
+        )
+        ImportedSongResult(song, track, ImportedSongResult.Status.MATCHED)
+    } else {
+        ImportedSongResult(song, null, ImportedSongResult.Status.PENDING)
+    }
+}
                 isSaved = false
                 Toast.makeText(context, "Se cargaron ${parsed.size} pistas", Toast.LENGTH_SHORT).show()
             }
@@ -177,7 +247,7 @@ fun ImportPlaylistScreen(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "Compatible con exportaciones JSON de Spotify, Exportify, CSV y M3U.",
+                        text = "Compatible con JSON (Spotify/Exportify/ArchiveTune/EchoMusic), CSV, M3U y ZIP de respaldo.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -207,6 +277,7 @@ fun ImportPlaylistScreen(
                 )
 
 
+                val matchedTracks = songResults.mapNotNull { it.resolved }
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -248,7 +319,6 @@ fun ImportPlaylistScreen(
                         }
                     }
 
-                    val matchedTracks = songResults.mapNotNull { it.resolved }
                     Button(
                         onClick = {
                             if (matchedTracks.isEmpty()) {
@@ -273,6 +343,110 @@ fun ImportPlaylistScreen(
                         Text(if (isSaved) "Guardada" else "Guardar (${matchedTracks.size})")
                     }
                 }
+                
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(
+                        onClick = {
+                            if (matchedTracks.isEmpty()) {
+                                Toast.makeText(context, "Sincroniza primero las pistas", Toast.LENGTH_SHORT).show()
+                                return@Button
+                            }
+                            scope.launch {
+                                val manager = com.example.tsuki.data.local.FavoritesManager.getInstance(context)
+                                manager.addFavorites(matchedTracks, clearExisting = false)
+                                isSaved = true
+                                Toast.makeText(context, "Añadidos ${matchedTracks.size} likes a Me Gusta local", Toast.LENGTH_LONG).show()
+                                try { com.example.tsuki.ui.screens.MusicHomeMemory.invalidate() } catch (_: Exception) {}
+                                try { com.example.tsuki.ui.screens.MusicRefreshBus.trigger() } catch (_: Exception) {}
+                            }
+                        },
+                        enabled = matchedTracks.isNotEmpty() && !isSaved,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onTertiaryContainer
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(imageVector = Icons.Filled.Favorite, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(if (isSaved) "Añadido a Me Gusta" else "Añadir a Mis Me Gusta (${matchedTracks.size})")
+                    }
+
+                val authManagerImport = remember { com.example.tsuki.auth.YouTubeAuthManager(context) }
+                val cookieImport by authManagerImport.cookie.collectAsStateWithLifecycle(initialValue = null)
+                val visitorDataImport by authManagerImport.visitorData.collectAsStateWithLifecycle(initialValue = null)
+                val isLoggedInImport = !cookieImport.isNullOrBlank()
+                var isSavingYTM by remember { mutableStateOf(false) }
+                var ytmSaved by remember { mutableStateOf(false) }
+                var ytmProgress by remember { mutableFloatStateOf(0f) }
+                var ytmProgressText by remember { mutableStateOf("") }
+                if (matchedTracks.isNotEmpty()) {
+                    val matchedCount = matchedTracks.size
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(
+                        onClick = {
+                            if (!isLoggedInImport) {
+                                Toast.makeText(context, "Inicia sesión con Google para guardar en YouTube Music", Toast.LENGTH_LONG).show()
+                                return@Button
+                            }
+                            if (isSavingYTM || ytmSaved) return@Button
+                            isSavingYTM = true
+                            ytmProgress = 0f
+                            ytmProgressText = "0 / $matchedCount"
+                            val appCtx = context.applicationContext
+                            scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                                val inner = com.example.tsuki.network.TSukiInnerTubeClient.getInstance()
+                                val vids: List<String> = matchedTracks.mapNotNull { track: com.example.tsuki.domain.model.MediaTrack ->
+                                    val vid1: String? = track.videoId
+                                    if (vid1 != null && vid1.length == 11) vid1 else {
+                                        val vid2: String = track.id
+                                        if (vid2.length == 11) vid2 else null
+                                    }
+                                }
+                                val cookieVal = cookieImport ?: ""
+                                val pid = try {
+                                    inner.createYTMPlaylist(playlistName.ifBlank { "Playlist Importada" }, vids, cookieVal, visitorDataImport) { cur, total ->
+                                        ytmProgress = if (total > 0) cur.toFloat() / total else 0f
+                                        ytmProgressText = "$cur / $total"
+                                    }
+                                } catch (_: Exception) { null }
+                                withContext(kotlinx.coroutines.NonCancellable + kotlinx.coroutines.Dispatchers.Main) {
+                                    isSavingYTM = false
+                                    if (!pid.isNullOrBlank()) {
+                                        ytmSaved = true
+                                        try { com.example.tsuki.ui.screens.MusicHomeMemory.invalidate() } catch (_: Exception) {}
+                                        try { com.example.tsuki.ui.screens.MusicRefreshBus.trigger() } catch (_: Exception) {}
+                                        Toast.makeText(appCtx, "Playlist creada en YTM ($matchedCount) — vuelve a Música y hace pull-to-refresh si no aparece al instante", Toast.LENGTH_LONG).show()
+                                    } else {
+                                        Toast.makeText(appCtx, "No se pudo crear la playlist en YouTube Music", Toast.LENGTH_LONG).show()
+                                    }
+                                }
+                            }
+                        },
+                        enabled = !isSavingYTM && !ytmSaved,
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        if (isSavingYTM) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Guardando en YTM… $ytmProgressText")
+                        } else {
+                            Icon(imageVector = Icons.Filled.FileOpen, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(if (ytmSaved) "Guardada en YTM" else "Guardar también en YouTube Music")
+                        }
+                    }
+                    if (isSavingYTM) {
+                        LinearProgressIndicator(progress = { ytmProgress }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
+                        Text(ytmProgressText, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
+                    }
+                    if (!isLoggedInImport) {
+                        Text("Inicia sesión para exportar a YouTube Music con el mismo nombre y que tus likes se sincronicen con Google", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+                    } else {
+                        Text("Se creará como playlist privada con $matchedCount canciones. No necesitas salir de la app: usa pull-to-refresh en Música o reentra a la pestaña. Los likes del reproductor ya se sincronizan con Google.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+                    }
+                }
 
                 AnimatedVisibility(visible = isResolving) {
                     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
@@ -295,7 +469,7 @@ fun ImportPlaylistScreen(
                 modifier = Modifier.fillMaxSize().weight(1f),
                 contentPadding = PaddingValues(bottom = 120.dp, top = 8.dp)
             ) {
-                items(songResults) { item ->
+                itemsIndexed(songResults, key = { index, item -> "${item.original.title}_${item.original.artistsText}_$index" }) { _, item ->
                     Card(
                         shape = RoundedCornerShape(12.dp),
                         colors = CardDefaults.cardColors(

@@ -76,7 +76,7 @@ object YouTubeSubtitleLyricsProvider : LyricsProvider {
                                 val min = startMs / 60000
                                 val sec = (startMs / 1000) % 60
                                 val cs = (startMs % 1000) / 10
-                                sb.append(String.format("[%02d:%02d.%02d] %s\n", min, sec, cs, text))
+                                sb.append(String.format(java.util.Locale.US, "[%02d:%02d.%02d] %s\n", min, sec, cs, text))
                             }
                         }
                     }

@@ -57,6 +57,7 @@ class TogetherOnlineHost(
     private data class Guest(val pid: String, val cid: String, val name: String, var pending: Boolean)
     private val guests = LinkedHashMap<String, Guest>()
     @Volatile private var snapshot: List<TogetherParticipant> = emptyList()
+    @Volatile private var isIntentionallyDisconnecting: Boolean = false
     var onEvent: ((TogetherServerEvent) -> Unit)? = null
 
     suspend fun connect(wsUrl: String) {
@@ -100,9 +101,11 @@ class TogetherOnlineHost(
     }
 
     suspend fun disconnect() {
+        isIntentionallyDisconnecting = true
         job?.cancel(); job?.cancelAndJoin(); job = null
         runCatching { ws?.close(CloseReason(CloseReason.Codes.NORMAL, "Disconnect")) }
         ws = null; mePid = null; authorityPid = null; guests.clear(); snapshot = emptyList()
+        isIntentionallyDisconnecting = false
     }
 
     fun currentParticipants(): List<TogetherParticipant> = snapshot
@@ -185,11 +188,14 @@ class TogetherOnlineHost(
                         else -> Unit
                     }
                 }
-            } catch (t: Throwable) { onEvent?.invoke(TogetherServerEvent.Error("Connection loop failed", t)) }
-            finally {
+            } catch (t: Throwable) {
+                if (!isIntentionallyDisconnecting) onEvent?.invoke(TogetherServerEvent.Error("Connection loop failed", t))
+            } finally {
                 mePid = null; authorityPid = null; guests.clear(); snapshot = emptyList()
                 runCatching { session.close(CloseReason(CloseReason.Codes.NORMAL, "Disconnected")) }
-                onEvent?.invoke(TogetherServerEvent.Error("Disconnected"))
+                if (!isIntentionallyDisconnecting) {
+                    onEvent?.invoke(TogetherServerEvent.Error("Disconnected"))
+                }
             }
         }
         job?.join()

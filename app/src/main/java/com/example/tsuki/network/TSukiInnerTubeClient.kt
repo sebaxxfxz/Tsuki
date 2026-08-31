@@ -1,6 +1,7 @@
 package com.example.tsuki.network
 
 import android.util.Log
+import kotlinx.coroutines.sync.withLock
 import androidx.compose.runtime.Immutable
 import com.example.tsuki.domain.model.MediaTrack
 import com.example.tsuki.domain.model.MediaType
@@ -22,6 +23,7 @@ import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.ExperimentalSerializationApi
@@ -35,7 +37,11 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.addJsonObject
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import java.io.IOException
 import java.security.MessageDigest
@@ -987,9 +993,10 @@ class TSukiInnerTubeClient private constructor() {
         val publishedText: String? = null
     )
 
-    suspend fun fetchComments(videoId: String): List<YouTubeComment> =
+    suspend fun fetchComments(videoId: String, visitorData: String? = null, cookie: String? = null): List<YouTubeComment> =
         withContext(Dispatchers.IO) {
             try {
+                val sapisidHash = cookie?.takeIf { it.isNotBlank() }?.let { buildSapisidHash(it, YT_ORIGIN) }
                 val body = buildJsonObject {
                     putJsonObject("context") {
                         putJsonObject("client") {
@@ -997,6 +1004,7 @@ class TSukiInnerTubeClient private constructor() {
                             put("clientVersion", WEB_CLIENT_VERSION)
                             put("hl", getClientHl())
                             put("gl", getClientGl())
+                            if (!visitorData.isNullOrBlank()) put("visitorData", visitorData)
                         }
                     }
                     put("videoId", videoId)
@@ -1010,12 +1018,22 @@ class TSukiInnerTubeClient private constructor() {
                         append("X-Origin", YT_ORIGIN)
                         append("Referer", YT_REFERER)
                         append(HttpHeaders.UserAgent, USER_AGENT)
+                        if (!cookie.isNullOrBlank()) {
+                            append("Cookie", cookie)
+                            if (sapisidHash != null) append("Authorization", sapisidHash)
+                        }
+                        visitorData?.takeIf { it.isNotBlank() }?.let { append("X-Goog-Visitor-Id", it) }
                     }
                     setBody(body)
                 }.body<JsonElement>()
 
                 val token = findCommentsContinuationToken(firstResponse)
-                if (token.isNullOrBlank()) return@withContext emptyList()
+                if (token.isNullOrBlank()) {
+                    Log.d(TAG, "fetchComments no token for $videoId keys=${firstResponse.jsonObject.keys.take(8)}")
+                    val fallback = tryFallbackNewPipeComments(videoId)
+                    if (fallback.isNotEmpty()) return@withContext fallback
+                    return@withContext emptyList()
+                }
 
                 val contBody = buildJsonObject {
                     putJsonObject("context") {
@@ -1024,6 +1042,7 @@ class TSukiInnerTubeClient private constructor() {
                             put("clientVersion", WEB_CLIENT_VERSION)
                             put("hl", getClientHl())
                             put("gl", getClientGl())
+                            if (!visitorData.isNullOrBlank()) put("visitorData", visitorData)
                         }
                     }
                     put("continuation", token)
@@ -1037,18 +1056,46 @@ class TSukiInnerTubeClient private constructor() {
                         append("X-Origin", YT_ORIGIN)
                         append("Referer", YT_REFERER)
                         append(HttpHeaders.UserAgent, USER_AGENT)
+                        if (!cookie.isNullOrBlank()) {
+                            append("Cookie", cookie)
+                            if (sapisidHash != null) append("Authorization", sapisidHash)
+                        }
+                        visitorData?.takeIf { it.isNotBlank() }?.let { append("X-Goog-Visitor-Id", it) }
                     }
                     setBody(contBody)
                 }.body<JsonElement>()
 
-                parseCommentsResponse(commentsResponse)
+                val parsed = parseCommentsResponse(commentsResponse)
+                if (parsed.isEmpty()) {
+                    val fallback = tryFallbackNewPipeComments(videoId)
+                    if (fallback.isNotEmpty()) return@withContext fallback
+                }
+                parsed
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
                 Log.w(TAG, "fetchComments failed for $videoId: ${e.message}")
-                emptyList()
+                tryFallbackNewPipeComments(videoId).ifEmpty { emptyList() }
             }
         }
+
+    private suspend fun tryFallbackNewPipeComments(videoId: String): List<YouTubeComment> = withContext(Dispatchers.IO) {
+        try {
+            val extractor = org.schabi.newpipe.extractor.ServiceList.YouTube.getCommentsExtractor("https://www.youtube.com/watch?v=$videoId")
+            extractor.fetchPage()
+            val comments = extractor.initialPage?.items?.mapNotNull { item ->
+                try {
+                    val text = item.commentText?.content?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                    val author = item.uploaderName?.takeIf { it.isNotBlank() } ?: item.name?.takeIf { it.isNotBlank() } ?: "Anónimo"
+                    val avatar = item.uploaderAvatars?.firstOrNull()?.url ?: item.thumbnails?.firstOrNull()?.url
+                    val id = item.url?.ifBlank { null } ?: (author + text).hashCode().toString()
+                    YouTubeComment(id = id, author = author, avatarUrl = avatar, text = text)
+                } catch (_: Exception) { null }
+            } ?: emptyList()
+            comments.take(50)
+        } catch (_: Exception) { emptyList() }
+    }
+
 
     private fun findCommentsContinuationToken(root: JsonElement?): String? {
         if (root == null || root !is JsonObject) return null
@@ -1097,6 +1144,30 @@ class TSukiInnerTubeClient private constructor() {
         return null
     }
 
+    private fun extractCommentText(props: JsonObject?): String? {
+        val content = props?.get("content")?.jsonObject ?: return null
+        val ct = content["contentText"] ?: return null
+        return when (ct) {
+            is kotlinx.serialization.json.JsonPrimitive -> ct.content.takeIf { it.isNotBlank() }
+            is JsonObject -> {
+                ct["runs"]?.jsonArray?.joinToString("") { it.jsonObject["text"]?.jsonPrimitive?.content ?: "" }?.takeIf { it.isNotBlank() }
+                    ?: ct["simpleText"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
+                    ?: ct.jsonPrimitive.content.takeIf { it.isNotBlank() }
+            }
+            is JsonArray -> ct.joinToString("") { (it as? JsonObject)?.get("text")?.jsonPrimitive?.content ?: (it as? kotlinx.serialization.json.JsonPrimitive)?.content ?: "" }.takeIf { it.isNotBlank() }
+        }
+    }
+
+    private fun extractPublishedText(props: JsonObject?): String? {
+        val raw = props?.get("publishedTimeText") ?: return null
+        return when (raw) {
+            is kotlinx.serialization.json.JsonPrimitive -> raw.content.takeIf { it.isNotBlank() }
+            is JsonObject -> raw["runs"]?.jsonArray?.joinToString("") { it.jsonObject["text"]?.jsonPrimitive?.content ?: "" }?.takeIf { it.isNotBlank() }
+                ?: raw["simpleText"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
+            else -> null
+        }
+    }
+
     private fun parseCommentsResponse(response: JsonElement): List<YouTubeComment> {
         val comments = mutableListOf<YouTubeComment>()
         try {
@@ -1105,29 +1176,49 @@ class TSukiInnerTubeClient private constructor() {
                 ?.get("payloads")?.jsonArray
 
             val entities = mutableMapOf<String, JsonObject>()
+            val authorEntities = mutableMapOf<String, JsonObject>()
             if (payloads != null) {
                 for (p in payloads) {
-                    val commentEntity = p.jsonObject["commentEntityPayload"]?.jsonObject ?: continue
-                    val key = commentEntity["key"]?.jsonPrimitive?.content ?: continue
-                    entities[key] = commentEntity
+                    val commentEntity = p.jsonObject["commentEntityPayload"]?.jsonObject
+                    if (commentEntity != null) {
+                        val key = commentEntity["key"]?.jsonPrimitive?.content ?: continue
+                        entities[key] = commentEntity
+                    }
+                    val authorEntity = p.jsonObject["authorEntityPayload"]?.jsonObject
+                    if (authorEntity != null) {
+                        val key = authorEntity["key"]?.jsonPrimitive?.content ?: continue
+                        authorEntities[key] = authorEntity
+                    }
                 }
             }
 
             collectCommentThreadKeys(response, 0).forEach { key ->
                 val entity = entities.entries.firstOrNull { it.key == key || it.key.endsWith(key) }?.value ?: return@forEach
                 val props = entity["properties"]?.jsonObject
-                val author = entity["author"]?.jsonObject
+                val authorObj = entity["author"]?.jsonObject
                 val toolbar = entity["toolbar"]?.jsonObject
-                val text = props?.get("content")?.jsonObject?.get("contentText")?.jsonPrimitive?.content ?: return@forEach
+                val text = extractCommentText(props) ?: return@forEach
                 val id = key.removePrefix("comment:")
+
+                val authorKey = authorObj?.get("key")?.jsonPrimitive?.content
+                val resolvedAuthor = if (authorKey != null) authorEntities[authorKey] else null
+
+                val displayName = resolvedAuthor?.get("displayName")?.jsonPrimitive?.content
+                    ?: authorObj?.get("displayName")?.jsonPrimitive?.content
+                    ?: "Anónimo"
+                val avatar = resolvedAuthor?.get("avatar")?.jsonObject
+                    ?.get("thumbnails")?.jsonArray?.lastOrNull()?.jsonObject?.get("url")?.jsonPrimitive?.content
+                    ?: resolvedAuthor?.get("avatarThumbnailUrl")?.jsonPrimitive?.content
+                    ?: authorObj?.get("avatarThumbnailUrl")?.jsonPrimitive?.content
+
                 comments.add(
                     YouTubeComment(
                         id = id,
-                        author = author?.get("displayName")?.jsonPrimitive?.content ?: "Usuario",
-                        avatarUrl = author?.get("avatarThumbnailUrl")?.jsonPrimitive?.content,
+                        author = displayName,
+                        avatarUrl = avatar,
                         text = text,
                         likesText = toolbar?.get("likeCountNotliked")?.jsonPrimitive?.content?.takeIf { it != "0" },
-                        publishedText = props?.get("publishedTimeText")?.jsonPrimitive?.content
+                        publishedText = extractPublishedText(props)
                     )
                 )
             }
@@ -1135,25 +1226,67 @@ class TSukiInnerTubeClient private constructor() {
             if (comments.isEmpty()) {
                 entities.values.forEach { entity ->
                     val props = entity["properties"]?.jsonObject ?: return@forEach
-                    val text = props["content"]?.jsonObject?.get("contentText")?.jsonPrimitive?.content ?: return@forEach
-                    val author = entity["author"]?.jsonObject
+                    val text = extractCommentText(props) ?: return@forEach
+                    val authorObj = entity["author"]?.jsonObject
                     val toolbar = entity["toolbar"]?.jsonObject
+
+                    val authorKey = authorObj?.get("key")?.jsonPrimitive?.content
+                    val resolvedAuthor = if (authorKey != null) authorEntities[authorKey] else null
+
+                    val displayName = resolvedAuthor?.get("displayName")?.jsonPrimitive?.content
+                        ?: authorObj?.get("displayName")?.jsonPrimitive?.content
+                        ?: "Anónimo"
+                    val avatar = resolvedAuthor?.get("avatar")?.jsonObject
+                        ?.get("thumbnails")?.jsonArray?.lastOrNull()?.jsonObject?.get("url")?.jsonPrimitive?.content
+                        ?: resolvedAuthor?.get("avatarThumbnailUrl")?.jsonPrimitive?.content
+                        ?: authorObj?.get("avatarThumbnailUrl")?.jsonPrimitive?.content
+
                     comments.add(
                         YouTubeComment(
                             id = entity["key"]?.jsonPrimitive?.content ?: "",
-                            author = author?.get("displayName")?.jsonPrimitive?.content ?: "Usuario",
-                            avatarUrl = author?.get("avatarThumbnailUrl")?.jsonPrimitive?.content,
+                            author = displayName,
+                            avatarUrl = avatar,
                             text = text,
                             likesText = toolbar?.get("likeCountNotliked")?.jsonPrimitive?.content?.takeIf { it != "0" },
-                            publishedText = props["publishedTimeText"]?.jsonPrimitive?.content
+                            publishedText = extractPublishedText(props)
                         )
                     )
+                }
+            }
+            if (comments.isEmpty()) {
+                collectLegacyCommentRenderers(response, 0).forEach { rend ->
+                    val text = rend["contentText"]?.jsonObject?.get("runs")?.jsonArray?.joinToString("") { it.jsonObject["text"]?.jsonPrimitive?.content ?: "" }
+                        ?: rend["contentText"]?.jsonObject?.get("simpleText")?.jsonPrimitive?.content ?: return@forEach
+                    if (text.isBlank()) return@forEach
+                    val author = rend["authorText"]?.jsonObject?.get("simpleText")?.jsonPrimitive?.content
+                        ?: rend["authorText"]?.jsonObject?.get("runs")?.jsonArray?.firstOrNull()?.jsonObject?.get("text")?.jsonPrimitive?.content ?: "Anónimo"
+                    val avatar = rend["authorThumbnail"]?.jsonObject?.get("thumbnails")?.jsonArray?.lastOrNull()?.jsonObject?.get("url")?.jsonPrimitive?.content
+                    val likes = rend["voteCount"]?.jsonObject?.get("simpleText")?.jsonPrimitive?.content?.takeIf { it.isNotBlank() && it != "0" }
+                    val published = rend["publishedTimeText"]?.jsonObject?.get("runs")?.jsonArray?.firstOrNull()?.jsonObject?.get("text")?.jsonPrimitive?.content
+                    comments.add(YouTubeComment(id = text.hashCode().toString(), author = author, avatarUrl = avatar, text = text, likesText = likes, publishedText = published))
                 }
             }
         } catch (e: Exception) {
             Log.w(TAG, "parseCommentsResponse error: ${e.message}")
         }
         return comments.distinctBy { it.id }.filter { it.text.isNotBlank() }.take(50)
+    }
+
+    private fun collectLegacyCommentRenderers(element: JsonElement?, depth: Int): List<JsonObject> {
+        if (depth > 25 || element == null) return emptyList()
+        val out = mutableListOf<JsonObject>()
+        when (element) {
+            is JsonObject -> {
+                element["commentRenderer"]?.jsonObject?.let { out.add(it) }
+                for ((k, v) in element) {
+                    if (k == "commentEntityPayload") continue
+                    out.addAll(collectLegacyCommentRenderers(v, depth + 1))
+                }
+            }
+            is JsonArray -> for (i in element) out.addAll(collectLegacyCommentRenderers(i, depth + 1))
+            else -> {}
+        }
+        return out
     }
 
     private fun collectCommentThreadKeys(element: JsonElement?, depth: Int): List<String> {
@@ -1217,10 +1350,16 @@ class TSukiInnerTubeClient private constructor() {
             setBody(body)
         }.body<JsonElement>()
 
-    suspend fun fetchLyricsForVideo(videoId: String): String? =
+    suspend fun fetchLyricsForVideo(
+        videoId: String,
+        cookie: String? = null,
+        visitorData: String? = null,
+        dataSyncId: String? = null
+    ): String? =
         withContext(Dispatchers.IO) {
             try {
                 withRetry {
+                    val sapisidHash = cookie?.let { buildSapisidHash(it, YTM_ORIGIN) }
                     val body = buildJsonObject {
                         putJsonObject("context") {
                             putJsonObject("client") {
@@ -1228,6 +1367,12 @@ class TSukiInnerTubeClient private constructor() {
                                 put("clientVersion", WEB_REMIX_CLIENT_VERSION)
                                 put("hl",            getClientHl())
                                 put("gl",            getClientGl())
+                                if (!visitorData.isNullOrBlank()) put("visitorData", visitorData)
+                            }
+                            if (!dataSyncId.isNullOrBlank()) {
+                                putJsonObject("user") {
+                                    put("onBehalfOfUser", dataSyncId)
+                                }
                             }
                         }
                         put("videoId", videoId)
@@ -1241,6 +1386,9 @@ class TSukiInnerTubeClient private constructor() {
                             append("Origin",   YTM_ORIGIN)
                             append("Accept-Language", getAcceptLanguageHeader())
                             append(HttpHeaders.UserAgent, USER_AGENT)
+                            if (!cookie.isNullOrBlank()) append("Cookie", cookie)
+                            if (sapisidHash != null) append("Authorization", sapisidHash)
+                            if (!visitorData.isNullOrBlank()) append("X-Goog-Visitor-Id", visitorData)
                         }
                         setBody(body)
                     }.body<JsonElement>()
@@ -1258,7 +1406,15 @@ class TSukiInnerTubeClient private constructor() {
                             ?.get("browseEndpoint")?.jsonObject
                             ?.get("browseId")?.jsonPrimitive?.content
 
-                        if (title.equals("Lyrics", ignoreCase = true) || browseId?.startsWith("FEmusic_lyrics") == true) {
+                        val isLyricsTab = title.equals("Lyrics", ignoreCase = true) ||
+                            title.equals("Letra", ignoreCase = true) ||
+                            title.equals("Letras", ignoreCase = true) ||
+                            title.equals("Liedtext", ignoreCase = true) ||
+                            title.equals("Paroles", ignoreCase = true) ||
+                            browseId?.startsWith("FEmusic_lyrics") == true ||
+                            browseId?.contains("lyrics", ignoreCase = true) == true
+
+                        if (isLyricsTab && browseId != null) {
                             lyricsBrowseId = browseId
                             break
                         }
@@ -1273,6 +1429,12 @@ class TSukiInnerTubeClient private constructor() {
                                 put("clientVersion", WEB_REMIX_CLIENT_VERSION)
                                 put("hl",            getClientHl())
                                 put("gl",            getClientGl())
+                                if (!visitorData.isNullOrBlank()) put("visitorData", visitorData)
+                            }
+                            if (!dataSyncId.isNullOrBlank()) {
+                                putJsonObject("user") {
+                                    put("onBehalfOfUser", dataSyncId)
+                                }
                             }
                         }
                         put("browseId", lyricsBrowseId)
@@ -1287,6 +1449,9 @@ class TSukiInnerTubeClient private constructor() {
                             append("Origin",   YTM_ORIGIN)
                             append("Accept-Language", getAcceptLanguageHeader())
                             append(HttpHeaders.UserAgent, USER_AGENT)
+                            if (!cookie.isNullOrBlank()) append("Cookie", cookie)
+                            if (sapisidHash != null) append("Authorization", sapisidHash)
+                            if (!visitorData.isNullOrBlank()) append("X-Goog-Visitor-Id", visitorData)
                         }
                         setBody(browseBody)
                     }.body<JsonElement>()
@@ -1525,43 +1690,177 @@ class TSukiInnerTubeClient private constructor() {
         dataSyncId: String? = null
     ): List<MediaTrack> = withContext(Dispatchers.IO) {
         if (cookie.isBlank()) return@withContext emptyList()
-        val sapisidHash = buildSapisidHash(cookie)
-
-        val body = buildBrowseBody(
-            browseId = "FEmusic_liked_videos",
-            visitorData = visitorData,
-            dataSyncId = dataSyncId,
-            clientName = WEB_REMIX_CLIENT_NAME,
-            clientVersion = WEB_REMIX_CLIENT_VERSION,
-            clientId = WEB_REMIX_CLIENT_ID
-        )
-
+        var viaPlaylist: List<MediaTrack> = emptyList()
         try {
-            val response = httpClient.post("${YTM_API_BASE}browse") {
-                contentType(ContentType.Application.Json)
-                parameter("prettyPrint", false)
-                headers {
-                    append("X-YouTube-Client-Name", WEB_REMIX_CLIENT_ID)
-                    append("X-YouTube-Client-Version", WEB_REMIX_CLIENT_VERSION)
-                    append("X-Origin", YTM_ORIGIN)
-                    append("Referer", YTM_REFERER)
-                    append("Origin", YTM_ORIGIN)
-                    append(HttpHeaders.UserAgent, USER_AGENT)
-                    append("Cookie", cookie)
-                    if (sapisidHash != null) append("Authorization", sapisidHash)
-                    visitorData?.takeIf { it.isNotBlank() }?.let { append("X-Goog-Visitor-Id", it) }
+            viaPlaylist = fetchPlaylistTracks("LM", cookie, visitorData, dataSyncId)
+        } catch (_: Exception) {}
+        var bestVia: List<MediaTrack> = viaPlaylist
+        try {
+            val userPls = try { fetchUserPlaylists(cookie, visitorData, dataSyncId) } catch (_: Exception) { emptyList() }
+            val syncPl = userPls.firstOrNull { it.title.contains("ME GUSTA", ignoreCase = true) || it.title.contains("SINCRONIZADOS", ignoreCase = true) }
+            if (syncPl != null) {
+                try {
+                    val syncTracks = fetchPlaylistTracks(syncPl.id, cookie, visitorData, dataSyncId)
+                    if (syncTracks.size > bestVia.size) bestVia = syncTracks
+                } catch (_: Exception) {}
+            }
+        } catch (_: Exception) {}
+        if (cookie.isBlank()) return@withContext emptyList()
+        val sapisidHash = buildSapisidHash(cookie)
+        val allTracks = mutableListOf<MediaTrack>()
+        val seen = mutableSetOf<String>()
+        var continuation: String? = null
+        var isFirst = true
+        var pages = 0
+        try {
+            while (pages < 8) {
+                val response = if (isFirst) {
+                    isFirst = false
+                    val body = buildBrowseBody(
+                        browseId = "FEmusic_liked_videos",
+                        visitorData = visitorData,
+                        dataSyncId = dataSyncId,
+                        clientName = WEB_REMIX_CLIENT_NAME,
+                        clientVersion = WEB_REMIX_CLIENT_VERSION,
+                        clientId = WEB_REMIX_CLIENT_ID
+                    )
+                    httpClient.post("${YTM_API_BASE}browse") {
+                        contentType(ContentType.Application.Json)
+                        parameter("prettyPrint", false)
+                        headers {
+                            append("X-YouTube-Client-Name", WEB_REMIX_CLIENT_ID)
+                            append("X-YouTube-Client-Version", WEB_REMIX_CLIENT_VERSION)
+                            append("X-Origin", YTM_ORIGIN)
+                            append("Referer", YTM_REFERER)
+                            append("Origin", YTM_ORIGIN)
+                            append(HttpHeaders.UserAgent, USER_AGENT)
+                            append("Cookie", cookie)
+                            if (sapisidHash != null) append("Authorization", sapisidHash)
+                            visitorData?.takeIf { it.isNotBlank() }?.let { append("X-Goog-Visitor-Id", it) }
+                        }
+                        setBody(body)
+                    }.body<JsonElement>()
+                } else {
+                    if (continuation.isNullOrBlank()) break
+                    postBrowseContinuation(continuation, cookie, visitorData, dataSyncId)
                 }
-                setBody(body)
-            }.body<JsonElement>()
-
-            val feed = parseMusicHomeFeed(response)
-            feed.sections.flatMap { it.tracks }
+                val feed = if (response.jsonObject.containsKey("continuationContents")) {
+                    parseLikedContinuationFeed(response)
+                } else {
+                    parseMusicHomeFeed(response)
+                }
+                val tracks = feed.sections.flatMap { it.tracks }
+                var added = 0
+                for (t in tracks) if (seen.add(t.id)) { allTracks.add(t); added++ }
+                if (tracks.isEmpty()) {
+                    val fallback = parsePlaylistTracks(response)
+                    for (t in fallback) if (seen.add(t.id)) { allTracks.add(t); added++ }
+                }
+                continuation = extractLikedContinuation(response)
+                if (continuation.isNullOrBlank()) {
+                    continuation = extractPlaylistContinuation(response)
+                    if (continuation.isNullOrBlank()) {
+                        continuation = parseLikedContinuationTokenFallback(response)
+                    }
+                }
+                if (added == 0 && pages > 0) break
+                if (continuation.isNullOrBlank()) break
+                pages++
+            }
+            val viaResult = allTracks.distinctBy { it.id }
+            val best = if (bestVia.size > viaResult.size) bestVia else viaResult
+            Log.d(TAG, "fetchLikedMusicTracks result=${best.size} via=${bestVia.size} pages=${pages + 1}")
+            best
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
-            } catch (e: Exception) {
+        } catch (e: Exception) {
             Log.e(TAG, "fetchLikedMusicTracks failed: ${e.message}", e)
-            emptyList()
+            val viaResult = allTracks.distinctBy { it.id }
+            if (bestVia.size > viaResult.size) bestVia else viaResult
         }
+    }
+
+    private fun parseLikedContinuationFeed(root: JsonElement): TSukiHomeFeed {
+        val sections = mutableListOf<TSukiFeedSection>()
+        try {
+            val cont = root.jsonObject["continuationContents"]?.jsonObject
+            val musicShelfCont = cont?.get("musicShelfContinuation")?.jsonObject
+            val sectionListCont = cont?.get("sectionListContinuation")?.jsonObject
+            val candidates = listOfNotNull(
+                musicShelfCont?.get("contents")?.jsonArray,
+                sectionListCont?.get("contents")?.jsonArray,
+                cont?.get("musicPlaylistShelfContinuation")?.jsonObject?.get("contents")?.jsonArray
+            )
+            for (arr in candidates) {
+                if (arr.isEmpty()) continue
+                val firstHasShelf = arr.firstOrNull()?.jsonObject?.containsKey("musicShelfRenderer") == true ||
+                    arr.firstOrNull()?.jsonObject?.containsKey("musicCarouselShelfRenderer") == true
+                if (firstHasShelf) {
+                    val feed = parseMusicHomeFeed(root)
+                    if (feed.sections.isNotEmpty()) return feed
+                }
+                val tracks = mutableListOf<MediaTrack>()
+                for (el in arr) {
+                    if (el.jsonObject.containsKey("continuationItemRenderer")) continue
+                    if (el.jsonObject.containsKey("musicShelfRenderer")) {
+                        val shelf = el.jsonObject["musicShelfRenderer"]?.jsonObject
+                        shelf?.get("contents")?.jsonArray?.let { tracks.addAll(parseMusicShelfItems(it, "")) }
+                    } else {
+                        val r = el.jsonObject["musicResponsiveListItemRenderer"]?.jsonObject
+                            ?: el.jsonObject["musicTwoRowItemRenderer"]?.jsonObject
+                        if (r != null) parseMusicRenderer(r, "")?.let { tracks.add(it) }
+                    }
+                }
+                if (tracks.isNotEmpty()) sections.add(TSukiFeedSection("Tus Me Gusta", tracks))
+            }
+            if (sections.isEmpty()) {
+                val fallback = parseMusicHomeFeed(root)
+                if (fallback.sections.isNotEmpty()) return fallback
+                val fallback2 = parsePlaylistTracks(root)
+                if (fallback2.isNotEmpty()) sections.add(TSukiFeedSection("Tus Me Gusta", fallback2))
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "parseLikedContinuationFeed error: ${e.message}")
+        }
+        return TSukiHomeFeed(sections)
+    }
+
+    private fun extractLikedContinuation(root: JsonElement): String? {
+        try {
+            root.jsonObject["continuationContents"]?.jsonObject?.let { cont ->
+                cont["musicShelfContinuation"]?.jsonObject?.get("continuations")?.jsonArray?.firstOrNull()?.jsonObject?.get("nextContinuationData")?.jsonObject?.get("continuation")?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }?.let { return it }
+                cont["sectionListContinuation"]?.jsonObject?.get("continuations")?.jsonArray?.firstOrNull()?.jsonObject?.get("nextContinuationData")?.jsonObject?.get("continuation")?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }?.let { return it }
+                cont["musicPlaylistShelfContinuation"]?.jsonObject?.get("continuations")?.jsonArray?.firstOrNull()?.jsonObject?.get("nextContinuationData")?.jsonObject?.get("continuation")?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }?.let { return it }
+                cont["musicShelfContinuation"]?.jsonObject?.get("contents")?.jsonArray?.let { findLastContinuationToken(it)?.let { t -> return t } }
+                cont["sectionListContinuation"]?.jsonObject?.get("contents")?.jsonArray?.let { arr ->
+                    arr.forEach { sec ->
+                        sec.jsonObject["musicShelfRenderer"]?.jsonObject?.get("continuations")?.jsonArray?.firstOrNull()?.jsonObject?.get("nextContinuationData")?.jsonObject?.get("continuation")?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }?.let { return it }
+                        sec.jsonObject["musicShelfRenderer"]?.jsonObject?.get("contents")?.jsonArray?.let { findLastContinuationToken(it)?.let { t -> return t } }
+                        sec.jsonObject["musicPlaylistShelfRenderer"]?.jsonObject?.get("continuations")?.jsonArray?.firstOrNull()?.jsonObject?.get("nextContinuationData")?.jsonObject?.get("continuation")?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }?.let { return it }
+                    }
+                }
+            }
+            val sectionListArr = root.jsonObject["contents"]?.jsonObject
+                ?.get("singleColumnBrowseResultsRenderer")?.jsonObject
+                ?.get("tabs")?.jsonArray?.firstOrNull()?.jsonObject
+                ?.get("tabRenderer")?.jsonObject
+                ?.get("content")?.jsonObject
+                ?.get("sectionListRenderer")?.jsonObject
+            sectionListArr?.get("continuations")?.jsonArray?.firstOrNull()?.jsonObject?.get("nextContinuationData")?.jsonObject?.get("continuation")?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }?.let { return it }
+            sectionListArr?.get("contents")?.jsonArray?.let { arr ->
+                arr.forEach { item ->
+                    item.jsonObject["musicShelfRenderer"]?.jsonObject?.get("continuations")?.jsonArray?.firstOrNull()?.jsonObject?.get("nextContinuationData")?.jsonObject?.get("continuation")?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }?.let { return it }
+                    item.jsonObject["musicShelfRenderer"]?.jsonObject?.get("contents")?.jsonArray?.let { findLastContinuationToken(it)?.let { t -> return t } }
+                    item.jsonObject["musicPlaylistShelfRenderer"]?.jsonObject?.get("continuations")?.jsonArray?.firstOrNull()?.jsonObject?.get("nextContinuationData")?.jsonObject?.get("continuation")?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }?.let { return it }
+                    item.jsonObject["musicPlaylistShelfRenderer"]?.jsonObject?.get("contents")?.jsonArray?.let { findLastContinuationToken(it)?.let { t -> return t } }
+                }
+            }
+        } catch (_: Exception) {}
+        return null
+    }
+
+    private fun parseLikedContinuationTokenFallback(root: JsonElement): String? {
+        return extractPlaylistContinuation(root) ?: findFirstContinuationToken(root, 0)
     }
 
     private fun buildSapisidHash(cookie: String, origin: String = YTM_ORIGIN): String? {
@@ -1587,6 +1886,41 @@ class TSukiInnerTubeClient private constructor() {
             clientName = WEB_REMIX_CLIENT_NAME,
             clientVersion = WEB_REMIX_CLIENT_VERSION,
             clientId = WEB_REMIX_CLIENT_ID
+        )
+        httpClient.post("${YTM_API_BASE}browse") {
+            contentType(ContentType.Application.Json)
+            parameter("prettyPrint", false)
+            headers {
+                append("X-YouTube-Client-Name", WEB_REMIX_CLIENT_ID)
+                append("X-YouTube-Client-Version", WEB_REMIX_CLIENT_VERSION)
+                append("X-Origin", YTM_ORIGIN)
+                append("Referer", YTM_REFERER)
+                append("Origin", YTM_ORIGIN)
+                append(HttpHeaders.UserAgent, USER_AGENT)
+                if (!cookie.isNullOrBlank()) {
+                    append("Cookie", cookie)
+                    buildSapisidHash(cookie)?.let { append("Authorization", it) }
+                }
+                visitorData?.takeIf { it.isNotBlank() }?.let { append("X-Goog-Visitor-Id", it) }
+            }
+            setBody(body)
+        }.body<JsonElement>()
+    }
+
+    private suspend fun postBrowseContinuation(
+        continuation: String,
+        cookie: String?,
+        visitorData: String?,
+        dataSyncId: String?
+    ): JsonElement = withContext(Dispatchers.IO) {
+        val body = buildBrowseBody(
+            browseId = "",
+            visitorData = visitorData,
+            dataSyncId = dataSyncId,
+            clientName = WEB_REMIX_CLIENT_NAME,
+            clientVersion = WEB_REMIX_CLIENT_VERSION,
+            clientId = WEB_REMIX_CLIENT_ID,
+            continuation = continuation
         )
         httpClient.post("${YTM_API_BASE}browse") {
             contentType(ContentType.Application.Json)
@@ -1701,14 +2035,106 @@ class TSukiInnerTubeClient private constructor() {
     ): List<TSukiPlaylist> = withContext(Dispatchers.IO) {
         if (cookie.isBlank()) return@withContext emptyList()
         try {
-            val response = postAuthorizedBrowse("FEmusic_liked_playlists", cookie, visitorData, dataSyncId)
-            parseUserPlaylists(response)
+            val all = mutableListOf<TSukiPlaylist>()
+            val seen = mutableSetOf<String>()
+            var response = postAuthorizedBrowse("FEmusic_liked_playlists", cookie, visitorData, dataSyncId)
+            var playlists = parseUserPlaylists(response)
+            for (p in playlists) if (seen.add(p.id)) all.add(p)
+            var continuation = extractPlaylistsContinuation(response)
+            var pages = 0
+            while (!continuation.isNullOrBlank() && pages < 6) {
+                pages++
+                try {
+                    response = postBrowseContinuation(continuation, cookie, visitorData, dataSyncId)
+                    playlists = parseUserPlaylists(response)
+                    if (playlists.isEmpty()) {
+                        val alt = parseUserPlaylistsFromContinuation(response)
+                        for (p in alt) if (seen.add(p.id)) all.add(p)
+                        continuation = extractPlaylistsContinuation(response) ?: extractPlaylistContinuation(response)
+                    } else {
+                        var added = 0
+                        for (p in playlists) if (seen.add(p.id)) { all.add(p); added++ }
+                        if (added == 0) break
+                        continuation = extractPlaylistsContinuation(response)
+                    }
+                    if (continuation.isNullOrBlank()) break
+                } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) {
+                    Log.w(TAG, "fetchUserPlaylists continuation failed: ${e.message}")
+                    break
+                }
+            }
+            Log.d(TAG, "fetchUserPlaylists result=${all.size} pages=${pages + 1}")
+            all
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
-            } catch (e: Exception) {
+        } catch (e: Exception) {
             Log.w(TAG, "fetchUserPlaylists failed: ${e.message}", e)
             emptyList()
         }
+    }
+
+    private fun extractPlaylistsContinuation(response: JsonElement): String? {
+        try {
+            response.jsonObject["contents"]?.jsonObject?.get("singleColumnBrowseResultsRenderer")?.jsonObject
+                ?.get("tabs")?.jsonArray?.firstOrNull()?.jsonObject?.get("tabRenderer")?.jsonObject
+                ?.get("content")?.jsonObject?.get("sectionListRenderer")?.jsonObject
+                ?.get("continuations")?.jsonArray?.firstOrNull()?.jsonObject
+                ?.get("nextContinuationData")?.jsonObject?.get("continuation")?.jsonPrimitive?.content
+                ?.takeIf { it.isNotBlank() }?.let { return it }
+            response.jsonObject["contents"]?.jsonObject?.get("singleColumnBrowseResultsRenderer")?.jsonObject
+                ?.get("tabs")?.jsonArray?.firstOrNull()?.jsonObject?.get("tabRenderer")?.jsonObject
+                ?.get("content")?.jsonObject?.get("sectionListRenderer")?.jsonObject
+                ?.get("contents")?.jsonArray?.let { arr ->
+                    for (sec in arr) {
+                        sec.jsonObject["gridRenderer"]?.jsonObject?.get("continuations")?.jsonArray?.firstOrNull()?.jsonObject
+                            ?.get("nextContinuationData")?.jsonObject?.get("continuation")?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }?.let { return it }
+                        sec.jsonObject["gridRenderer"]?.jsonObject?.get("contents")?.jsonArray?.let { findLastContinuationToken(it)?.let { t -> return t } }
+                        sec.jsonObject["musicPlaylistShelfRenderer"]?.jsonObject?.get("continuations")?.jsonArray?.firstOrNull()?.jsonObject
+                            ?.get("nextContinuationData")?.jsonObject?.get("continuation")?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }?.let { return it }
+                    }
+                }
+            response.jsonObject["continuationContents"]?.jsonObject?.let { cont ->
+                cont["gridContinuation"]?.jsonObject?.get("continuations")?.jsonArray?.firstOrNull()?.jsonObject?.get("nextContinuationData")?.jsonObject?.get("continuation")?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }?.let { return it }
+                cont["sectionListContinuation"]?.jsonObject?.get("continuations")?.jsonArray?.firstOrNull()?.jsonObject?.get("nextContinuationData")?.jsonObject?.get("continuation")?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }?.let { return it }
+                cont["gridContinuation"]?.jsonObject?.get("contents")?.jsonArray?.let { findLastContinuationToken(it)?.let { t -> return t } }
+            }
+            response.jsonObject["onResponseReceivedActions"]?.jsonArray?.firstOrNull()?.jsonObject?.get("appendContinuationItemsAction")?.jsonObject?.get("continuationItems")?.jsonArray?.let { findLastContinuationToken(it)?.let { t -> return t } }
+        } catch (_: Exception) {}
+        return null
+    }
+
+    private fun parseUserPlaylistsFromContinuation(response: JsonElement): List<TSukiPlaylist> {
+        val out = mutableListOf<TSukiPlaylist>()
+        try {
+            val cont = response.jsonObject["continuationContents"]?.jsonObject
+            val gridCont = cont?.get("gridContinuation")?.jsonObject?.get("contents")?.jsonArray
+            val sectionCont = cont?.get("sectionListContinuation")?.jsonObject?.get("contents")?.jsonArray
+            val appendItems = response.jsonObject["onResponseReceivedActions"]?.jsonArray?.firstOrNull()?.jsonObject?.get("appendContinuationItemsAction")?.jsonObject?.get("continuationItems")?.jsonArray
+            val candidates = listOfNotNull(gridCont, sectionCont, appendItems)
+            for (arr in candidates) {
+                for (item in arr) {
+                    if (item.jsonObject.containsKey("continuationItemRenderer")) continue
+                    item.jsonObject["musicTwoRowItemRenderer"]?.jsonObject?.let { r ->
+                        val rawId = r["navigationEndpoint"]?.jsonObject?.get("browseEndpoint")?.jsonObject?.get("browseId")?.jsonPrimitive?.content ?: return@let
+                        val id = rawId.removePrefix("VL")
+                        if (id in AUTO_LIST_IDS) return@let
+                        val title = r["title"]?.jsonObject?.get("runs")?.jsonArray?.firstOrNull()?.jsonObject?.get("text")?.jsonPrimitive?.content ?: return@let
+                        val subtitle = r["subtitle"]?.jsonObject?.get("runs")?.jsonArray?.joinToString(" • ") { it.jsonObject["text"]?.jsonPrimitive?.content ?: "" } ?: ""
+                        val thumb = extractTwoRowThumbnail(r)
+                        out.add(TSukiPlaylist(id, title, subtitle, thumb))
+                    }
+                    item.jsonObject["gridPlaylistRenderer"]?.jsonObject?.let { r ->
+                        val pid = r["playlistId"]?.jsonPrimitive?.content ?: return@let
+                        val id = pid.removePrefix("VL")
+                        if (id in AUTO_LIST_IDS) return@let
+                        val title = r["title"]?.jsonObject?.get("runs")?.jsonArray?.firstOrNull()?.jsonObject?.get("text")?.jsonPrimitive?.content ?: return@let
+                        val thumb = r["thumbnail"]?.jsonObject?.get("thumbnails")?.jsonArray?.lastOrNull()?.jsonObject?.get("url")?.jsonPrimitive?.content
+                        out.add(TSukiPlaylist(id, title, "", thumb))
+                    }
+                }
+            }
+        } catch (e: Exception) { e.printStackTrace() }
+        return out.distinctBy { it.id }
     }
 
     private fun parseUserPlaylists(response: JsonElement): List<TSukiPlaylist> {
@@ -1816,10 +2242,30 @@ class TSukiInnerTubeClient private constructor() {
         if (playlistId.isBlank()) return@withContext emptyList()
         val browseId = if (playlistId.startsWith("VL") || playlistId.startsWith("RD")) playlistId else "VL$playlistId"
         try {
-            val response = postAuthorizedBrowse(browseId, cookie, visitorData, dataSyncId)
-            val parsed = parsePlaylistTracks(response)
-            Log.d(TAG, "fetchPlaylistTracks id=$playlistId result=${parsed.size}")
-            parsed
+            val allTracks = mutableListOf<MediaTrack>()
+            val seen = mutableSetOf<String>()
+            var response = postAuthorizedBrowse(browseId, cookie, visitorData, dataSyncId)
+            var continuation = extractPlaylistContinuation(response)
+            var parsed = parsePlaylistTracks(response)
+            for (t in parsed) if (seen.add(t.id)) allTracks.add(t)
+            var pages = 0
+            while (!continuation.isNullOrBlank() && pages < 12) {
+                pages++
+                try {
+                    response = postBrowseContinuation(continuation, cookie, visitorData, dataSyncId)
+                    parsed = parsePlaylistTracks(response)
+                    if (parsed.isEmpty()) break
+                    var added = 0
+                    for (t in parsed) if (seen.add(t.id)) { allTracks.add(t); added++ }
+                    if (added == 0) break
+                    continuation = extractPlaylistContinuation(response)
+                } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) {
+                    Log.w(TAG, "fetchPlaylistTracks continuation failed: ${e.message}")
+                    break
+                }
+            }
+            Log.d(TAG, "fetchPlaylistTracks id=$playlistId result=${allTracks.size} pages=${pages + 1}")
+            allTracks
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
             } catch (e: Exception) {
@@ -1828,10 +2274,58 @@ class TSukiInnerTubeClient private constructor() {
         }
     }
 
+    private fun extractPlaylistContinuation(response: JsonElement): String? {
+        try {
+            response.jsonObject["contents"]?.jsonObject?.get("twoColumnBrowseResultsRenderer")?.jsonObject?.let { two ->
+                two["secondaryContents"]?.jsonObject?.get("sectionListRenderer")?.jsonObject?.get("contents")?.jsonArray?.forEach { sec ->
+                    val shelf = sec.jsonObject["musicPlaylistShelfRenderer"]?.jsonObject
+                        ?: sec.jsonObject["musicShelfRenderer"]?.jsonObject ?: return@forEach
+                    shelf["continuations"]?.jsonArray?.firstOrNull()?.jsonObject?.get("nextContinuationData")?.jsonObject?.get("continuation")?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }?.let { return it }
+                    shelf["contents"]?.jsonArray?.let { contentsArr ->
+                        findLastContinuationToken(contentsArr)?.let { return it }
+                    }
+                }
+                two["secondaryContents"]?.jsonObject?.get("sectionListRenderer")?.jsonObject?.get("continuations")?.jsonArray?.firstOrNull()?.jsonObject?.get("nextContinuationData")?.jsonObject?.get("continuation")?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }?.let { return it }
+                two["secondaryContents"]?.jsonObject?.get("sectionListRenderer")?.jsonObject?.get("contents")?.jsonArray?.forEach { sec ->
+                    sec.jsonObject["musicShelfRenderer"]?.jsonObject?.get("continuations")?.jsonArray?.firstOrNull()?.jsonObject?.get("nextContinuationData")?.jsonObject?.get("continuation")?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }?.let { return it }
+                }
+            }
+            response.jsonObject["contents"]?.jsonObject?.get("singleColumnBrowseResultsRenderer")?.jsonObject?.get("tabs")?.jsonArray?.firstOrNull()?.jsonObject?.get("tabRenderer")?.jsonObject?.get("content")?.jsonObject?.get("sectionListRenderer")?.jsonObject?.let { sec ->
+                sec["continuations"]?.jsonArray?.firstOrNull()?.jsonObject?.get("nextContinuationData")?.jsonObject?.get("continuation")?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }?.let { return it }
+                sec["contents"]?.jsonArray?.forEach { item ->
+                    item.jsonObject["musicShelfRenderer"]?.jsonObject?.get("continuations")?.jsonArray?.firstOrNull()?.jsonObject?.get("nextContinuationData")?.jsonObject?.get("continuation")?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }?.let { return it }
+                    item.jsonObject["musicShelfRenderer"]?.jsonObject?.get("contents")?.jsonArray?.let { findLastContinuationToken(it)?.let { t -> return t } }
+                    item.jsonObject["musicPlaylistShelfRenderer"]?.jsonObject?.get("continuations")?.jsonArray?.firstOrNull()?.jsonObject?.get("nextContinuationData")?.jsonObject?.get("continuation")?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }?.let { return it }
+                }
+            }
+            response.jsonObject["continuationContents"]?.jsonObject?.let { cont ->
+                cont["musicPlaylistShelfContinuation"]?.jsonObject?.get("continuations")?.jsonArray?.firstOrNull()?.jsonObject?.get("nextContinuationData")?.jsonObject?.get("continuation")?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }?.let { return it }
+                cont["musicShelfContinuation"]?.jsonObject?.get("continuations")?.jsonArray?.firstOrNull()?.jsonObject?.get("nextContinuationData")?.jsonObject?.get("continuation")?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }?.let { return it }
+                cont["sectionListContinuation"]?.jsonObject?.get("continuations")?.jsonArray?.firstOrNull()?.jsonObject?.get("nextContinuationData")?.jsonObject?.get("continuation")?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }?.let { return it }
+                cont["musicPlaylistShelfContinuation"]?.jsonObject?.get("contents")?.jsonArray?.let { findLastContinuationToken(it)?.let { t -> return t } }
+                cont["musicShelfContinuation"]?.jsonObject?.get("contents")?.jsonArray?.let { findLastContinuationToken(it)?.let { t -> return t } }
+                cont["sectionListContinuation"]?.jsonObject?.get("contents")?.jsonArray?.let { secArr ->
+                    secArr.forEach { sec ->
+                        sec.jsonObject["musicPlaylistShelfRenderer"]?.jsonObject?.get("contents")?.jsonArray?.let { findLastContinuationToken(it)?.let { t -> return t } }
+                        sec.jsonObject["musicPlaylistShelfRenderer"]?.jsonObject?.get("continuations")?.jsonArray?.firstOrNull()?.jsonObject?.get("nextContinuationData")?.jsonObject?.get("continuation")?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }?.let { return it }
+                    }
+                }
+            }
+            response.jsonObject["onResponseReceivedActions"]?.jsonArray?.forEach { action ->
+                val items = action.jsonObject["appendContinuationItemsAction"]?.jsonObject?.get("continuationItems")?.jsonArray ?: return@forEach
+                findLastContinuationToken(items)?.let { return it }
+                items.forEach { el ->
+                    el.jsonObject["musicPlaylistShelfRenderer"]?.jsonObject?.get("continuations")?.jsonArray?.firstOrNull()?.jsonObject?.get("nextContinuationData")?.jsonObject?.get("continuation")?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }?.let { return it }
+                }
+            }
+            response.jsonObject["contents"]?.jsonObject?.get("singleColumnBrowseResultsRenderer")?.jsonObject?.get("tabs")?.jsonArray?.firstOrNull()?.jsonObject?.get("tabRenderer")?.jsonObject?.get("content")?.jsonObject?.get("sectionListRenderer")?.jsonObject?.get("continuations")?.jsonArray?.firstOrNull()?.jsonObject?.get("nextContinuationData")?.jsonObject?.get("continuation")?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }?.let { return it }
+        } catch (_: Exception) {}
+        return null
+    }
+
     private fun parsePlaylistTracks(response: JsonElement): List<MediaTrack> {
         val tracks = mutableListOf<MediaTrack>()
         try {
-
             val twoColumn = response.jsonObject["contents"]
                 ?.jsonObject?.get("twoColumnBrowseResultsRenderer")?.jsonObject
             val contentsArr = twoColumn
@@ -1853,7 +2347,38 @@ class TSukiInnerTubeClient private constructor() {
                         ?: section.jsonObject["musicShelfRenderer"]?.jsonObject?.get("contents")?.jsonArray
                         ?: section.jsonObject["itemSectionRenderer"]?.jsonObject?.get("contents")?.jsonArray
                         ?: continue
-                    tracks.addAll(parseMusicShelfItems(items, ""))
+                    val filtered = items.filter { !it.jsonObject.containsKey("continuationItemRenderer") }
+                    tracks.addAll(parseMusicShelfItems(JsonArray(filtered), ""))
+                }
+                if (tracks.isNotEmpty()) return tracks.distinctBy { it.id }
+            }
+            response.jsonObject["continuationContents"]?.jsonObject?.let { cont ->
+                val shelfCont = cont["musicPlaylistShelfContinuation"]?.jsonObject ?: cont["musicShelfContinuation"]?.jsonObject
+                shelfCont?.get("contents")?.jsonArray?.let { arr ->
+                    val filtered = arr.filter { !it.jsonObject.containsKey("continuationItemRenderer") }
+                    tracks.addAll(parseMusicShelfItems(JsonArray(filtered), ""))
+                    if (tracks.isNotEmpty()) return tracks.distinctBy { it.id }
+                }
+                cont["sectionListContinuation"]?.jsonObject?.get("contents")?.jsonArray?.let { secArr ->
+                    for (sec in secArr) {
+                        val items = sec.jsonObject["musicPlaylistShelfRenderer"]?.jsonObject?.get("contents")?.jsonArray
+                            ?: sec.jsonObject["musicShelfRenderer"]?.jsonObject?.get("contents")?.jsonArray ?: continue
+                        val filtered = items.filter { !it.jsonObject.containsKey("continuationItemRenderer") }
+                        tracks.addAll(parseMusicShelfItems(JsonArray(filtered), ""))
+                    }
+                    if (tracks.isNotEmpty()) return tracks.distinctBy { it.id }
+                }
+            }
+            response.jsonObject["onResponseReceivedActions"]?.jsonArray?.forEach { action ->
+                val items = action.jsonObject["appendContinuationItemsAction"]?.jsonObject?.get("continuationItems")?.jsonArray ?: return@forEach
+                val filtered = items.filter { !it.jsonObject.containsKey("continuationItemRenderer") }
+                val parsed = parseMusicShelfItems(JsonArray(filtered), "")
+                if (parsed.isNotEmpty()) tracks.addAll(parsed)
+                items.forEach { el ->
+                    el.jsonObject["musicPlaylistShelfRenderer"]?.jsonObject?.get("contents")?.jsonArray?.let { sub ->
+                        val f = sub.filter { !it.jsonObject.containsKey("continuationItemRenderer") }
+                        tracks.addAll(parseMusicShelfItems(JsonArray(f), ""))
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -2082,6 +2607,134 @@ class TSukiInnerTubeClient private constructor() {
             Log.w(TAG, "setLikedVideo failed: ${e.message}")
             false
         }
+    }
+
+    suspend fun createYTMPlaylist(
+        title: String,
+        videoIds: List<String>,
+        cookie: String,
+        visitorData: String? = null,
+        onProgress: ((Int, Int) -> Unit)? = null
+    ): String? = withContext(Dispatchers.IO) {
+        if (cookie.isBlank() || title.isBlank()) return@withContext null
+        try {
+            val body = buildJsonObject {
+                putJsonObject("context") {
+                    putJsonObject("client") {
+                        put("clientName", WEB_REMIX_CLIENT_NAME)
+                        put("clientVersion", WEB_REMIX_CLIENT_VERSION)
+                        put("hl", getClientHl())
+                        put("gl", getClientGl())
+                        if (!visitorData.isNullOrBlank()) put("visitorData", visitorData)
+                    }
+                }
+                put("title", title)
+                put("privacyStatus", "PRIVATE")
+            }
+            val response = httpClient.post("${YTM_API_BASE}playlist/create") {
+                contentType(ContentType.Application.Json)
+                parameter("prettyPrint", false)
+                headers {
+                    append("X-YouTube-Client-Name", WEB_REMIX_CLIENT_ID)
+                    append("X-YouTube-Client-Version", WEB_REMIX_CLIENT_VERSION)
+                    append("X-Origin", YTM_ORIGIN)
+                    append("Referer", YTM_REFERER)
+                    append("Origin", YTM_ORIGIN)
+                    append(HttpHeaders.UserAgent, USER_AGENT)
+                    append("Cookie", cookie)
+                    buildSapisidHash(cookie)?.let { append("Authorization", it) }
+                    visitorData?.takeIf { it.isNotBlank() }?.let { append("X-Goog-Visitor-Id", it) }
+                }
+                setBody(body)
+            }.body<JsonElement>()
+            val pid = response.jsonObject["playlistId"]?.jsonPrimitive?.content
+                ?: response.jsonObject["id"]?.jsonPrimitive?.content
+                ?: response.jsonObject["playlist"]?.jsonPrimitive?.content
+            if (!pid.isNullOrBlank()) {
+                val clean = pid.removePrefix("VL")
+                if (videoIds.isNotEmpty()) {
+                    val addMutex = kotlinx.coroutines.sync.Mutex()
+                    val addedCount = java.util.concurrent.atomic.AtomicInteger(0)
+                    coroutineScope {
+                        val jobs: List<kotlinx.coroutines.Deferred<Unit>> = videoIds.chunked(12).map { chunk ->
+                            val job = async {
+                                addMutex.withLock {
+                                    try {
+                                        addVideosToYTMPlaylist(clean, chunk, cookie, visitorData)
+                                    } catch (_: Exception) {}
+                                }
+                                val current = addedCount.addAndGet(chunk.size)
+                                onProgress?.invoke(current, videoIds.size)
+                                Unit
+                            }
+                            delay(60)
+                            job
+                        }
+                        jobs.awaitAll()
+                    }
+                } else {
+                    onProgress?.invoke(videoIds.size, videoIds.size)
+                }
+                return@withContext clean
+            }
+            null
+        } catch (e: Exception) {
+            Log.w(TAG, "createYTMPlaylist failed: ${e.message}")
+            null
+        }
+    }
+
+    private suspend fun addVideosToYTMPlaylist(
+        playlistId: String,
+        videoIds: List<String>,
+        cookie: String,
+        visitorData: String? = null
+    ): Boolean = withContext(Dispatchers.IO) {
+        if (cookie.isBlank() || playlistId.isBlank() || videoIds.isEmpty()) return@withContext false
+        try {
+            val cleanId = playlistId.removePrefix("VL")
+            val body = buildJsonObject {
+                putJsonObject("context") {
+                    putJsonObject("client") {
+                        put("clientName", WEB_REMIX_CLIENT_NAME)
+                        put("clientVersion", WEB_REMIX_CLIENT_VERSION)
+                        put("hl", getClientHl())
+                        put("gl", getClientGl())
+                        if (!visitorData.isNullOrBlank()) put("visitorData", visitorData)
+                    }
+                }
+                put("playlistId", "VL$cleanId")
+                put("actions", buildJsonArray {
+                    for (videoId in videoIds) {
+                        add(buildJsonObject {
+                            put("addedVideoId", videoId)
+                            put("action", "ACTION_ADD_VIDEO")
+                        })
+                    }
+                })
+            }
+            val response = httpClient.post("${YTM_API_BASE}browse/edit_playlist") {
+                contentType(ContentType.Application.Json)
+                parameter("prettyPrint", false)
+                headers {
+                    append("X-YouTube-Client-Name", WEB_REMIX_CLIENT_ID)
+                    append("X-YouTube-Client-Version", WEB_REMIX_CLIENT_VERSION)
+                    append("X-Origin", YTM_ORIGIN)
+                    append("Referer", YTM_REFERER)
+                    append("Origin", YTM_ORIGIN)
+                    append(HttpHeaders.UserAgent, USER_AGENT)
+                    append("Cookie", cookie)
+                    buildSapisidHash(cookie)?.let { append("Authorization", it) }
+                    visitorData?.takeIf { it.isNotBlank() }?.let { append("X-Goog-Visitor-Id", it) }
+                }
+                setBody(body)
+            }
+            if (!response.status.isSuccess()) return@withContext false
+            val respJson = response.body<JsonElement>()
+            val status = respJson.jsonObject["status"]?.jsonPrimitive?.content
+            val hasErrors = respJson.jsonObject["error"] != null || respJson.jsonObject["errors"] != null
+            status != "STATUS_FAILED" && !hasErrors
+        } catch (_: Exception) { false }
     }
 
     private fun parseAccountChannels(response: JsonElement): List<TSukiAccountChannel> {

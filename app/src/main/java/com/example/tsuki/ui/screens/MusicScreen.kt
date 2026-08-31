@@ -1,8 +1,11 @@
 package com.example.tsuki.ui.screens
 
-import com.example.tsuki.ui.components.TrackListItem
 import com.example.tsuki.ui.components.TrackCard
+import com.example.tsuki.ui.components.TrackListItem
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import androidx.compose.foundation.background
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +22,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.activity.compose.BackHandler
@@ -66,7 +70,6 @@ import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.TextButton
-import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.platform.LocalContext
 import coil3.compose.AsyncImage
 import com.example.tsuki.auth.YouTubeAuthManager
@@ -155,6 +158,12 @@ internal object MusicHomeMemory {
     }
 }
 
+object MusicRefreshBus {
+    private val _refreshFlow = MutableStateFlow(0)
+    val refreshFlow: StateFlow<Int> = _refreshFlow
+    fun trigger() { _refreshFlow.value++ }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MusicScreen(
@@ -170,11 +179,11 @@ fun MusicScreen(
     val context = LocalContext.current
     val authManager = remember { YouTubeAuthManager(context) }
     val innerTubeClient = remember { TSukiInnerTubeClient.getInstance() }
-    val isLoggedIn by authManager.isLoggedIn.collectAsState(initial = false)
-    val accountInfo by authManager.accountInfo.collectAsState(initial = null)
-    val cookie by authManager.cookie.collectAsState(initial = null)
-    val visitorData by authManager.visitorData.collectAsState(initial = null)
-    val dataSyncId by authManager.dataSyncId.collectAsState(initial = null)
+    val isLoggedIn by authManager.isLoggedIn.collectAsStateWithLifecycle(initialValue = false)
+    val accountInfo by authManager.accountInfo.collectAsStateWithLifecycle(initialValue = null)
+    val cookie by authManager.cookie.collectAsStateWithLifecycle(initialValue = null)
+    val visitorData by authManager.visitorData.collectAsStateWithLifecycle(initialValue = null)
+    val dataSyncId by authManager.dataSyncId.collectAsStateWithLifecycle(initialValue = null)
 
     var showAccountDialog by remember { mutableStateOf(false) }
     var isSearchActive by remember { mutableStateOf(false) }
@@ -193,13 +202,46 @@ fun MusicScreen(
     var keepListeningTracks by remember { mutableStateOf<List<MediaTrack>>(emptyList()) }
     var forgottenTracks by remember { mutableStateOf<List<MediaTrack>>(emptyList()) }
     var similarSections by remember { mutableStateOf<List<TSukiFeedSection>>(emptyList()) }
+    var likedTracks by remember { mutableStateOf<List<MediaTrack>>(emptyList()) }
     var isLoadingMore by remember { mutableStateOf(false) }
     var isSessionExpired by remember { mutableStateOf(false) }
     val historyManager = remember { WatchHistoryManager.getInstance(context) }
-    val localRecentTracks by historyManager.recentTracksFlow(limit = 20, audioOnly = true).collectAsState(initial = emptyList())
+    val localRecentTracks by historyManager.recentTracksFlow(limit = 20, audioOnly = true).collectAsStateWithLifecycle(initialValue = emptyList())
     val effectiveHistoryTracks = remember(localRecentTracks, historyTracks) {
         if (localRecentTracks.isNotEmpty()) localRecentTracks else historyTracks.filter { !it.isVideoItem }
     }
+    var shuffleNonce by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, ev ->
+            if (ev == androidx.lifecycle.Lifecycle.Event.ON_RESUME || ev == androidx.lifecycle.Lifecycle.Event.ON_START) {
+                shuffleNonce++
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(obs)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
+    }
+    val quickPicks: List<MediaTrack> by remember {
+        androidx.compose.runtime.derivedStateOf<List<MediaTrack>> {
+            val n = shuffleNonce
+            val basePool = (effectiveHistoryTracks + historyTracks + likedTracks + keepListeningTracks + forgottenTracks + personalizedSections.flatMap { it.tracks })
+                .distinctBy { it.id }
+            val pool = if (basePool.isNotEmpty()) basePool else personalizedSections.firstOrNull()?.tracks.orEmpty()
+            if (pool.isNotEmpty()) {
+                val rnd = java.util.Random(System.currentTimeMillis() + n * 10007L)
+                pool.shuffled(rnd).take(24)
+            } else {
+                emptyList()
+            }
+        }
+    }
+    val playerPrefs = remember { com.example.tsuki.data.local.PlayerPreferences(context) }
+    val homePrefs = remember { com.example.tsuki.data.local.HomePreferences(context) }
+    val syncLikedEnabled by playerPrefs.syncLikedEnabled.collectAsStateWithLifecycle(initialValue = true)
+    val syncPlaylistsEnabled by playerPrefs.syncPlaylistsEnabled.collectAsStateWithLifecycle(initialValue = true)
+    val syncHistoryEnabled by playerPrefs.syncHistoryEnabled.collectAsStateWithLifecycle(initialValue = true)
+    val speedDialPins by homePrefs.speedDialPins.collectAsStateWithLifecycle(initialValue = emptySet())
+
     var playlistTrackTarget by remember { mutableStateOf<MediaTrack?>(null) }
     var openPlaylist by remember { mutableStateOf<TSukiPlaylist?>(null) }
     val personalCacheFile = remember { java.io.File(context.cacheDir, "tsuki_music_personalized.json") }
@@ -208,11 +250,12 @@ fun MusicScreen(
     val scope = rememberCoroutineScope()
     val extractor = remember { YouTubeExtractor() }
     val focusManager = LocalFocusManager.current
+    val refreshSignal by MusicRefreshBus.refreshFlow.collectAsStateWithLifecycle(initialValue = 0)
 
-    LaunchedEffect(isLoggedIn, cookie) {
+    LaunchedEffect(isLoggedIn, cookie, refreshSignal) {
         if (isLoggedIn && !cookie.isNullOrBlank()) {
 
-            if (MusicHomeMemory.isFresh()) {
+            if (MusicHomeMemory.isFresh() && refreshSignal == 0) {
                 personalizedSections = MusicHomeMemory.sections
                 userPlaylists = MusicHomeMemory.playlists
                 historyTracks = MusicHomeMemory.history
@@ -252,8 +295,35 @@ fun MusicScreen(
             try {
                 coroutineScope {
                     val feedDeferred = async(Dispatchers.IO) { innerTubeClient.fetchMusicPersonalizedFeed(ck, visitorData, dataSyncId, selectedChip?.params) }
-                    val playlistsDeferred = async(Dispatchers.IO) { innerTubeClient.fetchUserPlaylists(ck, visitorData, dataSyncId) }
-                    val historyDeferred = async(Dispatchers.IO) { innerTubeClient.fetchMusicHistory(ck, visitorData, dataSyncId) }
+                    val playlistsDeferred = async(Dispatchers.IO) {
+                        val cloud = if (syncPlaylistsEnabled && ck.isNotBlank()) {
+                            try { innerTubeClient.fetchUserPlaylists(ck, visitorData, dataSyncId) } catch (_: Exception) { emptyList() }
+                        } else emptyList()
+                        val local = try {
+                            com.example.tsuki.data.local.LocalPlaylistManager.getInstance(context).getAllPlaylists().map { pl ->
+                                TSukiPlaylist(
+                                    id = pl.id.toString(),
+                                    title = pl.name,
+                                    subtitle = "Local • ${pl.tracks.size} canciones",
+                                    thumbnailUrl = pl.tracks.firstOrNull()?.artworkUrl
+                                )
+                            }
+                        } catch (_: Exception) { emptyList() }
+                        local + cloud
+                    }
+                    val likedDeferred = async(Dispatchers.IO) { 
+                        if (syncLikedEnabled && ck.isNotBlank()) {
+                            val f = try { innerTubeClient.fetchLikedMusicTracks(ck, visitorData, dataSyncId) } catch (_: Exception) { emptyList() }
+                            if (f.isNotEmpty()) f else com.example.tsuki.data.local.FavoritesManager.getInstance(context).getFavoriteTracks()
+                        } else {
+                            com.example.tsuki.data.local.FavoritesManager.getInstance(context).getFavoriteTracks()
+                        }
+                    }
+                    val historyDeferred = async(Dispatchers.IO) {
+                        if (syncHistoryEnabled && ck.isNotBlank()) {
+                            try { innerTubeClient.fetchMusicHistory(ck, visitorData, dataSyncId) } catch (_: Exception) { emptyList() }
+                        } else emptyList()
+                    }
                     val keepDeferred = async(Dispatchers.IO) { historyManager.getMostPlayedTracks(15, 14) }
                     val forgDeferred = async(Dispatchers.IO) { historyManager.getForgottenFavorites(20) }
                     val feed = feedDeferred.await()
@@ -266,6 +336,7 @@ fun MusicScreen(
                         personalizedSections = fallback.sections
                     }
                     userPlaylists = playlistsDeferred.await()
+                    likedTracks = likedDeferred.await()
                     historyTracks = historyDeferred.await()
                     keepListeningTracks = keepDeferred.await().filter { !it.isVideoItem }
                     forgottenTracks = forgDeferred.await().filter { !it.isVideoItem }
@@ -275,6 +346,7 @@ fun MusicScreen(
                 if (e.message?.contains("401") == true || e.message?.contains("403") == true) isSessionExpired = true
             }
             isPersonalizedLoading = false
+            shuffleNonce++
             MusicHomeMemory.storeAdvanced(personalizedSections, userPlaylists, historyTracks, musicChips, personalizedContinuation, keepListeningTracks, forgottenTracks, similarSections)
             val seedsForSimilar = keepListeningTracks.take(6).ifEmpty { historyTracks.take(6) }.ifEmpty { effectiveHistoryTracks.take(6) }
             if (seedsForSimilar.isNotEmpty()) {
@@ -313,6 +385,7 @@ fun MusicScreen(
         } else {
             personalizedSections = emptyList()
             userPlaylists = emptyList()
+            likedTracks = emptyList()
             historyTracks = emptyList()
             musicChips = emptyList()
             personalizedContinuation = null
@@ -321,6 +394,10 @@ fun MusicScreen(
             similarSections = emptyList()
             isSessionExpired = false
         }
+    }
+
+    LaunchedEffect(Unit) {
+        shuffleNonce++
     }
 
     LaunchedEffect(selectedChip) {
@@ -517,11 +594,12 @@ fun MusicScreen(
             val total = listState.layoutInfo.totalItemsCount
             total > 0 && lastVisible >= total - 4 && personalizedContinuation != null && isLoggedIn && !isLoadingMore
         }.collect { shouldLoad ->
-            if (shouldLoad && !isLoadingMore && personalizedContinuation != null) {
+            val cont = personalizedContinuation
+            if (shouldLoad && !isLoadingMore && cont != null) {
                 isLoadingMore = true
                 try {
                     val ck = cookie ?: ""
-                    val more = withContext(Dispatchers.IO) { innerTubeClient.fetchMusicHomeContinuation(personalizedContinuation!!, ck, visitorData, dataSyncId) }
+                    val more = withContext(Dispatchers.IO) { innerTubeClient.fetchMusicHomeContinuation(cont, ck, visitorData, dataSyncId) }
                     if (more.sections.isNotEmpty()) {
                         val existingTitles = personalizedSections.map { it.title }.toSet()
                         val fresh = more.sections.filterNot { it.title in existingTitles }
@@ -562,7 +640,7 @@ fun MusicScreen(
                             try { personalCacheFile.delete() } catch (_: Exception) {}
                         }
                     }
-                } catch (_: Exception) {} finally { isPersonalizedLoading = false; isPullRefreshing = false }
+                } catch (_: Exception) {} finally { isPersonalizedLoading = false; isPullRefreshing = false; shuffleNonce++ }
             }
         },
         modifier = modifier.fillMaxSize()
@@ -708,7 +786,7 @@ fun MusicScreen(
                                 shape = CircleShape
                             )
                         }
-                        items(musicChips, key = { it.title }) { chip ->
+                        itemsIndexed(musicChips, key = { i, chip -> "${chip.title}_$i" }) { _, chip ->
                             FilterChip(
                                 selected = selectedChip?.title == chip.title,
                                 onClick = { selectedChip = if (selectedChip?.title == chip.title) null else chip },
@@ -720,33 +798,24 @@ fun MusicScreen(
                 }
             }
 
-            val likedPattern = Regex("gustan|gusta|liked|likes", RegexOption.IGNORE_CASE)
-            val duplicateTitlePattern = Regex("vuelve|listen again|volver a escuchar|escuchado recientemente|replay|volver", RegexOption.IGNORE_CASE)
-            val nonLikedSections = personalizedSections.filterNot { likedPattern.containsMatchIn(it.title) }
-            val heroFromHistory = effectiveHistoryTracks.isNotEmpty()
-            val heroTracks = if (heroFromHistory) effectiveHistoryTracks else nonLikedSections.firstOrNull()?.tracks ?: emptyList()
-            val heroTitle = if (heroFromHistory) "Vuelve a escucharlo"
-            else nonLikedSections.firstOrNull()?.title ?: "Hecho para ti"
-            val heroSectionUsed = if (!heroFromHistory) nonLikedSections.firstOrNull() else null
+            val duplicateTitlePattern = Regex("selección rápida|quick picks|selección", RegexOption.IGNORE_CASE)
             val restSections = personalizedSections.filterNot { section ->
-                (heroSectionUsed != null && section.title == heroSectionUsed.title) ||
-                (heroFromHistory && duplicateTitlePattern.containsMatchIn(section.title))
+                duplicateTitlePattern.containsMatchIn(section.title)
             }
 
-            if (heroTracks.isNotEmpty()) {
-                item(key = "pers_hero") {
+            if (quickPicks.isNotEmpty()) {
+                item(key = "quick_picks_hero") {
                     Column(modifier = Modifier.padding(bottom = 20.dp)) {
-                        MusicSectionHeader(label = "Para ti", title = heroTitle, count = heroTracks.size, onClick = {
-                            if (playerController != null && heroTracks.isNotEmpty()) { playerController.playQueue(heroTracks, 0, false); onExpandPlayer() }
+                        MusicSectionHeader(label = "Para ti", title = "Selección rápida", count = quickPicks.size, onClick = {
+                            if (playerController != null && quickPicks.isNotEmpty()) { playerController.playQueue(quickPicks, 0, false); onExpandPlayer() }
                         })
                         LazyRow(
                             contentPadding = PaddingValues(horizontal = 16.dp),
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            items(heroTracks.take(12), key = { "hero_${it.id}" }) { track ->
+                            itemsIndexed(quickPicks, key = { i, track -> "qp_hero_${track.id}_$i" }) { idx, track ->
                                 MusicHeroCard(track = track, onClick = {
-                                    val idx = heroTracks.indexOfFirst { t -> t.id == track.id }.coerceAtLeast(0)
-                                    if (playerController != null) { playerController.playQueue(heroTracks, idx, false); onExpandPlayer() } else onTrackClick(track)
+                                    if (playerController != null) { playerController.playQueue(quickPicks, idx, false); onExpandPlayer() } else onTrackClick(track)
                                 })
                             }
                         }
@@ -761,9 +830,8 @@ fun MusicScreen(
                             if (playerController != null && keepListeningTracks.isNotEmpty()) { playerController.playQueue(keepListeningTracks, 0, false); onExpandPlayer() }
                         })
                         LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            items(keepListeningTracks, key = { "keep_${it.id}" }) { track ->
+                            itemsIndexed(keepListeningTracks, key = { i, track -> "keep_${track.id}_$i" }) { idx, track ->
                                 TrackCard(track = track, onClick = {
-                                    val idx = keepListeningTracks.indexOfFirst { t -> t.id == track.id }.coerceAtLeast(0)
                                     if (playerController != null) { playerController.playQueue(keepListeningTracks, idx, false); onExpandPlayer() } else onTrackClick(track)
                                 })
                             }
@@ -779,9 +847,8 @@ fun MusicScreen(
                             if (playerController != null && forgottenTracks.isNotEmpty()) { playerController.playQueue(forgottenTracks, 0, false); onExpandPlayer() }
                         })
                         LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            items(forgottenTracks, key = { "forg_${it.id}" }) { track ->
+                            itemsIndexed(forgottenTracks, key = { i, track -> "forg_${track.id}_$i" }) { idx, track ->
                                 TrackCard(track = track, onClick = {
-                                    val idx = forgottenTracks.indexOfFirst { t -> t.id == track.id }.coerceAtLeast(0)
                                     if (playerController != null) { playerController.playQueue(forgottenTracks, idx, false); onExpandPlayer() } else onTrackClick(track)
                                 })
                             }
@@ -791,16 +858,15 @@ fun MusicScreen(
             }
 
             if (similarSections.isNotEmpty()) {
-                similarSections.forEach { section ->
-                    item(key = "similar_${section.title}") {
+                similarSections.forEachIndexed { sIdx, section ->
+                    item(key = "similar_${section.title}_$sIdx") {
                         Column(modifier = Modifier.padding(bottom = 20.dp)) {
                             MusicSectionHeader(label = "Similares", title = section.title, count = section.tracks.size, onClick = {
                                 if (playerController != null) { playerController.playQueue(section.tracks, 0, false); onExpandPlayer() }
                             })
                             LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                items(section.tracks, key = { "sim_${section.title}_${it.id}" }) { track ->
+                                itemsIndexed(section.tracks, key = { tIdx, track -> "sim_${section.title}_${track.id}_${sIdx}_$tIdx" }) { idx, track ->
                                     TrackCard(track = track, onClick = {
-                                        val idx = section.tracks.indexOfFirst { t -> t.id == track.id }.coerceAtLeast(0)
                                         if (playerController != null) { playerController.playQueue(section.tracks, idx, false); onExpandPlayer() } else onTrackClick(track)
                                     })
                                 }
@@ -810,8 +876,19 @@ fun MusicScreen(
                 }
             }
 
-            if (userPlaylists.isNotEmpty()) {
+            if (likedTracks.isNotEmpty() || userPlaylists.isNotEmpty()) {
                 item(key = "account_playlists") {
+                    val displayPlaylists = buildList {
+                        if (likedTracks.isNotEmpty()) add(
+                            TSukiPlaylist(
+                                id = "LM",
+                                title = "Tus Me Gusta",
+                                subtitle = if (syncLikedEnabled && isLoggedIn) "YouTube Music • ${likedTracks.size} canciones" else "Locales • ${likedTracks.size} canciones",
+                                thumbnailUrl = likedTracks.firstOrNull()?.artworkUrl
+                            )
+                        )
+                        addAll(userPlaylists)
+                    }
                     Column(modifier = Modifier.padding(bottom = 20.dp)) {
                         AccountPlaylistsHeader(
                             avatarUrl = accountInfo?.avatarUrl,
@@ -822,7 +899,7 @@ fun MusicScreen(
                             contentPadding = PaddingValues(horizontal = 16.dp),
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            items(userPlaylists, key = { "pl_${it.id}" }) { playlist ->
+                            itemsIndexed(displayPlaylists, key = { pIdx, playlist -> "pl_${playlist.id}_$pIdx" }) { _, playlist ->
                                 PlaylistCard(
                                     playlist = playlist,
                                     onClick = { openPlaylist = playlist }
@@ -833,7 +910,7 @@ fun MusicScreen(
                 }
             }
 
-            items(restSections, key = { "pers_${it.title}" }) { section ->
+            itemsIndexed(restSections, key = { rIdx, section -> "pers_${section.title}_$rIdx" }) { rIdx, section ->
                 Column(modifier = Modifier.padding(bottom = 20.dp)) {
                     MusicSectionHeader(label = "YouTube Music", title = section.title, count = section.tracks.size, onClick = {
                         if (playerController != null) { playerController.playQueue(section.tracks, 0, false); onExpandPlayer() }
@@ -842,9 +919,8 @@ fun MusicScreen(
                         contentPadding = PaddingValues(horizontal = 16.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        items(section.tracks, key = { "pers_${it.id}" }) { track ->
+                        itemsIndexed(section.tracks, key = { tIdx, track -> "pers_${section.title}_${track.id}_${rIdx}_$tIdx" }) { idx, track ->
                             TrackCard(track = track, onClick = {
-                                val idx = section.tracks.indexOfFirst { t -> t.id == track.id }.coerceAtLeast(0)
                                 if (playerController != null) { playerController.playQueue(section.tracks, idx, false); onExpandPlayer() } else onTrackClick(track)
                             })
                         }

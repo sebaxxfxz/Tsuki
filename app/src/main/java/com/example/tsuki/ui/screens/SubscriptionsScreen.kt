@@ -1,6 +1,7 @@
 package com.example.tsuki.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -43,7 +44,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -70,6 +70,9 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+import androidx.compose.foundation.border
+import androidx.compose.foundation.lazy.itemsIndexed
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SubscriptionsScreen(
@@ -81,12 +84,13 @@ fun SubscriptionsScreen(
     val feedRepo = remember { TSukiSubscriptionFeedRepository(context) }
     val homePrefs = remember { HomePreferences(context) }
     val scope = rememberCoroutineScope()
-    val subs by subRepo.getAllSubscriptions().collectAsState(initial = emptyList())
-    val favChannels by homePrefs.favoriteChannels.collectAsState(initial = emptySet())
+    val subs by subRepo.getAllSubscriptions().collectAsStateWithLifecycle(initialValue = emptyList())
+    val favChannels by homePrefs.favoriteChannels.collectAsStateWithLifecycle(initialValue = emptySet())
     var videos by remember { mutableStateOf<List<MediaTrack>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
     var isRefreshing by remember { mutableStateOf(false) }
     var filter by remember { mutableStateOf("Todos") }
+    var selectedChannelId by remember { mutableStateOf<String?>(null) }
     var loadJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
 
     val displaySubs = remember(subs, favChannels) {
@@ -162,15 +166,36 @@ fun SubscriptionsScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 items(displaySubs, key = { it.channelId }) { sub ->
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(64.dp).clickable { }) {
+                    val isSelected = selectedChannelId == sub.channelId
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier
+                            .width(64.dp)
+                            .clickable {
+                                selectedChannelId = if (selectedChannelId == sub.channelId) null else sub.channelId
+                            }
+                    ) {
                         AsyncImage(
                             model = sub.channelThumbnail,
                             contentDescription = null,
                             contentScale = ContentScale.Crop,
-                            modifier = Modifier.size(56.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant)
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .then(
+                                    if (isSelected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
+                                    else Modifier
+                                )
                         )
                         Spacer(Modifier.height(4.dp))
-                        Text(sub.channelName, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            sub.channelName,
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                        )
                     }
                 }
             }
@@ -211,7 +236,11 @@ fun SubscriptionsScreen(
                         Surface(
                             shape = RoundedCornerShape(50),
                             color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.clickable { }
+                            modifier = Modifier.clickable {
+                                scope.launch {
+                                    homePrefs.setOnboardingDone(false)
+                                }
+                            }
                         ) {
                             Row(modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Filled.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(18.dp))
@@ -232,11 +261,16 @@ fun SubscriptionsScreen(
                     }
                 }
                 else -> {
-                    val filtered = remember(videos, filter) {
+                    val filtered = remember(videos, filter, selectedChannelId) {
+                        val base = if (selectedChannelId == null) videos
+                        else {
+                            val ch = displaySubs.firstOrNull { it.channelId == selectedChannelId }
+                            videos.filter { it.channelId == selectedChannelId || (ch != null && it.artist.equals(ch.channelName, ignoreCase = true)) }
+                        }
                         when (filter) {
-                            "Shorts" -> videos.filter { it.isShort || it.durationSeconds in 1..65 }
-                            "Videos" -> videos.filter { !it.isShort && it.durationSeconds > 65 }
-                            else -> videos
+                            "Shorts" -> base.filter { it.isShort || it.durationSeconds in 1..65 }
+                            "Videos" -> base.filter { !it.isShort && it.durationSeconds > 65 }
+                            else -> base
                         }
                     }
                     LazyColumn(
@@ -244,11 +278,14 @@ fun SubscriptionsScreen(
                         contentPadding = PaddingValues(bottom = 120.dp, top = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        items(filtered, key = { it.id }) { track ->
+                        itemsIndexed(
+                            items = filtered,
+                            key = { index, track -> "${track.id}_$index" }
+                        ) { index, track ->
                             VideoCardEnhanced(
                                 video = track,
                                 onClick = {
-                                    playerController?.playQueue(filtered, filtered.indexOf(track).coerceAtLeast(0), playAsVideo = true)
+                                    playerController?.playQueue(filtered, index, playAsVideo = true)
                                     onExpandPlayer()
                                 }
                             )

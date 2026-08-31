@@ -31,8 +31,9 @@ object BetterLyricsPortatoProvider : LyricsProvider {
             val cleanArtist = LyricsSanitizer.cleanArtist(artist)
             val encodedTitle = URLEncoder.encode(cleanTitle, "UTF-8")
             val encodedArtist = URLEncoder.encode(cleanArtist, "UTF-8")
+            val durParam = if (duration > 0) "&duration=$duration" else ""
 
-            val url = "https://lyrics-api.boidu.dev/qq/getLyrics?title=$encodedTitle&artist=$encodedArtist&duration=$duration"
+            val url = "https://lyrics-api.boidu.dev/qq/getLyrics?title=$encodedTitle&artist=$encodedArtist$durParam"
             val request = Request.Builder()
                 .url(url)
                 .addHeader("User-Agent", "TSuki/1.0")

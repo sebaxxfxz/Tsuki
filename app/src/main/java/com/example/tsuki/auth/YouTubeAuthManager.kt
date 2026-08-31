@@ -42,7 +42,7 @@ class YouTubeAuthManager(private val context: Context) {
 
     val isLoggedIn: Flow<Boolean> = context.authDataStore.data.map { prefs ->
         val c = prefs[KEY_COOKIE]
-        !c.isNullOrBlank() && (c.contains("SAPISID") || c.contains("__Secure-3PAPISID") || c.contains("SID"))
+        !c.isNullOrBlank() && (c.contains("SAPISID=") || c.contains("__Secure-3PAPISID=") || c.contains("SID=") || c.contains("__Secure-1PSID="))
     }
 
     suspend fun saveSession(
@@ -53,12 +53,10 @@ class YouTubeAuthManager(private val context: Context) {
     ) {
         context.authDataStore.edit { prefs ->
             prefs[KEY_COOKIE] = cookie
-            if (visitorData != null) prefs[KEY_VISITOR_DATA] = visitorData else prefs.remove(KEY_VISITOR_DATA)
-            if (dataSyncId != null) prefs[KEY_DATA_SYNC_ID] = dataSyncId else prefs.remove(KEY_DATA_SYNC_ID)
+            if (visitorData != null) prefs[KEY_VISITOR_DATA] = visitorData
+            if (dataSyncId != null) prefs[KEY_DATA_SYNC_ID] = dataSyncId
             if (accountInfo != null) {
                 prefs[KEY_ACCOUNT_INFO] = json.encodeToString(YouTubeAccountInfo.serializer(), accountInfo)
-            } else {
-                prefs.remove(KEY_ACCOUNT_INFO)
             }
         }
     }

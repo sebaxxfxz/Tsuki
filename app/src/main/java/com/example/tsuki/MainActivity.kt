@@ -195,7 +195,7 @@ class MainActivity : ComponentActivity() {
         if (intent.action == Intent.ACTION_MAIN) return
         val raw = when (intent.action) {
             Intent.ACTION_VIEW -> intent.dataString
-            Intent.ACTION_SEND -> intent.getStringExtra(Intent.EXTRA_TEXT)
+            Intent.ACTION_SEND -> intent.getStringExtra(Intent.EXTRA_TEXT) ?: intent.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.text?.toString()
             else -> null
         } ?: return
 
@@ -266,12 +266,21 @@ fun TSukiMainScreen(playerController: PlayerController) {
     var showShorts by remember { mutableStateOf(false) }
     var shortsInitialTracks by remember { mutableStateOf<List<MediaTrack>>(emptyList()) }
     var shortsStartIndex by remember { mutableIntStateOf(0) }
+    var activeUpdateInfo by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<com.example.tsuki.util.UpdateInfo?>(null) }
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        val result = com.example.tsuki.util.UpdateChecker.checkForUpdates(context)
+        val info = result.getOrNull()
+        if (info != null && info.isUpdateAvailable) {
+            activeUpdateInfo = info
+            com.example.tsuki.util.UpdateNotificationHelper.showUpdateNotification(context, info)
+        }
+    }
     val authManager = remember { YouTubeAuthManager(context) }
     val playerState by playerController.uiState.collectAsStateWithLifecycle()
-    val currentTrackForNav by remember { derivedStateOf { playerState.currentTrack } }
-    val isVideoModeForNav by remember { derivedStateOf { playerState.isVideoMode } }
-    val isVideoPlayingNav by remember { derivedStateOf { currentTrackForNav != null && isVideoModeForNav } }
-    val isMusicPlayingNav by remember { derivedStateOf { currentTrackForNav != null && !isVideoModeForNav } }
+    val currentTrackForNav = playerState.currentTrack
+    val isVideoModeForNav = playerState.isVideoMode
+    val isVideoPlayingNav = currentTrackForNav != null && isVideoModeForNav
+    val isMusicPlayingNav = currentTrackForNav != null && !isVideoModeForNav
     val homePrefsOnboarding = remember { HomePreferences(context) }
     var onboardingDone by remember { mutableStateOf<Boolean?>(null) }
     LaunchedEffect(Unit) {
@@ -500,18 +509,11 @@ fun TSukiMainScreen(playerController: PlayerController) {
                                 localTracks = localTracks,
                                 downloadedTracks = downloadedTracks,
                                 onSettingsClick = { currentDestination = TSukiDestination.SETTINGS },
-                                onTrackClick = { track ->
-                                    val inDownloaded = downloadedTracks.any { it.id == track.id || it.videoId == track.videoId }
-                                    val inLocal = localTracks.any { it.id == track.id }
-                                    val queue = when {
-                                        inDownloaded -> downloadedTracks
-                                        inLocal -> localTracks
-                                        track.isLocal -> listOf(track)
-                                        else -> if (track.isVideoItem) downloadedTracks else localTracks
-                                    }
+                                onTrackClick = { track, queue ->
+                                    val idx = queue.indexOfFirst { it.id == track.id || (track.videoId != null && it.videoId == track.videoId) }.coerceAtLeast(0)
                                     playerController.playQueue(
                                         tracks = queue.ifEmpty { listOf(track) },
-                                        startIndex = queue.indexOfFirst { it.id == track.id || it.videoId == track.videoId }.coerceAtLeast(0),
+                                        startIndex = idx,
                                         playAsVideo = track.isVideoItem
                                     )
                                     if (track.isVideoItem) {
@@ -564,6 +566,9 @@ fun TSukiMainScreen(playerController: PlayerController) {
                 pendingJoinInput = pendingTogetherJoin,
                 onConsumePendingJoin = { com.example.tsuki.ui.screens.TogetherDeepLink.pending.value = null }
             )
+        }
+        activeUpdateInfo?.let { info ->
+            com.example.tsuki.ui.components.UpdateDialog(updateInfo = info, onDismiss = { activeUpdateInfo = null })
         }
 
         val isOverlayOpen = showPersonalization || showShorts || showLogin || showStats || showImportPlaylist || showTogether

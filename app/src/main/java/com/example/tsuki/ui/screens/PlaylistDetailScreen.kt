@@ -61,6 +61,7 @@ import com.example.tsuki.network.TSukiPlaylist
 import com.example.tsuki.playback.PlayerController
 import com.example.tsuki.ui.components.rememberHiResImageModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.random.Random
@@ -83,6 +84,7 @@ fun PlaylistDetailScreen(
     var isLoading by remember { mutableStateOf(true) }
     var loadFailed by remember { mutableStateOf(false) }
     var retryKey by remember { mutableStateOf(0) }
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     val entrance = remember { Animatable(0f) }
     val coverScale = remember { Animatable(0.88f) }
@@ -95,7 +97,29 @@ fun PlaylistDetailScreen(
         isLoading = true
         loadFailed = false
         val loaded = withContext(Dispatchers.IO) {
-            innerTubeClient.fetchPlaylistTracks(playlist.id, cookie ?: "", visitorData, dataSyncId)
+            if (playlist.id == "LM") {
+                val playerPrefs = com.example.tsuki.data.local.PlayerPreferences(context)
+                val syncEnabled = playerPrefs.syncLikedEnabled.first()
+                if (syncEnabled && !cookie.isNullOrBlank()) {
+                    val fetched = try { innerTubeClient.fetchLikedMusicTracks(cookie ?: "", visitorData, dataSyncId) } catch (_: Exception) { emptyList() }
+                    if (fetched.isNotEmpty()) fetched else com.example.tsuki.data.local.FavoritesManager.getInstance(context).getFavoriteTracks()
+                } else {
+                    com.example.tsuki.data.local.FavoritesManager.getInstance(context).getFavoriteTracks()
+                }
+            } else {
+                val localId = playlist.id.toLongOrNull()
+                val localPl = if (localId != null) {
+                    try { com.example.tsuki.data.local.LocalPlaylistManager.getInstance(context).getPlaylist(localId) } catch (_: Exception) { null }
+                } else null
+
+                if (localPl != null) {
+                    localPl.tracks
+                } else {
+                    try {
+                        innerTubeClient.fetchPlaylistTracks(playlist.id, cookie ?: "", visitorData, dataSyncId)
+                    } catch (_: Exception) { emptyList() }
+                }
+            }
         }
         tracks = loaded
         isLoading = false
@@ -104,14 +128,16 @@ fun PlaylistDetailScreen(
 
     BackHandler(onBack = onBack)
 
-    fun startPlayback(startIndex: Int) {
+    fun startPlayback(startIndex: Int, shuffle: Boolean = false) {
         if (tracks.isEmpty()) return
-        val index = startIndex.coerceIn(0, tracks.lastIndex)
+        val queueToPlay = if (shuffle) tracks.shuffled() else tracks
+        val index = if (shuffle) 0 else startIndex.coerceIn(0, queueToPlay.lastIndex)
         if (playerController != null) {
-            playerController.playQueue(tracks, index, false)
+            playerController.setShuffleInternal(shuffle)
+            playerController.playQueue(queueToPlay, index, false)
             onExpandPlayer()
         } else {
-            onTrackClick(tracks[index])
+            onTrackClick(queueToPlay[index])
         }
     }
 
@@ -233,7 +259,7 @@ fun PlaylistDetailScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Button(
-                    onClick = { startPlayback(0) },
+                    onClick = { startPlayback(0, shuffle = false) },
                     enabled = tracks.isNotEmpty(),
                     shape = RoundedCornerShape(20.dp),
                     colors = ButtonDefaults.buttonColors(
@@ -247,7 +273,7 @@ fun PlaylistDetailScreen(
                     Text("Reproducir")
                 }
                 FilledTonalButton(
-                    onClick = { startPlayback(Random.nextInt(tracks.size)) },
+                    onClick = { startPlayback(0, shuffle = true) },
                     enabled = tracks.isNotEmpty(),
                     shape = RoundedCornerShape(20.dp),
                     modifier = Modifier.weight(1f)
@@ -286,11 +312,11 @@ fun PlaylistDetailScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 120.dp)
                 ) {
-                    itemsIndexed(tracks, key = { _, track -> track.id }) { index, track ->
+                    itemsIndexed(tracks, key = { index, track -> "${track.id}_$index" }) { index, track ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { startPlayback(index) }
+                                .clickable { startPlayback(index, shuffle = false) }
                                 .padding(horizontal = 20.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {

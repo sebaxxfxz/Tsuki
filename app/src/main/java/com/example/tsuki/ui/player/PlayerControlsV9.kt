@@ -1,6 +1,7 @@
 package com.example.tsuki.ui.player
 
 import androidx.compose.animation.Crossfade
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -41,7 +42,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -400,10 +400,11 @@ fun PlayerSliderV9(
     val max = duration.coerceAtLeast(1L).toFloat()
     val progress = (currentPosition.toFloat() / max).coerceIn(0f, 1f)
     var dragValue by remember { mutableStateOf<Float?>(null) }
-    val displayPosition = if (dragValue != null) (dragValue!! * max).toLong() else currentPosition
+    val currentDrag = dragValue
+    val displayPosition = if (currentDrag != null) (currentDrag * max).toLong() else currentPosition
     val context = androidx.compose.ui.platform.LocalContext.current
     val prefs = remember { com.example.tsuki.data.local.PlayerPreferences(context) }
-    val sliderStyle by prefs.progressBarStyle.collectAsState(initial = com.example.tsuki.data.local.ProgressBarStyle.STANDARD)
+    val sliderStyle by prefs.progressBarStyle.collectAsStateWithLifecycle(initialValue = com.example.tsuki.data.local.ProgressBarStyle.STANDARD)
     val trackHeight = when (sliderStyle) {
         com.example.tsuki.data.local.ProgressBarStyle.THICK -> 8.dp
         com.example.tsuki.data.local.ProgressBarStyle.MINIMAL -> 2.dp
@@ -448,6 +449,13 @@ fun PlayerSliderV9(
 }
 
 private fun formatTimeV9(ms: Long): String {
-    val s = (ms / 1000).coerceAtLeast(0)
-    return String.format("%02d:%02d", s / 60, s % 60)
+    val totalSec = (ms / 1000).coerceAtLeast(0)
+    val hours = totalSec / 3600
+    val minutes = (totalSec % 3600) / 60
+    val seconds = totalSec % 60
+    return if (hours > 0) {
+        String.format(java.util.Locale.US, "%02d:%02d:%02d", hours, minutes, seconds)
+    } else {
+        String.format(java.util.Locale.US, "%02d:%02d", minutes, seconds)
+    }
 }

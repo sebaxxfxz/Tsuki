@@ -1008,7 +1008,7 @@ class TogetherManager(private val context: Context, private val controller: Play
         MediaTrack(
             id = id,
             title = title,
-            artist = artists.firstOrNull() ?: "",
+            artist = artists.joinToString(", ").ifBlank { "YouTube" },
             durationMs = durationSec.toLong() * 1000L,
             artworkUrl = thumbnailUrl,
             videoId = id.takeIf { it.length == 11 },

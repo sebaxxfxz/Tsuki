@@ -7,9 +7,9 @@ import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.NoOpCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
 import com.example.tsuki.data.local.PlayerPreferences
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 
 object PlayerCacheProvider {
@@ -23,11 +23,12 @@ object PlayerCacheProvider {
         }
 
     private fun create(context: Context): Cache {
-        val sizeMb = runBlocking {
-            withTimeoutOrNull(500) {
+        val sizeMb = runCatching {
+            runBlocking(Dispatchers.IO) {
                 PlayerPreferences(context).cacheSizeMb.first()
-            } ?: PlayerPreferences.CACHE_SIZE_DEFAULT_MB
-        }
+            }
+        }.getOrDefault(PlayerPreferences.CACHE_SIZE_DEFAULT_MB)
+
         val evictor = if (sizeMb <= 0) {
             NoOpCacheEvictor()
         } else {

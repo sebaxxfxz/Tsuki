@@ -11,6 +11,7 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -87,7 +88,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -148,16 +148,28 @@ fun VideoPlayerScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val activity = context as? Activity
+    val activity = remember(context) {
+        var currentContext = context
+        while (currentContext is android.content.ContextWrapper) {
+            if (currentContext is Activity) break
+            currentContext = currentContext.baseContext
+        }
+        currentContext as? Activity
+    }
     val scope = rememberCoroutineScope()
-    val playerState by playerController.uiState.collectAsState()
+    val playerState by playerController.uiState.collectAsStateWithLifecycle()
 
     var showControls by remember { mutableStateOf(false) }
     var isFullscreen by remember { mutableStateOf(false) }
     var seekOverlayText by remember { mutableStateOf<String?>(null) }
     var isDescriptionExpanded by remember { mutableStateOf(false) }
     var isSubscribed by remember(track?.artist) { mutableStateOf(false) }
+    val favoritesManager = remember { com.example.tsuki.data.local.FavoritesManager.getInstance(context) }
     var isSaved by remember(track?.id) { mutableStateOf(false) }
+    LaunchedEffect(track?.id) {
+        val vid = track?.videoId ?: track?.id ?: return@LaunchedEffect
+        isSaved = favoritesManager.isFavorite(vid)
+    }
     var userVote by remember(track?.id) { mutableStateOf<String?>(null) }
     var showCommentsSheet by remember { mutableStateOf(false) }
     var showQualitySheet by remember { mutableStateOf(false) }
@@ -170,14 +182,14 @@ fun VideoPlayerScreen(
     LaunchedEffect(track?.id) {
         val vid = track?.videoId ?: track?.id ?: return@LaunchedEffect
         withContext(Dispatchers.IO) {
-            try { videoDescription = innerTubeClient.fetchVideoDescription(vid) } catch (_: Exception) {}
+            try { videoDescription = innerTubeClient.fetchVideoDescription(vid) } catch (e: Exception) { e.printStackTrace() }
         }
     }
     LaunchedEffect(track?.channelId) {
         val cid = track?.channelId ?: return@LaunchedEffect
         if (!cid.startsWith("UC")) return@LaunchedEffect
         withContext(Dispatchers.IO) {
-            try { channelMetadata = innerTubeClient.fetchChannelMetadata(cid) } catch (_: Exception) {}
+            try { channelMetadata = innerTubeClient.fetchChannelMetadata(cid) } catch (e: Exception) { e.printStackTrace() }
         }
     }
     var playbackSpeed by remember { androidx.compose.runtime.mutableFloatStateOf(1.0f) }
@@ -499,7 +511,8 @@ fun VideoPlayerScreen(
                         ) {
                             var videoSliderDragValue by remember { mutableStateOf<Float?>(null) }
                             val videoProgress = if (duration > 0) (currentPosition.toFloat() / duration.toFloat()).coerceIn(0f, 1f) else 0f
-                            val displayPos = if (videoSliderDragValue != null) (videoSliderDragValue!! * duration).toLong() else currentPosition
+                            val currentDrag = videoSliderDragValue
+                            val displayPos = if (currentDrag != null) (currentDrag * duration).toLong() else currentPosition
                             Text(
                                 text = formatTime(displayPos),
                                 color = Color.White,
@@ -827,7 +840,7 @@ fun VideoPlayerScreen(
                                                 .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                                         )
 
-                                        val baseDislikes = dislikesData?.dislikes ?: 10500L
+                                        val baseDislikes = dislikesData?.dislikes ?: 0L
                                         val displayedDislikes = if (userVote == "DISLIKED") baseDislikes + 1 else baseDislikes
 
                                         val dislikeSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
@@ -900,12 +913,18 @@ fun VideoPlayerScreen(
                                     label = if (isSaved) "Guardado" else "Guardar",
                                     tint = if (isSaved) MaterialTheme.colorScheme.primary else null,
                                     onClick = {
-                                        isSaved = !isSaved
-                                        Toast.makeText(
-                                            context,
-                                            if (isSaved) "Guardado en Favoritos" else "Eliminado de Favoritos",
-                                            Toast.LENGTH_SHORT
-                                        ).show()
+                                        track?.let { t ->
+                                            val newState = !isSaved
+                                            isSaved = newState
+                                            scope.launch {
+                                                favoritesManager.toggleFavorite(t)
+                                                Toast.makeText(
+                                                    context,
+                                                    if (newState) "Guardado en Favoritos" else "Eliminado de Favoritos",
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
+                                        }
                                     }
                                 )
                             }
@@ -1021,18 +1040,26 @@ fun VideoPlayerScreen(
     }
 
     if (showCommentsSheet) {
-        val sheetState = rememberModalBottomSheetState()
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         val innerTube = remember { com.example.tsuki.network.TSukiInnerTubeClient.getInstance() }
+        val authManager = remember { com.example.tsuki.auth.YouTubeAuthManager(context) }
+        val cookie by authManager.cookie.collectAsStateWithLifecycle(initialValue = null)
+        val visitorData by authManager.visitorData.collectAsStateWithLifecycle(initialValue = null)
         var comments by remember(track?.id) { mutableStateOf<List<com.example.tsuki.network.TSukiInnerTubeClient.YouTubeComment>>(emptyList()) }
         var commentsLoading by remember(track?.id) { mutableStateOf(true) }
         var commentsError by remember(track?.id) { mutableStateOf(false) }
 
-        LaunchedEffect(track?.id) {
-            val vid = track?.videoId ?: track?.id ?: return@LaunchedEffect
+        LaunchedEffect(track?.id, cookie, visitorData) {
+            val rawId = track?.videoId ?: track?.id ?: ""
+            val vid = if (rawId.length == 11) rawId else rawId.takeIf { it.isNotBlank() } ?: return@LaunchedEffect
             commentsLoading = true
             commentsError = false
             withContext(Dispatchers.IO) {
-                try { comments = innerTube.fetchComments(vid) } catch (_: Exception) { commentsError = true }
+                try {
+                    val fetched = innerTube.fetchComments(vid, visitorData, cookie)
+                    comments = fetched
+                    if (fetched.isEmpty()) commentsError = true
+                } catch (_: Exception) { commentsError = true }
             }
             commentsLoading = false
         }
@@ -1093,7 +1120,7 @@ fun VideoPlayerScreen(
                             modifier = Modifier.fillMaxWidth().heightIn(max = 480.dp),
                             verticalArrangement = Arrangement.spacedBy(14.dp)
                         ) {
-                            items(comments, key = { it.id.ifBlank { it.text } }) { comment ->
+                            itemsIndexed(comments, key = { idx, c -> "cmt_${c.id}_${c.text.hashCode()}_$idx" }) { _, comment ->
                                 Row(
                                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                                     verticalAlignment = Alignment.Top

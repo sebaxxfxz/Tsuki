@@ -4,6 +4,7 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -56,8 +57,8 @@ fun PersonalizationScreen(
     val context = LocalContext.current
     val prefs = remember { HomePreferences(context) }
     val scope = rememberCoroutineScope()
-    val contentLanguage by prefs.contentLanguageTag.collectAsState(initial = "es")
-    val contentCountry by prefs.contentCountry.collectAsState(initial = "ES")
+    val contentLanguage by prefs.contentLanguageTag.collectAsStateWithLifecycle(initialValue = "es")
+    val contentCountry by prefs.contentCountry.collectAsStateWithLifecycle(initialValue = "ES")
 
     Scaffold(
         topBar = {
@@ -179,7 +180,7 @@ fun PersonalizationScreen(
                         )
                         Text("Idioma", style = MaterialTheme.typography.labelLarge)
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            items(contentLanguageOptions) { option ->
+                            items(contentLanguageOptions, key = { it.tag }) { option ->
                                 FilterChip(
                                     selected = contentLanguage == option.tag,
                                     onClick = { scope.launch { prefs.setContentLanguage(option.tag) } },
@@ -189,7 +190,7 @@ fun PersonalizationScreen(
                         }
                         Text("País (tendencias)", style = MaterialTheme.typography.labelLarge)
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            items(contentCountryOptions) { code ->
+                            items(contentCountryOptions, key = { it }) { code ->
                                 FilterChip(
                                     selected = contentCountry == code,
                                     onClick = { scope.launch { prefs.setContentCountry(code) } },
@@ -282,7 +283,7 @@ fun PersonalizationScreen(
                     Button(
                         onClick = {
                             scope.launch {
-                                TSukiNeuroEngine.resetBrain()
+                                TSukiNeuroEngine.resetBrain(context)
                                 resetSuccess = true
                                 showResetDialog = false
                             }

@@ -304,10 +304,36 @@ fun SettingsScreen(
             item {
                 SettingsGroup(title = "Importación") {
                     ActionPreference(
-                        title = "Importar playlist de Spotify",
-                        subtitle = "Cargar archivo JSON y sincronizar con YouTube Music",
+                        title = "Importar playlist",
+                        subtitle = "Spotify / ArchiveTune / EchoMusic (JSON, CSV, M3U, ZIP)",
                         icon = Icons.AutoMirrored.Rounded.QueueMusic,
                         onClick = onImportSpotifyClick
+                    )
+                }
+            }
+
+            item {
+                SettingsGroup(title = "Sincronización") {
+                    TogglePreference(
+                        title = "Sincronizar biblioteca YouTube",
+                        subtitle = "Me Gusta y tu música personal al iniciar",
+                        icon = Icons.Rounded.Public,
+                        checked = state.syncLikedEnabled,
+                        onCheckedChange = { viewModel.setSyncLikedEnabled(it) }
+                    )
+                    TogglePreference(
+                        title = "Sincronizar playlists de YT Music",
+                        subtitle = "Tus playlists creadas y guardadas",
+                        icon = Icons.AutoMirrored.Rounded.QueueMusic,
+                        checked = state.syncPlaylistsEnabled,
+                        onCheckedChange = { viewModel.setSyncPlaylistsEnabled(it) }
+                    )
+                    TogglePreference(
+                        title = "Sincronizar historial",
+                        subtitle = "Historial reciente de YouTube Music",
+                        icon = Icons.Rounded.Insights,
+                        checked = state.syncHistoryEnabled,
+                        onCheckedChange = { viewModel.setSyncHistoryEnabled(it) }
                     )
                 }
             }

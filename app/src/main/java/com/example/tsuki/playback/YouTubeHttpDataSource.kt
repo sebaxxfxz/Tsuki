@@ -79,6 +79,7 @@ class YouTubeHttpDataSource private constructor(
 
     @UnstableApi
     override fun open(dataSpec: DataSpec): Long {
+        transferInitializing(dataSpec)
         currentUri = dataSpec.uri
         val requestUserAgent = if (isYouTubeUri(dataSpec.uri)) resolveYouTubeUserAgent(dataSpec.uri) else userAgent
         val factory = OkHttpDataSource.Factory(sharedClient()).setUserAgent(requestUserAgent)
@@ -86,13 +87,16 @@ class YouTubeHttpDataSource private constructor(
         requestHeaders.putAll(defaultRequestProperties)
         if (isYouTubeUri(dataSpec.uri)) requestHeaders.putAll(youtubeHeaders())
         if (requestHeaders.isNotEmpty()) factory.setDefaultRequestProperties(requestHeaders)
-        dataSource = factory.createDataSource()
-        return try {
-            dataSource!!.open(dataSpec)
+        val newDataSource = factory.createDataSource()
+        dataSource = newDataSource
+        val bytesToRead = try {
+            newDataSource.open(dataSpec)
         } catch (e: HttpDataSource.InvalidResponseCodeException) {
             if (e.responseCode == 403) logForbidden(dataSpec)
             throw e
         }
+        transferStarted(dataSpec)
+        return bytesToRead
     }
 
     private fun logForbidden(dataSpec: DataSpec) {
@@ -108,12 +112,17 @@ class YouTubeHttpDataSource private constructor(
     }
 
     override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
-        return dataSource?.read(buffer, offset, length) ?: C.RESULT_END_OF_INPUT
+        val bytesRead = dataSource?.read(buffer, offset, length) ?: C.RESULT_END_OF_INPUT
+        if (bytesRead > 0) {
+            bytesTransferred(bytesRead)
+        }
+        return bytesRead
     }
 
     override fun close() {
         dataSource?.close()
         dataSource = null
+        transferEnded()
     }
 
     override fun getUri(): Uri? = currentUri

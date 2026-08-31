@@ -45,11 +45,18 @@ data class MediaTrack(
     val channelThumbnailUrls: List<String> = emptyList(),
     val durationSeconds: Int = (durationMs / 1000).toInt()
 ) {
+    val effectiveDurationSeconds: Int
+        get() = if (durationSeconds > 0) durationSeconds else (durationMs / 1000).toInt()
+
     val durationText: String?
-        get() = if (durationSeconds > 0) {
-            val h = durationSeconds / 3600
-            val m = (durationSeconds % 3600) / 60
-            val s = durationSeconds % 60
-            if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
-        } else null
+        get() {
+            val totalSec = effectiveDurationSeconds
+            return if (totalSec > 0) {
+                val h = totalSec / 3600
+                val m = (totalSec % 3600) / 60
+                val s = totalSec % 60
+                if (h > 0) String.format(java.util.Locale.US, "%d:%02d:%02d", h, m, s)
+                else String.format(java.util.Locale.US, "%d:%02d", m, s)
+            } else null
+        }
 }

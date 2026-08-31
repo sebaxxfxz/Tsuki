@@ -141,7 +141,8 @@ class YouTubeExtractor {
         } catch (e: Exception) {
             Log.w("YouTubeExtractor", "trending kiosk failed: ${e.message}")
         }
-        searchInternal(localizedFallbackQuery("tendencias música 2025", "trending music videos 2025"), isVideoSearch = true)
+        val currentYear = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
+        searchInternal(localizedFallbackQuery("tendencias música $currentYear", "trending music videos $currentYear"), isVideoSearch = true)
     }
 
     suspend fun getHomeMusic(): List<MediaTrack> = withContext(Dispatchers.IO) {
@@ -166,7 +167,8 @@ class YouTubeExtractor {
         } catch (e: Exception) {
             Log.w("YouTubeExtractor", "trending_music kiosk failed: ${e.message}")
         }
-        searchInternal(localizedFallbackQuery("éxitos musicales 2025", "top hits 2025 official music"), isVideoSearch = false)
+        val currentYear = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
+        searchInternal(localizedFallbackQuery("éxitos musicales $currentYear", "top hits $currentYear official music"), isVideoSearch = false)
     }
 
     suspend fun searchMusic(query: String): List<MediaTrack> = withContext(Dispatchers.IO) {
@@ -279,17 +281,19 @@ class YouTubeExtractor {
                 if (msg.contains("reloaded") || msg.contains("needs to be reloaded")) {
                     Log.w("YouTubeExtractor", "page reload error, retry with youtu.be for $videoId")
                     try {
-                        val hlTag = TSukiContentLocale.hl()
-                        val languagePart = hlTag.substringBefore('-')
-                        val regionPart = hlTag.substringAfter('-', "").takeIf { it.isNotEmpty() }
-                        NewPipe.init(
-                            NewPipe.getDownloader(),
-                            if (regionPart != null)
-                                org.schabi.newpipe.extractor.localization.Localization(languagePart, regionPart)
-                            else
-                                org.schabi.newpipe.extractor.localization.Localization(languagePart),
-                            org.schabi.newpipe.extractor.localization.ContentCountry(TSukiContentLocale.gl())
-                        )
+                        synchronized(NewPipe::class.java) {
+                            val hlTag = TSukiContentLocale.hl()
+                            val languagePart = hlTag.substringBefore('-')
+                            val regionPart = hlTag.substringAfter('-', "").takeIf { it.isNotEmpty() }
+                            NewPipe.init(
+                                NewPipe.getDownloader(),
+                                if (regionPart != null)
+                                    org.schabi.newpipe.extractor.localization.Localization(languagePart, regionPart)
+                                else
+                                    org.schabi.newpipe.extractor.localization.Localization(languagePart),
+                                org.schabi.newpipe.extractor.localization.ContentCountry(TSukiContentLocale.gl())
+                            )
+                        }
                     } catch (ignore: Exception) {}
                     StreamInfo.getInfo(service, "https://youtu.be/$videoId")
                 } else throw e
@@ -483,12 +487,14 @@ class YouTubeExtractor {
     private fun StreamInfoItem.toMediaTrack(isVideoSearch: Boolean): MediaTrack? {
         return try {
             val rawUrl = url ?: return null
-            val videoId = when {
-                rawUrl.contains("watch?v=") -> rawUrl.substringAfter("watch?v=").substringBefore("&")
-                rawUrl.contains("youtu.be/") -> rawUrl.substringAfter("youtu.be/").substringBefore("?")
-                rawUrl.contains("/shorts/") -> rawUrl.substringAfter("/shorts/").substringBefore("?")
-                else -> rawUrl.substringAfterLast("/").substringBefore("?")
-            }.take(11)
+            val videoIdRegex = Regex("(?:[?&]v=|youtu\\.be/|/shorts/|/embed/|/live/|/v/)([A-Za-z0-9_-]{11})")
+            val videoId = videoIdRegex.find(rawUrl)?.groupValues?.get(1)
+                ?: when {
+                    rawUrl.contains("watch?v=") -> rawUrl.substringAfter("watch?v=").substringBefore("&")
+                    rawUrl.contains("youtu.be/") -> rawUrl.substringAfter("youtu.be/").substringBefore("?")
+                    rawUrl.contains("/shorts/") -> rawUrl.substringAfter("/shorts/").substringBefore("?")
+                    else -> rawUrl.substringAfterLast("/").substringBefore("?").substringBefore("&")
+                }.take(11)
             if (videoId.length != 11) return null
             val title = name ?: "Unknown"
             val artist = uploaderName ?: "YouTube"

@@ -56,10 +56,13 @@ object SimpMusicLyricsProvider : LyricsProvider {
 
             for (i in 0 until dataArr.length()) {
                 val item = dataArr.optJSONObject(i) ?: continue
+                val ttml = item.optString("ttml", "").takeIf { it.isNotBlank() }
+                    ?: item.optString("ttmlLyrics", "").takeIf { it.isNotBlank() }
                 val rich = item.optString("richSyncLyrics", "").takeIf { it.isNotBlank() }
+                val wordByWord = item.optString("lrcWordByWord", "").takeIf { it.isNotBlank() }
                 val synced = item.optString("syncedLyrics", "").takeIf { it.isNotBlank() }
                 val plain = item.optString("plainLyrics", "").takeIf { it.isNotBlank() }
-                val lyrics = rich ?: synced ?: plain ?: continue
+                val lyrics = ttml ?: rich ?: wordByWord ?: synced ?: plain ?: continue
 
                 val itemDuration = item.optInt("duration", 0)
                 if (duration > 0 && itemDuration > 0) {

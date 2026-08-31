@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -116,8 +117,7 @@ fun RecognitionScreen(
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
                     titleContentColor = MaterialTheme.colorScheme.onBackground
-                ),
-                modifier = Modifier.statusBarsPadding()
+                )
             )
         }
     ) { inner ->
@@ -137,7 +137,16 @@ fun RecognitionScreen(
                 Surface(
                     shape = CircleShape,
                     color = MaterialTheme.colorScheme.primaryContainer,
-                    modifier = Modifier.size(110.dp)
+                    modifier = Modifier
+                        .size(110.dp)
+                        .clickable(enabled = !isListening) {
+                            val perm = android.Manifest.permission.RECORD_AUDIO
+                            if (androidx.core.content.ContextCompat.checkSelfPermission(ctx, perm) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                                scope.launch { startListening() }
+                            } else {
+                                pendingPermission = true
+                            }
+                        }
                 ) {
                     Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                         Icon(
@@ -190,7 +199,7 @@ fun RecognitionScreen(
             }
 
             if (errorText != null) {
-                Text(errorText!!, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
+                Text(errorText ?: "", color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
             }
 
             Spacer(Modifier.height(24.dp))
