@@ -1,13 +1,18 @@
 package com.example.tsuki.ui.player
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -22,6 +27,9 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -100,8 +108,18 @@ fun EqualizerDialog(
         val levels = EQ_PRESETS[name] ?: return
         val count = if (bandLevels.isEmpty()) 5 else bandLevels.size
         for (i in 0 until count) {
-            bandLevels[i] = levels[i % levels.size]
-            AudioEqualizerHelper.setBandLevel(i, bandLevels[i])
+            val value = if (count == levels.size) {
+                levels[i]
+            } else {
+                val fraction = i.toFloat() / (count - 1).coerceAtLeast(1)
+                val presetIdxFloat = fraction * (levels.size - 1)
+                val lowerIdx = presetIdxFloat.toInt().coerceIn(0, levels.size - 1)
+                val upperIdx = (lowerIdx + 1).coerceAtMost(levels.size - 1)
+                val t = presetIdxFloat - lowerIdx
+                (levels[lowerIdx] + t * (levels[upperIdx] - levels[lowerIdx])).toInt()
+            }
+            bandLevels[i] = value
+            AudioEqualizerHelper.setBandLevel(i, value)
         }
         persistBands()
     }
@@ -182,32 +200,18 @@ fun EqualizerDialog(
                                     color = MaterialTheme.colorScheme.primary,
                                     maxLines = 1
                                 )
-                                Box(
-                                    modifier = Modifier.weight(1f).padding(vertical = 6.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Slider(
-                                        value = level.toFloat(),
-                                        onValueChange = { value ->
-                                            bandLevels[index] = value.toInt()
-                                            AudioEqualizerHelper.setBandLevel(index, value.toInt())
-                                            if (selectedPreset != "custom") selectedPreset = "custom"
-                                        },
-                                        onValueChangeFinished = { persistBands() },
-                                        valueRange = minLevel.toFloat()..maxLevel.toFloat(),
-                                        enabled = eqEnabled,
-                                        colors = SliderDefaults.colors(
-                                            thumbColor = MaterialTheme.colorScheme.primary,
-                                            activeTrackColor = MaterialTheme.colorScheme.primary
-                                        ),
-                                        modifier = Modifier
-                                            .graphicsLayer {
-                                                rotationZ = 270f
-                                                transformOrigin = androidx.compose.ui.graphics.TransformOrigin.Center
-                                            }
-                                            .width(160.dp)
-                                    )
-                                }
+                                VerticalEqSlider(
+                                    value = level.toFloat(),
+                                    onValueChange = { value ->
+                                        bandLevels[index] = value.toInt()
+                                        AudioEqualizerHelper.setBandLevel(index, value.toInt())
+                                        if (selectedPreset != "custom") selectedPreset = "custom"
+                                    },
+                                    onValueChangeFinished = { persistBands() },
+                                    valueRange = minLevel.toFloat()..maxLevel.toFloat(),
+                                    enabled = eqEnabled,
+                                    modifier = Modifier.weight(1f).padding(vertical = 4.dp)
+                                )
                                 Text(
                                     text = formatFreq(capabilities.centerFreqMiliHz.getOrNull(index) ?: 0),
                                     style = MaterialTheme.typography.labelSmall,
@@ -350,3 +354,90 @@ private fun formatFreq(miliHz: Int): String {
 
 private fun formatDb(db: Float): String =
     String.format(Locale.US, "%+.1fdB", db)
+
+@Composable
+private fun VerticalEqSlider(
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    onValueChangeFinished: () -> Unit,
+    valueRange: ClosedFloatingPointRange<Float>,
+    enabled: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val trackBgColor = MaterialTheme.colorScheme.surfaceContainerHighest
+    val thumbColor = if (enabled) primaryColor else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+    val activeTrackColor = if (enabled) primaryColor else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.24f)
+
+    BoxWithConstraints(
+        modifier = modifier
+            .fillMaxHeight()
+            .width(44.dp)
+            .then(
+                if (enabled) {
+                    Modifier.pointerInput(valueRange) {
+                        detectVerticalDragGestures(
+                            onDragEnd = onValueChangeFinished,
+                            onDragCancel = onValueChangeFinished
+                        ) { change, _ ->
+                            change.consume()
+                            val h = size.height.toFloat()
+                            if (h > 0) {
+                                val fraction = (1f - (change.position.y / h)).coerceIn(0f, 1f)
+                                val newValue = valueRange.start + fraction * (valueRange.endInclusive - valueRange.start)
+                                onValueChange(newValue)
+                            }
+                        }
+                    }.pointerInput(valueRange) {
+                        detectTapGestures { offset ->
+                            val h = size.height.toFloat()
+                            if (h > 0) {
+                                val fraction = (1f - (offset.y / h)).coerceIn(0f, 1f)
+                                val newValue = valueRange.start + fraction * (valueRange.endInclusive - valueRange.start)
+                                onValueChange(newValue)
+                                onValueChangeFinished()
+                            }
+                        }
+                    }
+                } else Modifier
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        val totalRange = (valueRange.endInclusive - valueRange.start).takeIf { it > 0f } ?: 1f
+        val fraction = ((value - valueRange.start) / totalRange).coerceIn(0f, 1f)
+
+        Canvas(modifier = Modifier.fillMaxSize().padding(vertical = 12.dp)) {
+            val w = size.width
+            val h = size.height
+            val trackWidth = 6.dp.toPx()
+            val thumbRadius = 9.dp.toPx()
+            val trackX = w / 2f
+
+            drawLine(
+                color = trackBgColor,
+                start = Offset(trackX, 0f),
+                end = Offset(trackX, h),
+                strokeWidth = trackWidth,
+                cap = StrokeCap.Round
+            )
+
+            val zeroFraction = ((0f - valueRange.start) / totalRange).coerceIn(0f, 1f)
+            val zeroY = h * (1f - zeroFraction)
+            val thumbY = h * (1f - fraction)
+
+            drawLine(
+                color = activeTrackColor,
+                start = Offset(trackX, zeroY),
+                end = Offset(trackX, thumbY),
+                strokeWidth = trackWidth,
+                cap = StrokeCap.Round
+            )
+
+            drawCircle(
+                color = thumbColor,
+                radius = thumbRadius,
+                center = Offset(trackX, thumbY)
+            )
+        }
+    }
+}

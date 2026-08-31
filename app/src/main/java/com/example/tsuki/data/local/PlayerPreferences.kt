@@ -45,6 +45,9 @@ class PlayerPreferences(private val context: Context) {
         private val KEY_PROGRESS_BAR_STYLE = stringPreferencesKey("progress_bar_style")
         private val KEY_SEEK_EXTRA = stringPreferencesKey("seek_extra_seconds")
         private val KEY_LYRICS_SYNC_OFFSET = intPreferencesKey("lyrics_sync_offset_ms")
+        private val KEY_SYNC_LIKED = booleanPreferencesKey("sync_liked_enabled")
+        private val KEY_SYNC_PLAYLISTS = booleanPreferencesKey("sync_playlists_enabled")
+        private val KEY_SYNC_HISTORY = booleanPreferencesKey("sync_history_enabled")
 
         const val LYRICS_SYNC_OFFSET_MIN = -2000
         const val LYRICS_SYNC_OFFSET_MAX = 2000
@@ -137,6 +140,10 @@ class PlayerPreferences(private val context: Context) {
 
     val seekExtraSeconds: Flow<Boolean> = context.playerDataStore.data.map { it[KEY_SEEK_EXTRA] == "true" }
 
+    val syncLikedEnabled: Flow<Boolean> = context.playerDataStore.data.map { it[KEY_SYNC_LIKED] ?: true }
+    val syncPlaylistsEnabled: Flow<Boolean> = context.playerDataStore.data.map { it[KEY_SYNC_PLAYLISTS] ?: true }
+    val syncHistoryEnabled: Flow<Boolean> = context.playerDataStore.data.map { it[KEY_SYNC_HISTORY] ?: true }
+
     suspend fun setCrossfadeEnabled(enabled: Boolean) {
         context.playerDataStore.edit { it[KEY_CROSSFADE_ENABLED] = enabled }
     }
@@ -215,5 +222,17 @@ class PlayerPreferences(private val context: Context) {
 
     suspend fun setSeekExtraSeconds(enabled: Boolean) {
         context.playerDataStore.edit { it[KEY_SEEK_EXTRA] = enabled.toString() }
+    }
+
+    suspend fun setSyncLikedEnabled(enabled: Boolean) {
+        context.playerDataStore.edit { it[KEY_SYNC_LIKED] = enabled }
+    }
+
+    suspend fun setSyncPlaylistsEnabled(enabled: Boolean) {
+        context.playerDataStore.edit { it[KEY_SYNC_PLAYLISTS] = enabled }
+    }
+
+    suspend fun setSyncHistoryEnabled(enabled: Boolean) {
+        context.playerDataStore.edit { it[KEY_SYNC_HISTORY] = enabled }
     }
 }

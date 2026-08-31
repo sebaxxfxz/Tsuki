@@ -179,6 +179,11 @@ class TogetherServer(
         } catch (t: Throwable) { onEvent?.invoke(TogetherServerEvent.Error("Client loop failed", t)) }
         finally {
             conns.remove(pid)
+            guard.withLock {
+                if (activeAuthorityId == pid) {
+                    activeAuthorityId = null
+                }
+            }
             onEvent?.invoke(TogetherServerEvent.ParticipantLeft(pid, "Disconnected"))
             runCatching { close() }
         }

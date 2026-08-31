@@ -317,11 +317,34 @@ class DownloadEngine(private val context: Context) {
 
             if (videoTrackIndex == -1 || videoFormat == null) return false
 
+            val videoMime = videoFormat.getString(MediaFormat.KEY_MIME) ?: ""
+            val audioMime = if (audioTrackIndex != -1 && audioFormat != null) audioFormat.getString(MediaFormat.KEY_MIME) ?: "" else ""
+
+            if (videoMime.contains("webm", true) || videoMime.contains("vp9", true) || videoMime.contains("vp8", true) ||
+                audioMime.contains("opus", true) || audioMime.contains("vorbis", true)) {
+                return false
+            }
+
             if (outputFile.exists()) outputFile.delete()
-            muxer = MediaMuxer(outputFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
-            val muxerVideoTrack = muxer.addTrack(videoFormat)
+            muxer = try {
+                MediaMuxer(outputFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+            } catch (e: Exception) {
+                Log.e(TAG, "MediaMuxer init failed", e)
+                return false
+            }
+            val muxerVideoTrack = try {
+                muxer.addTrack(videoFormat)
+            } catch (e: Exception) {
+                Log.e(TAG, "muxer add video track failed", e)
+                return false
+            }
             val muxerAudioTrack = if (audioTrackIndex != -1 && audioFormat != null) {
-                muxer.addTrack(audioFormat)
+                try {
+                    muxer.addTrack(audioFormat)
+                } catch (e: Exception) {
+                    Log.e(TAG, "muxer add audio track failed", e)
+                    -1
+                }
             } else -1
 
             muxer.start()
@@ -372,6 +395,7 @@ class DownloadEngine(private val context: Context) {
             return true
         } catch (e: Exception) {
             Log.e(TAG, "muxAudioVideo failed", e)
+            if (outputFile.exists()) outputFile.delete()
             return false
         } finally {
             try { muxer?.release() } catch (_: Exception) {}

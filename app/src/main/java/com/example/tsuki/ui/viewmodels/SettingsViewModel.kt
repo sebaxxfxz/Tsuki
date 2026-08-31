@@ -40,7 +40,10 @@ data class SettingsUiState(
     val lyricsLineBlur: Boolean = true,
     val progressBarStyle: ProgressBarStyle = ProgressBarStyle.STANDARD,
     val seekExtraSeconds: Boolean = false,
-    val lyricsSyncOffsetMs: Int = 0
+    val lyricsSyncOffsetMs: Int = 0,
+    val syncLikedEnabled: Boolean = true,
+    val syncPlaylistsEnabled: Boolean = true,
+    val syncHistoryEnabled: Boolean = true
 )
 
 private data class PlayerSettingsData(
@@ -147,6 +150,12 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         val syncOffset: Int
     )
 
+    private data class SyncSettingsData(
+        val liked: Boolean,
+        val playlists: Boolean,
+        val history: Boolean
+    )
+
     private val appearanceSettings = combine(
         appearancePrefs.appThemeMode,
         appearancePrefs.darkMode,
@@ -166,7 +175,13 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         LyricsDisplayData(textSize, lineBlur, barStyle, seekExtra, syncOffset)
     }
 
-    val uiState: StateFlow<SettingsUiState> = combine(
+    private val syncSettings = combine(
+        playerPrefs.syncLikedEnabled,
+        playerPrefs.syncPlaylistsEnabled,
+        playerPrefs.syncHistoryEnabled
+    ) { liked, playlists, history -> SyncSettingsData(liked, playlists, history) }
+
+    private val baseState = combine(
         playerSettings,
         homeSettings,
         audioDataSettings,
@@ -195,6 +210,14 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             progressBarStyle = l.progressBarStyle,
             seekExtraSeconds = l.seekExtra,
             lyricsSyncOffsetMs = l.syncOffset
+        )
+    }
+
+    val uiState: StateFlow<SettingsUiState> = combine(baseState, syncSettings) { base, s ->
+        base.copy(
+            syncLikedEnabled = s.liked,
+            syncPlaylistsEnabled = s.playlists,
+            syncHistoryEnabled = s.history
         )
     }.stateIn(
         scope = viewModelScope,
@@ -340,6 +363,30 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     else -> ProgressBarStyle.STANDARD
                 }
             )
+        }
+    }
+
+    fun setSyncLikedEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            playerPrefs.setSyncLikedEnabled(enabled)
+            try { com.example.tsuki.ui.screens.MusicHomeMemory.invalidate() } catch (_: Exception) {}
+            try { com.example.tsuki.ui.screens.MusicRefreshBus.trigger() } catch (_: Exception) {}
+        }
+    }
+
+    fun setSyncPlaylistsEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            playerPrefs.setSyncPlaylistsEnabled(enabled)
+            try { com.example.tsuki.ui.screens.MusicHomeMemory.invalidate() } catch (_: Exception) {}
+            try { com.example.tsuki.ui.screens.MusicRefreshBus.trigger() } catch (_: Exception) {}
+        }
+    }
+
+    fun setSyncHistoryEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            playerPrefs.setSyncHistoryEnabled(enabled)
+            try { com.example.tsuki.ui.screens.MusicHomeMemory.invalidate() } catch (_: Exception) {}
+            try { com.example.tsuki.ui.screens.MusicRefreshBus.trigger() } catch (_: Exception) {}
         }
     }
 }

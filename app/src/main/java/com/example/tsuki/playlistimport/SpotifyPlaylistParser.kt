@@ -46,14 +46,25 @@ object SpotifyPlaylistParser {
                     }
 
 
-                    val name = root["name"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() } ?: defaultName
+                    val name = root["name"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
+                        ?: root["title"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() } ?: defaultName
                     val tracksObj = root["tracks"] as? JsonObject
                     val items = (tracksObj?.get("items") as? JsonArray)
                         ?: (root["items"] as? JsonArray)
                         ?: (root["tracks"] as? JsonArray)
+                        ?: (root["songs"] as? JsonArray)
+                        ?: (root["data"] as? JsonArray)
                         ?: JsonArray(emptyList())
 
-                    val songs = parseWebPlaylistItems(items)
+                    var songs = parseWebPlaylistItems(items)
+                    if (songs.isEmpty() && items.size == 0) {
+                        val singleTrack = root["track"] as? JsonObject
+                        if (singleTrack != null) songs = parseWebPlaylistItems(JsonArray(listOf(singleTrack)))
+                    }
+                    if (songs.isEmpty()) {
+                        val generic = parseGenericJsonArray(root)
+                        if (generic.isNotEmpty()) songs = generic
+                    }
                     SpotifyParsedResult(name, songs)
                 }
                 else -> SpotifyParsedResult(defaultName, emptyList())
@@ -61,6 +72,16 @@ object SpotifyPlaylistParser {
         }.getOrElse {
             SpotifyParsedResult(defaultName, emptyList())
         }
+    }
+
+    private fun parseGenericJsonArray(root: JsonObject): List<ImportedSong> {
+        val candidates = listOfNotNull(
+            root["songs"] as? JsonArray,
+            root["data"] as? JsonArray,
+            root["tracks"] as? JsonArray,
+            root["items"] as? JsonArray
+        ).firstOrNull() ?: return emptyList()
+        return parseSongArray(candidates)
     }
 
     private fun parseSongArray(array: JsonArray): List<ImportedSong> {
@@ -72,24 +93,31 @@ object SpotifyPlaylistParser {
                 ?: item["track"]?.jsonPrimitive?.content
                 ?: item["name"]?.jsonPrimitive?.content
                 ?: item["title"]?.jsonPrimitive?.content
+                ?: item["song"]?.jsonPrimitive?.content
                 ?: ""
 
             if (title.isBlank()) continue
 
-            val artistStr = item["Artist Name(s)"]?.jsonPrimitive?.content
-                ?: item["artistName"]?.jsonPrimitive?.content
-                ?: item["artist"]?.jsonPrimitive?.content
-                ?: item["artists"]?.jsonPrimitive?.content
-                ?: ""
+            val artistsArray = (item["artists"] as? JsonArray)?.mapNotNull {
+                (it as? JsonObject)?.get("name")?.jsonPrimitive?.content?.trim()?.takeIf { s -> s.isNotBlank() }
+                    ?: (it as? kotlinx.serialization.json.JsonPrimitive)?.content?.trim()?.takeIf { s -> s.isNotBlank() }
+            }
 
-            val artists = if (artistStr.isNotBlank()) {
-                artistStr.split(",", ";", "|").map { it.trim() }.filter { it.isNotEmpty() }
+            val artists = if (!artistsArray.isNullOrEmpty()) {
+                artistsArray
             } else {
-                emptyList()
+                val artistStr = item["Artist Name(s)"]?.jsonPrimitive?.content
+                    ?: item["artistName"]?.jsonPrimitive?.content
+                    ?: item["artist"]?.jsonPrimitive?.content
+                    ?: ""
+                if (artistStr.isNotBlank()) {
+                    artistStr.split(",", ";", "|").map { it.trim() }.filter { it.isNotEmpty() }
+                } else emptyList()
             }
 
             val album = item["Album Name"]?.jsonPrimitive?.content
                 ?: item["albumName"]?.jsonPrimitive?.content
+                ?: (item["album"] as? JsonObject)?.get("name")?.jsonPrimitive?.content
                 ?: item["album"]?.jsonPrimitive?.content
 
             val durationMs = item["Duration (ms)"]?.jsonPrimitive?.intOrNull
@@ -112,13 +140,21 @@ object SpotifyPlaylistParser {
                 ?: ""
             if (title.isBlank()) continue
 
-            val artistStr = trackObj["artistName"]?.jsonPrimitive?.content
-                ?: trackObj["artist"]?.jsonPrimitive?.content
-                ?: ""
+            val artistsArray = (trackObj["artists"] as? JsonArray)?.mapNotNull {
+                (it as? JsonObject)?.get("name")?.jsonPrimitive?.content?.trim()?.takeIf { s -> s.isNotBlank() }
+                    ?: (it as? kotlinx.serialization.json.JsonPrimitive)?.content?.trim()?.takeIf { s -> s.isNotBlank() }
+            }
 
-            val artists = if (artistStr.isNotBlank()) {
-                artistStr.split(",", ";", "|").map { it.trim() }.filter { it.isNotEmpty() }
-            } else emptyList()
+            val artists = if (!artistsArray.isNullOrEmpty()) {
+                artistsArray
+            } else {
+                val artistStr = trackObj["artistName"]?.jsonPrimitive?.content
+                    ?: trackObj["artist"]?.jsonPrimitive?.content
+                    ?: ""
+                if (artistStr.isNotBlank()) {
+                    artistStr.split(";", "|").map { it.trim() }.filter { it.isNotEmpty() }
+                } else emptyList()
+            }
 
             val album = trackObj["albumName"]?.jsonPrimitive?.content
                 ?: trackObj["album"]?.jsonPrimitive?.content

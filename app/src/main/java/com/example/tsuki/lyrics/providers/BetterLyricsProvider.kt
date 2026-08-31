@@ -31,10 +31,11 @@ object BetterLyricsProvider : LyricsProvider {
             val cleanArtist = LyricsSanitizer.cleanArtist(artist)
             val encodedTitle = URLEncoder.encode(cleanTitle, "UTF-8")
             val encodedArtist = URLEncoder.encode(cleanArtist, "UTF-8")
+            val durParam = if (duration > 0) "&duration=$duration" else ""
 
             val endpoints = listOf(
-                "https://lyrics-api.boidu.dev/getLyrics?title=$encodedTitle&artist=$encodedArtist&duration=$duration",
-                "https://lyrics-api.boidu.dev/kugou/getLyrics?title=$encodedTitle&artist=$encodedArtist&duration=$duration"
+                "https://lyrics-api.boidu.dev/getLyrics?title=$encodedTitle&artist=$encodedArtist$durParam",
+                "https://lyrics-api.boidu.dev/kugou/getLyrics?title=$encodedTitle&artist=$encodedArtist$durParam"
             )
 
             for (url in endpoints) {

@@ -2,6 +2,7 @@ package com.example.tsuki.ui.screens
 
 import android.content.Intent
 import androidx.compose.animation.animateContentSize
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -53,7 +54,6 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -91,8 +91,8 @@ fun TogetherScreen(
     val clipboard = LocalClipboardManager.current
     val repository = remember { MusicTogetherRepository.getInstance(context) }
     val scope = rememberCoroutineScope()
-    val prefs by repository.preferences.collectAsState(initial = null)
-    val session by repository.sessionState.collectAsState(initial = TogetherSessionState.Idle)
+    val prefs by repository.preferences.collectAsStateWithLifecycle(initialValue = null)
+    val session by repository.sessionState.collectAsStateWithLifecycle(initialValue = TogetherSessionState.Idle)
     var showJoinDialog by remember { mutableStateOf(false) }
     var joinMode by remember { mutableStateOf(MusicTogetherConnectionMode.LAN) }
     var joinPrefill by remember { mutableStateOf("") }

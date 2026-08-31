@@ -29,7 +29,7 @@ class LyricsDatabase private constructor(context: Context) : SQLiteOpenHelper(co
 
     fun getLyrics(videoId: String): String? {
         val db = readableDatabase
-        val cursor = db.query(
+        return db.query(
             "lyrics",
             arrayOf("lyrics_raw"),
             "video_id = ?",
@@ -37,16 +37,13 @@ class LyricsDatabase private constructor(context: Context) : SQLiteOpenHelper(co
             null,
             null,
             null
-        )
-        var lyrics: String? = null
-        if (cursor.moveToFirst()) {
-            lyrics = cursor.getString(0)
+        ).use { cursor ->
+            if (cursor.moveToFirst()) cursor.getString(0) else null
         }
-        cursor.close()
-        return lyrics
     }
 
     fun saveLyrics(videoId: String, title: String, artist: String, raw: String, source: String) {
+        if (videoId.isBlank() || raw.isBlank() || raw == "LYRICS_NOT_FOUND") return
         val db = writableDatabase
         val values = ContentValues().apply {
             put("video_id", videoId)

@@ -83,8 +83,8 @@ fun ReorderableQueueList(
 
 
     LaunchedEffect(queueIndex) {
-        if (queueIndex > 3 && queueIndex <= queue.lastIndex) {
-            lazyListState.scrollToItem(queueIndex - 1)
+        if (queueIndex in queue.indices) {
+            lazyListState.animateScrollToItem((queueIndex - 1).coerceAtLeast(0))
         }
     }
 
@@ -103,8 +103,8 @@ fun ReorderableQueueList(
             contentPadding = PaddingValues(vertical = 2.dp),
             modifier = Modifier.fillMaxSize()
         ) {
-        itemsIndexed(queue, key = { _, item -> item.id }) { index, item ->
-            ReorderableItem(reorderableState, key = item.id) { isDragging ->
+        itemsIndexed(queue, key = { index, item -> "${item.id}_$index" }) { index, item ->
+            ReorderableItem(reorderableState, key = "${item.id}_$index") { isDragging ->
                 val isCurrent = index == queueIndex
                 val rowShape = RoundedCornerShape(18.dp)
                 val currentIndex by androidx.compose.runtime.rememberUpdatedState(index)
@@ -185,7 +185,7 @@ fun ReorderableQueueList(
                                 clip = true
                             }
                             .background(containerColor)
-                            .clickable { playerController.playQueue(queue, index) }
+                            .clickable { playerController.playQueueInternal(currentIndex, 0L) }
                             .padding(horizontal = 12.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(12.dp)

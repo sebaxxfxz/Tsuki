@@ -38,9 +38,10 @@ object YouLyPlusLyricsProvider : LyricsProvider {
         val encodedTitle = URLEncoder.encode(cleanTitle, "UTF-8")
         val encodedArtist = URLEncoder.encode(cleanArtist, "UTF-8")
 
+        val durParam = if (duration > 0) "&duration=$duration" else ""
         for (base in mirrors) {
             try {
-                val url = "${base}v2/lyrics/get?title=$encodedTitle&artist=$encodedArtist&duration=$duration"
+                val url = "${base}v2/lyrics/get?title=$encodedTitle&artist=$encodedArtist$durParam"
                 val request = Request.Builder()
                     .url(url)
                     .addHeader("User-Agent", "TSuki/1.0")
@@ -51,7 +52,10 @@ object YouLyPlusLyricsProvider : LyricsProvider {
                     response.body?.string()
                 } ?: continue
                 val json = JSONObject(body)
-                val lrc = json.optString("lrc", "").takeIf { it.isNotBlank() }
+                val lrc = json.optString("richSyncLyrics", "").takeIf { it.isNotBlank() }
+                    ?: json.optString("ttml", "").takeIf { it.isNotBlank() }
+                    ?: json.optString("lrcWordByWord", "").takeIf { it.isNotBlank() }
+                    ?: json.optString("lrc", "").takeIf { it.isNotBlank() }
                     ?: json.optString("syncedLyrics", "").takeIf { it.isNotBlank() }
                     ?: json.optString("lyrics", "").takeIf { it.isNotBlank() }
                     ?: json.optString("plainLyrics", "").takeIf { it.isNotBlank() }

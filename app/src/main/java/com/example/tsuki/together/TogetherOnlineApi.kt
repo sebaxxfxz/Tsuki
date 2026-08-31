@@ -36,7 +36,7 @@ class TogetherOnlineApi(private val baseUrl: String, private val bearerToken: St
                 if (i < max && retryable) delay(delayMs * i) else throw t
             }
         }
-        throw last!!
+        throw last ?: IllegalStateException("Retry block failed to execute")
     }
 
     @Serializable private data class ErrBody(val ok: Boolean? = null, val error: String? = null, val code: String? = null)

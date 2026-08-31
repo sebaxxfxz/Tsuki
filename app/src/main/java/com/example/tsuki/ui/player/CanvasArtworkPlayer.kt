@@ -17,7 +17,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.media3.common.MediaItem
@@ -88,7 +88,9 @@ fun CanvasArtworkPlayer(
     DisposableEffect(textureView) {
         val view = textureView
         if (view != null) player.setVideoTextureView(view)
-        onDispose { }
+        onDispose {
+            if (view != null) player.clearVideoTextureView(view)
+        }
     }
 
     DisposableEffect(player) {
@@ -141,8 +143,15 @@ fun CanvasArtworkPlayer(
 
     DisposableEffect(lifecycleOwner, player, hasFailed) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME && !hasFailed && currentIsPlaying) {
-                player.play()
+            when (event) {
+                androidx.lifecycle.Lifecycle.Event.ON_RESUME -> {
+                    if (!hasFailed && currentIsPlaying) player.play()
+                }
+                androidx.lifecycle.Lifecycle.Event.ON_PAUSE,
+                androidx.lifecycle.Lifecycle.Event.ON_STOP -> {
+                    player.pause()
+                }
+                else -> Unit
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)

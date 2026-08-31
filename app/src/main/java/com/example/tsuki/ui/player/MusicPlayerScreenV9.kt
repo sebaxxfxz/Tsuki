@@ -2,6 +2,7 @@ package com.example.tsuki.ui.player
 
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
@@ -52,7 +53,6 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.compose.runtime.collectAsState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -117,10 +117,12 @@ fun MusicPlayerScreenV9(
     var showAodMode by remember { mutableStateOf(false) }
     var isFavorite by remember { mutableStateOf(false) }
     val favoritesManager = remember { com.example.tsuki.data.local.FavoritesManager.getInstance(context) }
+    val playerPrefs = remember { com.example.tsuki.data.local.PlayerPreferences(context) }
+    val syncLikedEnabled by playerPrefs.syncLikedEnabled.collectAsStateWithLifecycle(initialValue = true)
     val authManager = remember { com.example.tsuki.auth.YouTubeAuthManager(context) }
     val innerTubeClient = remember { com.example.tsuki.network.TSukiInnerTubeClient.getInstance() }
-    val sessionCookie by authManager.cookie.collectAsState(initial = null)
-    val sessionVisitor by authManager.visitorData.collectAsState(initial = null)
+    val sessionCookie by authManager.cookie.collectAsStateWithLifecycle(initialValue = null)
+    val sessionVisitor by authManager.visitorData.collectAsStateWithLifecycle(initialValue = null)
     val controllerState by playerController.uiState.collectAsStateWithLifecycle()
     val downloadEngine = playerController.downloadEngine
     var isDownloaded by remember(track.id) { mutableStateOf(false) }
@@ -139,7 +141,7 @@ fun MusicPlayerScreenV9(
             val nowFavorite = favoritesManager.toggleFavorite(track)
             isFavorite = nowFavorite
             val cookie = sessionCookie
-            if (!cookie.isNullOrBlank()) {
+            if (syncLikedEnabled && !cookie.isNullOrBlank()) {
                 val ok = innerTubeClient.setLikedVideo(track.videoId ?: track.id, nowFavorite, cookie, sessionVisitor)
                 android.widget.Toast.makeText(
                     context,
@@ -148,6 +150,12 @@ fun MusicPlayerScreenV9(
                         ok -> "Quitado de Me gusta de YouTube Music"
                         else -> "Guardado solo en el dispositivo"
                     },
+                    android.widget.Toast.LENGTH_SHORT
+                ).show()
+            } else {
+                android.widget.Toast.makeText(
+                    context,
+                    if (nowFavorite) "Añadido a Me gusta local" else "Quitado de Me gusta local",
                     android.widget.Toast.LENGTH_SHORT
                 ).show()
             }
@@ -230,7 +238,7 @@ fun MusicPlayerScreenV9(
                     ) {
                         Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
                             val seekPrefs = remember { com.example.tsuki.data.local.PlayerPreferences(context) }
-                            val seekExtra by seekPrefs.seekExtraSeconds.collectAsState(initial = false)
+                            val seekExtra by seekPrefs.seekExtraSeconds.collectAsStateWithLifecycle(initialValue = false)
                             AnimatedContent(
                                 targetState = selectedTab,
                                 transitionSpec = { fadeIn() togetherWith fadeOut() },
@@ -317,7 +325,7 @@ fun MusicPlayerScreenV9(
                         verticalArrangement = Arrangement.SpaceBetween
                     ) {
                         val seekPrefs = remember { com.example.tsuki.data.local.PlayerPreferences(context) }
-                        val seekExtra by seekPrefs.seekExtraSeconds.collectAsState(initial = false)
+                        val seekExtra by seekPrefs.seekExtraSeconds.collectAsStateWithLifecycle(initialValue = false)
                         AnimatedContent(
                             targetState = selectedTab,
                             transitionSpec = { fadeIn() togetherWith fadeOut() },
@@ -563,7 +571,7 @@ private fun LyricsTabV9(
     playerController: PlayerController,
     modifier: Modifier = Modifier
 ) {
-    val playerState by playerController.uiState.collectAsState()
+    val playerState by playerController.uiState.collectAsStateWithLifecycle()
     val lyrics = playerState.lyrics
     val isLoading = playerState.isLyricsLoading
 
@@ -628,7 +636,7 @@ private fun AnimatedToggleIconV9(
     )
     val tint by androidx.compose.animation.animateColorAsState(
         targetValue = if (active) accentColor else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-        animationSpec = androidx.compose.animation.core.tween(180),
+        animationSpec = spring(stiffness = 600f),
         label = "toggleTint"
     )
     IconButton(onClick = onClick) {
@@ -786,7 +794,7 @@ private fun V9SoundSheetV9(
     onDismiss: () -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
-    val sleepTimerInfo by playerController.sleepTimerState.collectAsState()
+    val sleepTimerInfo by playerController.sleepTimerState.collectAsStateWithLifecycle()
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,

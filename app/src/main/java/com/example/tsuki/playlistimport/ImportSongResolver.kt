@@ -7,9 +7,14 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 
 data class ImportedSongResult(
     val original: ImportedSong,
@@ -25,6 +30,11 @@ data class ImportedSongResult(
 
 class ImportSongResolver(private val innerTubeClient: TSukiInnerTubeClient = TSukiInnerTubeClient.getInstance()) {
 
+    private val rateLimitHit = AtomicBoolean(false)
+    private val backoffUntilMs = AtomicLong(0L)
+    private val backoffMutex = Mutex()
+    private var backoffDelayMs = 2_000L
+
     suspend fun resolve(
         songs: List<ImportedSong>,
         visitorData: String? = null,
@@ -32,33 +42,43 @@ class ImportSongResolver(private val innerTubeClient: TSukiInnerTubeClient = TSu
         concurrency: Int = 3,
         onProgress: (Int, Int) -> Unit = { _, _ -> }
     ): List<ImportedSongResult> = withContext(Dispatchers.IO) {
+        rateLimitHit.set(false)
+        backoffUntilMs.set(0L)
+        backoffDelayMs = 2_000L
         val semaphore = Semaphore(concurrency)
-        var completed = 0
-
+        val completed = AtomicInteger(0)
 
         val firstPassResults = coroutineScope {
             songs.map { song ->
                 async {
                     semaphore.withPermit {
+                        val nowMs = System.currentTimeMillis()
+                        val waitUntil = backoffUntilMs.get()
+                        if (waitUntil > nowMs) delay(waitUntil - nowMs)
                         val result = resolveOne(song, visitorData, cookie, useAlternativeQuery = false)
-                        completed++
-                        onProgress(completed, songs.size)
+                        val current = completed.incrementAndGet()
+                        onProgress(current, songs.size)
                         result
                     }
                 }
             }.awaitAll()
         }
 
-
         val finalResults = firstPassResults.toMutableList()
         val unresolvedIndices = finalResults.indices.filter { finalResults[it].status == ImportedSongResult.Status.UNRESOLVED }
 
         if (unresolvedIndices.isNotEmpty()) {
-            delay(500)
+            if (rateLimitHit.get()) delay(5_000L) else delay(500L)
+            rateLimitHit.set(false)
+            backoffUntilMs.set(0L)
+            backoffDelayMs = 2_000L
             coroutineScope {
                 unresolvedIndices.map { idx ->
                     async {
                         semaphore.withPermit {
+                            val nowMs = System.currentTimeMillis()
+                            val waitUntil = backoffUntilMs.get()
+                            if (waitUntil > nowMs) delay(waitUntil - nowMs)
                             val song = finalResults[idx].original
                             val retryResult = resolveOne(song, visitorData, cookie, useAlternativeQuery = true)
                             if (retryResult.status == ImportedSongResult.Status.MATCHED) {
@@ -78,18 +98,27 @@ class ImportSongResolver(private val innerTubeClient: TSukiInnerTubeClient = TSu
         visitorData: String? = null,
         cookie: String? = null
     ): List<MediaTrack> = withContext(Dispatchers.IO) {
-        runCatching {
-            innerTubeClient.searchMusic(query, visitorData = visitorData, cookie = cookie)
-        }.getOrElse { e ->
-            if (e.message?.contains("429") == true) {
-                delay(2000)
-                runCatching {
-                    innerTubeClient.searchMusic(query, visitorData = visitorData, cookie = cookie)
-                }.getOrDefault(emptyList())
-            } else {
-                emptyList()
+        var attempt = 0
+        var currentDelay = backoffDelayMs
+        while (attempt < 4) {
+            val result = runCatching {
+                innerTubeClient.searchMusic(query, visitorData = visitorData, cookie = cookie)
             }
+            val error = result.exceptionOrNull()
+            if (error == null) return@withContext result.getOrDefault(emptyList())
+            val is429 = error.message?.contains("429") == true
+            if (!is429) return@withContext emptyList()
+            rateLimitHit.set(true)
+            backoffMutex.withLock {
+                currentDelay = backoffDelayMs
+                backoffDelayMs = (backoffDelayMs * 2).coerceAtMost(30_000L)
+            }
+            val resumeAt = System.currentTimeMillis() + currentDelay
+            backoffUntilMs.getAndUpdate { existing -> if (resumeAt > existing) resumeAt else existing }
+            delay(currentDelay)
+            attempt++
         }
+        emptyList()
     }
 
     private suspend fun resolveOne(
@@ -98,6 +127,20 @@ class ImportSongResolver(private val innerTubeClient: TSukiInnerTubeClient = TSu
         cookie: String?,
         useAlternativeQuery: Boolean
     ): ImportedSongResult {
+        if (!song.videoId.isNullOrBlank() && song.videoId.length == 11) {
+            val track = MediaTrack(
+                id = song.videoId,
+                title = song.title,
+                artist = song.artistsText.ifBlank { "YouTube Music" },
+                artworkUrl = song.thumbnailUrl ?: "https://i.ytimg.com/vi/${song.videoId}/hqdefault.jpg",
+                isLocal = false,
+                mediaType = com.example.tsuki.domain.model.MediaType.STREAM_AUDIO,
+                videoId = song.videoId,
+                durationMs = song.durationMs?.toLong() ?: 0L,
+                durationSeconds = song.durationMs?.let { it / 1000 } ?: 0
+            )
+            return ImportedSongResult(song, track, ImportedSongResult.Status.MATCHED)
+        }
         val query = if (useAlternativeQuery) {
             SpotifyTrackMatcher.buildAlternativeSearchQuery(song)
         } else {

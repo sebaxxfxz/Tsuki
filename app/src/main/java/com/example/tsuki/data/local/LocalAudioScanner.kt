@@ -70,11 +70,14 @@ class LocalAudioScanner(private val context: Context) {
                 if (duration > 0L && duration < MIN_MUSIC_DURATION_MS) continue
 
                 val dataPath = try { cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)) ?: "" } catch (_: Exception) { "" }
+                if (dataPath.isBlank() || CHAT_FOLDER_REGEX.containsMatchIn(dataPath)) continue
                 val folder = dataPath.substringBeforeLast('/')
                 if (folder in excludedFolders) continue
 
                 val contentUri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
-                val albumArtUri = ContentUris.withAppendedId(artworkUriBase, albumId).toString()
+                val albumArtUri = if (albumId > 0) {
+                    ContentUris.withAppendedId(artworkUriBase, albumId).toString()
+                } else contentUri.toString()
 
                 tracks.add(
                     MediaTrack(
@@ -107,8 +110,12 @@ class LocalAudioScanner(private val context: Context) {
             )?.use { c ->
                 val dCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
                 while (c.moveToNext()) {
-                    val dir = c.getString(dCol)?.substringBeforeLast('/') ?: continue
-                    counts[dir] = (counts[dir] ?: 0) + 1
+                    val dataPath = c.getString(dCol) ?: continue
+                    if (CHAT_FOLDER_REGEX.containsMatchIn(dataPath)) continue
+                    val dir = dataPath.substringBeforeLast('/')
+                    if (dir.isNotBlank()) {
+                        counts[dir] = (counts[dir] ?: 0) + 1
+                    }
                 }
             }
         } catch (_: Exception) {}

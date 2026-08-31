@@ -298,12 +298,17 @@ object AppleMusicCanvas {
     fun matchesSongIdentity(canvas: CanvasArtwork, title: String, artist: String): Boolean {
         val canvasTitle = simplify(canvas.name)
         val canvasArtist = simplify(canvas.artist)
+        val albumTitle = canvas.albumName?.let { simplify(it) }
         val queryTitle = simplify(title)
         val queryArtist = simplify(artist.substringBefore(","))
         if (canvasTitle.isBlank() || queryTitle.isBlank()) return false
-        val titleMatch = canvasTitle == queryTitle || canvasTitle.contains(queryTitle) || queryTitle.contains(canvasTitle)
+        val titleMatch = canvasTitle == queryTitle ||
+            canvasTitle.contains(queryTitle) ||
+            queryTitle.contains(canvasTitle) ||
+            (albumTitle != null && (albumTitle == queryTitle || albumTitle.contains(queryTitle) || queryTitle.contains(albumTitle)))
         val artistMatch = canvasArtist.isBlank() || queryArtist.isBlank() ||
-            canvasArtist == queryArtist || canvasArtist.contains(queryArtist) || queryArtist.contains(canvasArtist)
+            canvasArtist == queryArtist || canvasArtist.contains(queryArtist) || queryArtist.contains(canvasArtist) ||
+            simplify(artist).contains(canvasArtist) || canvasArtist.contains(simplify(artist))
         return titleMatch && artistMatch
     }
 

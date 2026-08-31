@@ -52,7 +52,7 @@ import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 private val BottomSheetAnimationSpec: AnimationSpec<Dp> = spring(dampingRatio = 0.8f, stiffness = 400f)
-private val BottomSheetSoftAnimationSpec: AnimationSpec<Dp> = tween(durationMillis = 350, easing = androidx.compose.animation.core.CubicBezierEasing(0.05f, 0.7f, 0.1f, 1.0f))
+private val BottomSheetSoftAnimationSpec: AnimationSpec<Dp> = spring(dampingRatio = 0.85f, stiffness = 300f)
 
 @Composable
 fun PlayerBottomSheet(
@@ -124,19 +124,19 @@ class PlayerSheetState(
     private val animatable: Animatable<Dp, AnimationVector1D>,
     private val onAnchorChanged: (Int) -> Unit,
     val collapsedBound: Dp,
+    val dismissedBound: Dp,
+    val expandedBound: Dp,
     initialAnchor: Int = COLLAPSED_ANCHOR,
 ) : DraggableState by draggableState {
-    val dismissedBound: Dp get() = animatable.lowerBound!!
-    val expandedBound: Dp get() = animatable.upperBound!!
     val value by animatable.asState()
     var targetAnchor by mutableIntStateOf(initialAnchor)
         private set
-    val isDismissed by derivedStateOf { value == animatable.lowerBound!! }
+    val isDismissed by derivedStateOf { value == dismissedBound }
     val isCollapsed by derivedStateOf { value == collapsedBound }
-    val isExpanded by derivedStateOf { value == animatable.upperBound }
+    val isExpanded by derivedStateOf { value == expandedBound }
     val isExpandedOrExpanding: Boolean get() = targetAnchor == EXPANDED_ANCHOR
     val progress by derivedStateOf {
-        1f - (animatable.upperBound!! - animatable.value) / (animatable.upperBound!! - collapsedBound)
+        1f - (expandedBound - animatable.value) / (expandedBound - collapsedBound)
     }
     private fun updateAnchor(anchor: Int) {
         targetAnchor = anchor
@@ -148,7 +148,7 @@ class PlayerSheetState(
     }
     fun expand(animationSpec: AnimationSpec<Dp> = BottomSheetAnimationSpec) {
         updateAnchor(EXPANDED_ANCHOR)
-        coroutineScope.launch(start = CoroutineStart.UNDISPATCHED) { animatable.animateTo(animatable.upperBound!!, animationSpec) }
+        coroutineScope.launch(start = CoroutineStart.UNDISPATCHED) { animatable.animateTo(expandedBound, animationSpec) }
     }
     fun collapseSoft() { collapse(BottomSheetSoftAnimationSpec) }
     fun expandSoft() { expand(BottomSheetSoftAnimationSpec) }
@@ -156,7 +156,7 @@ class PlayerSheetState(
     fun expandImmediate() { expand(snap()) }
     fun dismiss() {
         updateAnchor(DISMISSED_ANCHOR)
-        coroutineScope.launch(start = CoroutineStart.UNDISPATCHED) { animatable.animateTo(animatable.lowerBound!!, BottomSheetAnimationSpec) }
+        coroutineScope.launch(start = CoroutineStart.UNDISPATCHED) { animatable.animateTo(dismissedBound, BottomSheetAnimationSpec) }
     }
     fun snapTo(value: Dp) {
         updateAnchor(
@@ -175,8 +175,8 @@ class PlayerSheetState(
             if (value < collapsedBound && onDismiss != null) { dismiss(); onDismiss.invoke() } else collapse()
         } else {
             val l0 = dismissedBound
-            val l1 = (collapsedBound - dismissedBound) / 2
-            val l2 = (expandedBound - collapsedBound) / 2
+            val l1 = dismissedBound + (collapsedBound - dismissedBound) / 2
+            val l2 = collapsedBound + (expandedBound - collapsedBound) / 2
             val l3 = expandedBound
             when (value) {
                 in l0..l1 -> { if (onDismiss != null) { dismiss(); onDismiss.invoke() } else collapse() }
@@ -245,6 +245,8 @@ fun rememberPlayerSheetState(
             coroutineScope = coroutineScope,
             animatable = animatable,
             collapsedBound = collapsedBound,
+            dismissedBound = dismissedBound,
+            expandedBound = expandedBound,
             initialAnchor = previousAnchor
         )
     }

@@ -6,6 +6,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import com.example.tsuki.lyrics.LyricsSanitizer
 
 private val canvasMemo = java.util.concurrent.ConcurrentHashMap<String, Pair<String?, String?>?>()
 
@@ -15,11 +16,21 @@ suspend fun resolveCanvasUrls(
     artist: String
 ): Pair<String?, String?>? {
     canvasMemo[trackId]?.let { return it }
+
+    val cleanArtist = LyricsSanitizer.cleanArtist(artist)
+    val cleanTitle = LyricsSanitizer.cleanTitle(title)
+
     val remote = AppleMusicCanvas.getBySongArtist(
+        song = cleanTitle.ifBlank { title },
+        artist = cleanArtist.ifBlank { artist }
+    ) ?: AppleMusicCanvas.getBySongArtist(
         song = AppleMusicCanvas.simplify(title).replaceFirstChar { it.uppercase() },
-        artist = artist
-    ) ?: return null
-    if (!AppleMusicCanvas.matchesSongIdentity(remote, title, artist)) return null
+        artist = cleanArtist.ifBlank { artist }
+    )
+
+    if (remote == null || !AppleMusicCanvas.matchesSongIdentity(remote, title, artist)) {
+        return null
+    }
 
     var primary = remote.animated?.trim().takeUnless { it.isNullOrEmpty() }
     var fallback = remote.animatedVertical?.trim().takeUnless { it.isNullOrEmpty() }

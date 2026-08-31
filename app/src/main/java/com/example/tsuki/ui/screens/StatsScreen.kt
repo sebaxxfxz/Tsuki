@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -214,7 +215,7 @@ fun StatsScreen(
                         modifier = Modifier.padding(horizontal = 16.dp)
                     )
                 }
-                items(stats.topSongs, key = { "song_${it.title}_${it.subtitle}" }) { entry ->
+                itemsIndexed(stats.topSongs, key = { index, entry -> "song_${entry.title}_${entry.subtitle}_$index" }) { _, entry ->
                     TopEntryRow(entry = entry)
                 }
             }
@@ -227,7 +228,7 @@ fun StatsScreen(
                         modifier = Modifier.padding(horizontal = 16.dp)
                     )
                 }
-                items(stats.topArtists, key = { "artist_${it.title}" }) { entry ->
+                itemsIndexed(stats.topArtists, key = { index, entry -> "artist_${entry.title}_$index" }) { _, entry ->
                     TopEntryRow(entry = entry)
                 }
             }
@@ -302,8 +303,8 @@ private fun TopEntryRow(entry: WatchHistoryManager.TopEntry) {
 private fun formatTotalTime(ms: Long): String {
     val totalMin = ms / 60000
     return when {
-        totalMin >= 1440 -> String.format(Locale.US, "%dd %dh", totalMin / 1440, (totalMin % 1440) / 60)
-        totalMin >= 60 -> String.format(Locale.US, "%dh %dm", totalMin / 60, totalMin % 60)
+        totalMin >= 1440 -> String.format(Locale.getDefault(), "%dd %dh", totalMin / 1440, (totalMin % 1440) / 60)
+        totalMin >= 60 -> String.format(Locale.getDefault(), "%dh %dm", totalMin / 60, totalMin % 60)
         else -> "${totalMin}m"
     }
 }
@@ -311,7 +312,7 @@ private fun formatTotalTime(ms: Long): String {
 private fun formatShortTime(ms: Long): String {
     val totalMin = ms / 60000
     return when {
-        totalMin >= 60 -> String.format(Locale.US, "%dh", totalMin / 60)
+        totalMin >= 60 -> String.format(Locale.getDefault(), "%dh", totalMin / 60)
         totalMin > 0 -> "${totalMin}m"
         else -> ""
     }

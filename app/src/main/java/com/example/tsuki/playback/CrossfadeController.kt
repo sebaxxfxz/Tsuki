@@ -208,7 +208,9 @@ class CrossfadeController(private val context: Context) {
                     val primPos = primary.currentPosition
                     if (needsCorrectiveCrossfadeSeek(primPos, secPos)) {
                         withContext(Dispatchers.Main) {
+                            primary.volume = 0f
                             primary.seekTo(secPos)
+                            primary.play()
                         }
                         val posAfterSeek = secPos
                         val deadline = SystemClock.elapsedRealtime() + 2_000L
@@ -220,7 +222,10 @@ class CrossfadeController(private val context: Context) {
                             }
                             delay(10)
                         }
-                        if (!advanced) throw Exception("Primary position did not advance after corrective seek")
+                    } else {
+                        withContext(Dispatchers.Main) {
+                            primary.play()
+                        }
                     }
 
                     val microStart = SystemClock.elapsedRealtime()
@@ -311,6 +316,7 @@ class CrossfadeController(private val context: Context) {
         }
         player.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
+                player.release()
                 if (isActive) cancel("secondary player error: ${error.errorCodeName}")
             }
         })

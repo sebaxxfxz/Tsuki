@@ -1,9 +1,7 @@
 package com.example.tsuki.ui.player.lyrics
 
-import androidx.compose.animation.core.CubicBezierEasing
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
@@ -69,17 +67,17 @@ fun KaraokeLyricRow(
 
     val blur by animateFloatAsState(
         targetValue = targetBlur,
-        animationSpec = tween(300, easing = FastOutSlowInEasing),
+        animationSpec = spring(dampingRatio = 0.75f, stiffness = 500f),
         label = "blur"
     )
     val rowVisibility by animateFloatAsState(
         targetValue = targetVisibility,
-        animationSpec = tween(400, easing = CubicBezierEasing(0.0f, 0.0f, 0.2f, 1.0f)),
+        animationSpec = spring(dampingRatio = 0.8f, stiffness = 300f),
         label = "row_visibility"
     )
     val scale by animateFloatAsState(
         targetValue = targetScale,
-        animationSpec = tween(166, easing = FastOutSlowInEasing),
+        animationSpec = spring(dampingRatio = 0.7f, stiffness = 700f),
         label = "scale"
     )
 

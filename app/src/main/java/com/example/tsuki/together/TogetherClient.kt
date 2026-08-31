@@ -196,8 +196,14 @@ class TogetherClient(
                         else -> Unit
                     }
                 }
-            } catch (t: Throwable) { _events.tryEmit(TogetherClientEvent.Error("Connection loop failed", t)) }
-            finally { _events.tryEmit(TogetherClientEvent.Disconnected); _state.value = TogetherClientState.Idle }
+            } catch (t: Throwable) {
+                if (t !is kotlinx.coroutines.CancellationException) {
+                    _events.tryEmit(TogetherClientEvent.Error("Connection loop failed", t))
+                }
+            } finally {
+                _events.tryEmit(TogetherClientEvent.Disconnected)
+                _state.value = TogetherClientState.Idle
+            }
         }
         loop?.join()
     }

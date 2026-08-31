@@ -9,6 +9,10 @@ import com.example.tsuki.domain.model.MediaType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+
 class FavoritesDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null, DATABASE_VERSION) {
 
     override fun onCreate(db: SQLiteDatabase) {
@@ -76,11 +80,51 @@ class FavoritesDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_N
 class FavoritesManager private constructor(context: Context) {
 
     private val dbHelper = FavoritesDbHelper(context.applicationContext)
+    private val _favoritesVersion = MutableStateFlow(System.currentTimeMillis())
+    val favoritesVersion: StateFlow<Long> = _favoritesVersion.asStateFlow()
+
+    suspend fun addFavorites(tracks: List<MediaTrack>, clearExisting: Boolean = false) = withContext(Dispatchers.IO) {
+        try {
+            val db = dbHelper.writableDatabase
+            db.beginTransaction()
+            try {
+                if (clearExisting) {
+                    db.delete(FavoritesDbHelper.TABLE_FAVORITES, null, null)
+                }
+                var baseTimestamp = System.currentTimeMillis()
+                for (track in tracks) {
+                    val videoId = track.videoId ?: track.id
+                    val values = ContentValues().apply {
+                        put("video_id", videoId)
+                        put("title", track.title)
+                        put("artist", track.artist)
+                        put("artwork_url", track.artworkUrl)
+                        put("is_video", if (track.isVideoItem) 1 else 0)
+                        put("added_timestamp", baseTimestamp)
+                    }
+                    baseTimestamp -= 10L
+                    db.insertWithOnConflict(
+                        FavoritesDbHelper.TABLE_FAVORITES,
+                        null,
+                        values,
+                        SQLiteDatabase.CONFLICT_REPLACE
+                    )
+                }
+                db.setTransactionSuccessful()
+            } finally {
+                db.endTransaction()
+            }
+            _favoritesVersion.value = System.currentTimeMillis()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
 
     suspend fun toggleFavorite(track: MediaTrack): Boolean = withContext(Dispatchers.IO) {
-        val isFav = isFavorite(track.id)
+        val key = track.videoId ?: track.id
+        val isFav = isFavorite(key)
         if (isFav) {
-            removeFavorite(track.id)
+            removeFavorite(key)
             false
         } else {
             addFavorite(track)
@@ -106,6 +150,7 @@ class FavoritesManager private constructor(context: Context) {
                 values,
                 SQLiteDatabase.CONFLICT_REPLACE
             )
+            _favoritesVersion.value = System.currentTimeMillis()
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -115,6 +160,7 @@ class FavoritesManager private constructor(context: Context) {
         try {
             val db = dbHelper.writableDatabase
             db.delete(FavoritesDbHelper.TABLE_FAVORITES, "video_id = ?", arrayOf(trackId))
+            _favoritesVersion.value = System.currentTimeMillis()
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -123,16 +169,13 @@ class FavoritesManager private constructor(context: Context) {
     suspend fun isFavorite(trackId: String): Boolean = withContext(Dispatchers.IO) {
         try {
             val db = dbHelper.readableDatabase
-            val cursor = db.query(
+            db.query(
                 FavoritesDbHelper.TABLE_FAVORITES,
                 arrayOf("video_id"),
                 "video_id = ?",
                 arrayOf(trackId),
                 null, null, null
-            )
-            val exists = cursor.moveToFirst()
-            cursor.close()
-            exists
+            ).use { cursor -> cursor.moveToFirst() }
         } catch (e: Exception) {
             false
         }
@@ -142,28 +185,28 @@ class FavoritesManager private constructor(context: Context) {
         val list = mutableListOf<MediaTrack>()
         try {
             val db = dbHelper.readableDatabase
-            val cursor = db.query(
+            db.query(
                 FavoritesDbHelper.TABLE_FAVORITES,
                 null, null, null, null, null,
                 "added_timestamp DESC"
-            )
-            while (cursor.moveToNext()) {
-                val videoId = cursor.getString(cursor.getColumnIndexOrThrow("video_id"))
-                val isVideo = cursor.getInt(cursor.getColumnIndexOrThrow("is_video")) == 1
-                list.add(
-                    MediaTrack(
-                        id = videoId,
-                        title = cursor.getString(cursor.getColumnIndexOrThrow("title")),
-                        artist = cursor.getString(cursor.getColumnIndexOrThrow("artist")),
-                        artworkUrl = cursor.getString(cursor.getColumnIndexOrThrow("artwork_url")),
-                        isLocal = false,
-                        mediaType = if (isVideo) MediaType.STREAM_VIDEO else MediaType.STREAM_AUDIO,
-                        videoId = videoId,
-                        isVideoItem = isVideo
+            ).use { cursor ->
+                while (cursor.moveToNext()) {
+                    val videoId = cursor.getString(cursor.getColumnIndexOrThrow("video_id"))
+                    val isVideo = cursor.getInt(cursor.getColumnIndexOrThrow("is_video")) == 1
+                    list.add(
+                        MediaTrack(
+                            id = videoId,
+                            title = cursor.getString(cursor.getColumnIndexOrThrow("title")),
+                            artist = cursor.getString(cursor.getColumnIndexOrThrow("artist")),
+                            artworkUrl = cursor.getString(cursor.getColumnIndexOrThrow("artwork_url")),
+                            isLocal = false,
+                            mediaType = if (isVideo) MediaType.STREAM_VIDEO else MediaType.STREAM_AUDIO,
+                            videoId = videoId,
+                            isVideoItem = isVideo
+                        )
                     )
-                )
+                }
             }
-            cursor.close()
         } catch (e: Exception) {
             e.printStackTrace()
         }

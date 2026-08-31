@@ -164,6 +164,7 @@ class PlayerController private constructor(private val context: Context) {
     private val BASE_RETRY_MS = 2000L
     private val MAX_RETRY_DELAY_MS = 15000L
     private val RECOVERY_GRACE_MS = 120_000L
+    private val shuffleHistory = java.util.ArrayDeque<Int>()
 
     init {
         initMediaController()
@@ -252,7 +253,7 @@ class PlayerController private constructor(private val context: Context) {
                     )
                 }
                 if (duration > 0L && _playbackTick.value.durationMs != duration) {
-                    _playbackTick.value = _playbackTick.value.copy(durationMs = duration)
+                    _playbackTick.update { it.copy(durationMs = duration) }
                 }
                 if (playbackState == Player.STATE_READY) {
                     mediaController?.currentMediaItem?.mediaId?.let { id ->
@@ -269,6 +270,7 @@ class PlayerController private constructor(private val context: Context) {
                     if (sleepAtSongEnd) {
                         sleepAtSongEnd = false
                         mediaController?.pause()
+                        _sleepTimerState.value = SleepTimerInfo(null, false)
                         _uiState.update { it.copy(sleepTimerActive = false, sleepTimerRemainingMs = 0L) }
                     } else if (repeat == Player.REPEAT_MODE_ONE && !togetherManager.isGuest()) {
                         mediaController?.seekTo(0)
@@ -609,31 +611,34 @@ class PlayerController private constructor(private val context: Context) {
         if (!isRetry) {
             pendingRetryJob?.cancel()
             pendingRetryJob = null
-            if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
-                mediaController?.pause()
-            } else {
-                mainHandlerCompat.post { mediaController?.pause() }
-            }
         }
         if (!isRetry && !startMuted) {
             if (crossfadeController.isActive) crossfadeController.abortHard("new playback requested")
         }
 
-        if (!isRetry) {
-            autoQueueAttemptedForIndex = -1
-            _uiState.update {
-                it.copy(
-                    queue = tracks,
-                    queueIndex = safeIndex,
-                    currentTrack = track,
-                    playerMode = if (isVideo) PlayerMode.VideoExpanded else PlayerMode.AudioOnly,
-                    isBuffering = true,
-                    errorMessage = null,
-                    dislikesData = null,
-                    sponsorSegments = emptyList()
-                )
+        scope.launch(Dispatchers.Main.immediate) {
+            if (!isRetry) {
+                mediaController?.pause()
+                autoQueueAttemptedForIndex = -1
+                _uiState.update {
+                    it.copy(
+                        queue = tracks,
+                        queueIndex = safeIndex,
+                        currentTrack = track,
+                        playerMode = if (isVideo) PlayerMode.VideoExpanded else PlayerMode.AudioOnly,
+                        isBuffering = true,
+                        errorMessage = null,
+                        dislikesData = null,
+                        sponsorSegments = emptyList()
+                    )
+                }
+                _playbackTick.value = PlaybackTick()
+            } else {
+                _uiState.update { it.copy(isBuffering = true) }
             }
-            _playbackTick.value = PlaybackTick()
+        }
+
+        if (!isRetry) {
             scope.launch(Dispatchers.IO) { historyManager.recordPlayback(track) }
             onStatsTrackStarted(track)
             val videoId = track.videoId ?: track.id
@@ -643,8 +648,6 @@ class PlayerController private constructor(private val context: Context) {
             }
             loadLyricsForTrack(track)
             maybeFillQueueWithRelated(tracks, safeIndex)
-        } else {
-            _uiState.update { it.copy(isBuffering = true) }
         }
 
         scope.launch {
@@ -808,8 +811,16 @@ class PlayerController private constructor(private val context: Context) {
         }
         val state = _uiState.value
         if (state.shuffleEnabled && state.queue.size > 1 && state.repeatMode != Player.REPEAT_MODE_ONE) {
-            var target = kotlin.random.Random.nextInt(state.queue.size)
-            if (target == state.queueIndex) target = (target + 1) % state.queue.size
+            shuffleHistory.push(state.queueIndex)
+            if (shuffleHistory.size > 50) shuffleHistory.removeLast()
+            val recentSet = shuffleHistory.take(minOf(state.queue.size / 2, 20)).toSet()
+            val candidateIndices = state.queue.indices.filter { it != state.queueIndex && it !in recentSet }
+            val target = if (candidateIndices.isNotEmpty()) {
+                candidateIndices.random()
+            } else {
+                var t = kotlin.random.Random.nextInt(state.queue.size)
+                if (t == state.queueIndex) (t + 1) % state.queue.size else t
+            }
             playQueue(state.queue, target, state.isVideoMode)
             return
         }
@@ -868,6 +879,13 @@ class PlayerController private constructor(private val context: Context) {
             if ((mediaController?.currentPosition ?: 0L) > 3000) {
                 mediaController?.seekTo(0)
                 return
+            }
+            if (state.shuffleEnabled && shuffleHistory.isNotEmpty()) {
+                val prevIndex = shuffleHistory.pop()
+                if (prevIndex in state.queue.indices) {
+                    playQueue(state.queue, prevIndex, state.isVideoMode)
+                    return
+                }
             }
             val prevIndex = if (state.queueIndex - 1 < 0) state.queue.lastIndex else state.queueIndex - 1
             playQueue(state.queue, prevIndex, state.isVideoMode)

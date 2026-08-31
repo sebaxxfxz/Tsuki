@@ -34,6 +34,7 @@ class HomePreferences(private val context: Context) {
         private val KEY_LIKED_VIDEOS = stringSetPreferencesKey("liked_videos")
         private val KEY_ONBOARDING_DONE = booleanPreferencesKey("onboarding_done")
         private val KEY_SELECTED_TOPICS = stringSetPreferencesKey("selected_topics")
+        private val KEY_SPEED_DIAL_PINS = stringSetPreferencesKey("speed_dial_pins")
         private val KEY_CONTENT_LANGUAGE = stringPreferencesKey("content_language_tag")
         private val KEY_CONTENT_COUNTRY = stringPreferencesKey("content_country")
         private const val DEFAULT_CATEGORIES = "ALL"
@@ -141,5 +142,22 @@ class HomePreferences(private val context: Context) {
 
     suspend fun setSelectedTopics(topics: Set<String>) {
         context.homeDataStore.edit { it[KEY_SELECTED_TOPICS] = topics }
+    }
+
+    val speedDialPins: Flow<Set<String>> = context.homeDataStore.data.map { it[KEY_SPEED_DIAL_PINS] ?: emptySet() }
+
+    suspend fun pinToSpeedDial(id: String) {
+        context.homeDataStore.edit { it[KEY_SPEED_DIAL_PINS] = (it[KEY_SPEED_DIAL_PINS] ?: emptySet()) + id }
+    }
+
+    suspend fun unpinFromSpeedDial(id: String) {
+        context.homeDataStore.edit { it[KEY_SPEED_DIAL_PINS] = (it[KEY_SPEED_DIAL_PINS] ?: emptySet()) - id }
+    }
+
+    suspend fun toggleSpeedDialPin(id: String) {
+        context.homeDataStore.edit {
+            val cur = it[KEY_SPEED_DIAL_PINS] ?: emptySet()
+            it[KEY_SPEED_DIAL_PINS] = if (id in cur) cur - id else cur + id
+        }
     }
 }

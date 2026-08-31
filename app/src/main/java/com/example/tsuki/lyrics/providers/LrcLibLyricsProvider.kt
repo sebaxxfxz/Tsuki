@@ -26,6 +26,7 @@ data class LrcLibResponse(
     val bestLyrics: String?
         get() = syncedLyrics?.takeIf { it.isNotBlank() }
             ?: plainLyrics?.takeIf { it.isNotBlank() }
+            ?: if (instrumental == true) "[00:00.00] ♪ Instrumental ♪" else null
 }
 
 object LrcLibLyricsProvider : LyricsProvider {
@@ -34,8 +35,8 @@ object LrcLibLyricsProvider : LyricsProvider {
     private const val USER_AGENT = "TSuki/1.0 (Linux; Android 14; https://github.com/TSuki)"
 
     private val client = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(10, TimeUnit.SECONDS)
+        .connectTimeout(4, TimeUnit.SECONDS)
+        .readTimeout(4, TimeUnit.SECONDS)
         .build()
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }

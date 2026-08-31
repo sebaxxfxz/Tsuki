@@ -18,9 +18,6 @@ import androidx.compose.ui.unit.sp
 import com.example.tsuki.domain.model.LyricsEntry
 import com.mocharealm.accompanist.lyrics.ui.composable.lyrics.KaraokeLyricsView
 
-private const val LYRIC_VISUAL_TUNING_OFFSET_MS = 150L
-private const val LRC_LEAD_MS = 300L
-
 @Composable
 fun KaraokeWordByWordView(
     lyrics: List<LyricsEntry>,
@@ -75,11 +72,11 @@ fun KaraokeWordByWordView(
             listState = rememberLazyListState(),
             lyrics = syncedLyrics,
             currentPosition = {
-                (smoothPositionState.value + syncOffsetMs + LRC_LEAD_MS + LYRIC_VISUAL_TUNING_OFFSET_MS)
+                (smoothPositionState.value + syncOffsetMs)
                     .coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
             },
             onLineClicked = { line ->
-                if (line.start > 0) onSeekTo(line.start.toLong())
+                if (line.start >= 0) onSeekTo(line.start.toLong())
             },
             onLinePressed = { },
             textColor = Color.White,

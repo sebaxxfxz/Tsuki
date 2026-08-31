@@ -1,6 +1,7 @@
 package com.example.tsuki.ui.player
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -9,7 +10,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -55,9 +55,9 @@ fun SyncedLyricsView(
     if (lyrics.hasWordSyncedLine()) {
         val context = androidx.compose.ui.platform.LocalContext.current
         val lyricsPrefs = remember { com.example.tsuki.data.local.PlayerPreferences(context) }
-        val lyricsTextSize by lyricsPrefs.lyricsTextSize.collectAsState(initial = 30)
-        val lyricsLineBlur by lyricsPrefs.lyricsLineBlur.collectAsState(initial = true)
-        val lyricsSyncOffset by lyricsPrefs.lyricsSyncOffsetMs.collectAsState(initial = 0)
+        val lyricsTextSize by lyricsPrefs.lyricsTextSize.collectAsStateWithLifecycle(initialValue = 30)
+        val lyricsLineBlur by lyricsPrefs.lyricsLineBlur.collectAsStateWithLifecycle(initialValue = true)
+        val lyricsSyncOffset by lyricsPrefs.lyricsSyncOffsetMs.collectAsStateWithLifecycle(initialValue = 0)
         KaraokeWordByWordView(
             lyrics = lyrics,
             basePositionMs = livePositionProvider ?: { currentPositionMs },
@@ -75,13 +75,17 @@ fun SyncedLyricsView(
     val positionState = androidx.compose.runtime.rememberUpdatedState(currentPositionMs)
     val context = androidx.compose.ui.platform.LocalContext.current
     val lyricsPrefs = remember { com.example.tsuki.data.local.PlayerPreferences(context) }
-    val lyricsTextSize by lyricsPrefs.lyricsTextSize.collectAsState(initial = 30)
-    val activeIndex by remember(lyrics) {
+    val lyricsTextSize by lyricsPrefs.lyricsTextSize.collectAsStateWithLifecycle(initialValue = 30)
+    val lyricsSyncOffset by lyricsPrefs.lyricsSyncOffsetMs.collectAsStateWithLifecycle(initialValue = 0)
+    val activeIndex by remember(lyrics, lyricsSyncOffset) {
         androidx.compose.runtime.derivedStateOf {
-            val pos = positionState.value
+            val pos = positionState.value + lyricsSyncOffset
+            if (lyrics.isEmpty() || pos < lyrics.first().time) {
+                return@derivedStateOf -1
+            }
             var low = 0
             var high = lyrics.size - 1
-            var result = 0
+            var result = -1
             while (low <= high) {
                 val mid = (low + high) ushr 1
                 if (lyrics[mid].time <= pos) {
@@ -123,14 +127,14 @@ fun SyncedLyricsView(
     val listState = rememberLazyListState()
 
     LaunchedEffect(activeIndex, isManualScrolling) {
-        if (!isManualScrolling) {
+        if (!isManualScrolling && activeIndex >= 0) {
             val jump = abs(listState.firstVisibleItemIndex - activeIndex)
             if (jump > 15) {
                 listState.scrollToItem(activeIndex)
             }
             
             val viewportHeight = listState.layoutInfo.viewportSize.height
-            val targetOffset = if (viewportHeight > 0) -(viewportHeight * 0.35f).toInt() else -400
+            val targetOffset = if (viewportHeight > 0) (viewportHeight * 0.1f).toInt().coerceAtLeast(0) else 0
             listState.animateScrollToItem(activeIndex, targetOffset)
         }
     }
@@ -149,13 +153,13 @@ fun SyncedLyricsView(
             contentType = { "lyric" }
         ) { index ->
             val entry = lyrics[index]
-            val distance = abs(index - activeIndex)
+            val distance = if (activeIndex >= 0) abs(index - activeIndex) else 1
             
             KaraokeLyricRow(
                 entry = entry,
-                isActive = index == activeIndex,
+                isActive = activeIndex >= 0 && index == activeIndex,
                 distance = distance,
-                currentPositionMs = currentPositionMs,
+                currentPositionMs = currentPositionMs + lyricsSyncOffset,
                 isManualScrolling = isManualScrolling,
                 accentColor = accentColor,
                 onSeekTo = onSeekTo,

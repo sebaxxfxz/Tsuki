@@ -61,18 +61,22 @@ fun CornerPipPlayer(
     val density = LocalDensity.current
     val config = LocalConfiguration.current
 
-    val maxDrag = with(density) { 0.dp.toPx() }
+    val screenWidthPx = with(density) { config.screenWidthDp.dp.toPx() }
+    val screenHeightPx = with(density) { config.screenHeightDp.dp.toPx() }
+    val pipWidthPx = with(density) { 260.dp.toPx() }
+    val maxDragX = (screenWidthPx - pipWidthPx).coerceAtLeast(0f)
+    val minDragX = -maxDragX
+    val minDragY = -(screenHeightPx * 0.7f)
+    val maxDragY = screenHeightPx * 0.2f
 
     Box(
         modifier = modifier
             .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
-            .pointerInput(Unit) {
+            .pointerInput(density, config) {
                 detectDragGestures { change, dragAmount ->
                     change.consume()
-                    offsetX += dragAmount.x
-                    offsetY += dragAmount.y
-                    offsetX = offsetX.coerceIn(-300f, 300f)
-                    offsetY = offsetY.coerceIn(-500f, 120f)
+                    offsetX = (offsetX + dragAmount.x).coerceIn(minDragX, maxDragX)
+                    offsetY = (offsetY + dragAmount.y).coerceIn(minDragY, maxDragY)
                 }
             }
             .shadow(12.dp, RoundedCornerShape(16.dp))

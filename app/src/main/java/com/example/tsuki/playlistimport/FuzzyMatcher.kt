@@ -19,7 +19,18 @@ object FuzzyMatcher {
         val titleScore = similarity(original.title, candidate.title)
         val artistQuery = original.artists.joinToString(" ")
         val artistScore = if (artistQuery.isBlank()) 0.5 else similarity(artistQuery, candidate.artist)
-        return titleScore * 0.65 + artistScore * 0.35
+        val baseScore = titleScore * 0.65 + artistScore * 0.35
+        val origDur = original.durationMs
+        return if (origDur != null && origDur > 0 && candidate.durationMs > 0L) {
+            val diffSec = kotlin.math.abs(origDur.toLong() - candidate.durationMs) / 1000.0
+            val durationScore = when {
+                diffSec <= 10.0 -> 1.0
+                diffSec <= 30.0 -> 0.85
+                diffSec <= 60.0 -> 0.6
+                else -> 0.3
+            }
+            baseScore * 0.8 + durationScore * 0.2
+        } else baseScore
     }
 
     fun similarity(a: String, b: String): Double {

@@ -161,14 +161,22 @@ class LocalPlaylistManager private constructor(context: Context) {
                 arrayOf(playlistId.toString(), position.toString())
             )
 
-            db.execSQL(
-                """
-                UPDATE ${LocalPlaylistDbHelper.TABLE_PLAYLIST_SONGS}
-                SET position = position - 1
-                WHERE playlist_id = ? AND position > ?
-                """.trimIndent(),
-                arrayOf(playlistId.toString(), position.toString())
+            val cursor = db.rawQuery(
+                "SELECT rowid FROM ${LocalPlaylistDbHelper.TABLE_PLAYLIST_SONGS} WHERE playlist_id = ? ORDER BY position ASC",
+                arrayOf(playlistId.toString())
             )
+            val rowIds = mutableListOf<Long>()
+            cursor.use { c ->
+                while (c.moveToNext()) {
+                    rowIds.add(c.getLong(0))
+                }
+            }
+            rowIds.forEachIndexed { newIndex, rowId ->
+                db.execSQL(
+                    "UPDATE ${LocalPlaylistDbHelper.TABLE_PLAYLIST_SONGS} SET position = ? WHERE rowid = ?",
+                    arrayOf<Any>(newIndex, rowId)
+                )
+            }
             db.setTransactionSuccessful()
         } finally {
             db.endTransaction()
@@ -185,8 +193,14 @@ class LocalPlaylistManager private constructor(context: Context) {
 
     suspend fun deletePlaylist(playlistId: Long) = withContext(Dispatchers.IO) {
         val db = dbHelper.writableDatabase
-        db.delete(LocalPlaylistDbHelper.TABLE_PLAYLIST_SONGS, "playlist_id = ?", arrayOf(playlistId.toString()))
-        db.delete(LocalPlaylistDbHelper.TABLE_PLAYLISTS, "id = ?", arrayOf(playlistId.toString()))
+        db.beginTransaction()
+        try {
+            db.delete(LocalPlaylistDbHelper.TABLE_PLAYLIST_SONGS, "playlist_id = ?", arrayOf(playlistId.toString()))
+            db.delete(LocalPlaylistDbHelper.TABLE_PLAYLISTS, "id = ?", arrayOf(playlistId.toString()))
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
         refresh()
     }
 
@@ -208,6 +222,24 @@ class LocalPlaylistManager private constructor(context: Context) {
                 }
             }
         }
+    }
+
+        suspend fun getAllPlaylists(): List<LocalPlaylistWithTracks> = withContext(Dispatchers.IO) {
+        val db = dbHelper.readableDatabase
+        val playlists = mutableListOf<LocalPlaylistWithTracks>()
+        val cursor = db.rawQuery(
+            "SELECT id, name FROM ${LocalPlaylistDbHelper.TABLE_PLAYLISTS} ORDER BY created_at DESC",
+            null
+        )
+        cursor.use { c ->
+            while (c.moveToNext()) {
+                val pid = c.getLong(0)
+                val name = c.getString(1)
+                val tracks = getPlaylistTracks(pid)
+                playlists.add(LocalPlaylistWithTracks(pid, name, tracks))
+            }
+        }
+        playlists
     }
 
     suspend fun getPlaylist(playlistId: Long): LocalPlaylistWithTracks? = withContext(Dispatchers.IO) {
@@ -244,13 +276,19 @@ class LocalPlaylistManager private constructor(context: Context) {
     }
 
     private fun insertTracks(db: SQLiteDatabase, playlistId: Long, tracks: List<MediaTrack>, startPosition: Int = 0) {
-        tracks.forEachIndexed { offset, track ->
-            val values = ContentValues().apply {
-                put("playlist_id", playlistId)
-                put("position", startPosition + offset)
-                put("track_json", json.encodeToString(MediaTrack.serializer(), track))
+        db.beginTransaction()
+        try {
+            tracks.forEachIndexed { offset, track ->
+                val values = ContentValues().apply {
+                    put("playlist_id", playlistId)
+                    put("position", startPosition + offset)
+                    put("track_json", json.encodeToString(MediaTrack.serializer(), track))
+                }
+                db.insert(LocalPlaylistDbHelper.TABLE_PLAYLIST_SONGS, null, values)
             }
-            db.insert(LocalPlaylistDbHelper.TABLE_PLAYLIST_SONGS, null, values)
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
         }
     }
 

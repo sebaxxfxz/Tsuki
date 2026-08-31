@@ -31,6 +31,9 @@ object MusicRecognizer {
                 AudioFormat.CHANNEL_IN_MONO,
                 AudioFormat.ENCODING_PCM_16BIT
             )
+            if (minBuf <= 0) {
+                return@withContext Result.failure(IllegalStateException("Formato de micrófono no compatible"))
+            }
             val record = AudioRecord(
                 MediaRecorder.AudioSource.MIC,
                 sampleRate,
@@ -39,7 +42,7 @@ object MusicRecognizer {
                 maxOf(minBuf, sampleRate * 2)
             )
             if (record.state != AudioRecord.STATE_INITIALIZED) {
-                record.release()
+                runCatching { record.release() }
                 return@withContext Result.failure(IllegalStateException("Micrófono no disponible"))
             }
 
@@ -56,8 +59,8 @@ object MusicRecognizer {
                     onProgress(progress.coerceIn(5, 95))
                 }
             } finally {
-                record.stop()
-                record.release()
+                runCatching { record.stop() }
+                runCatching { record.release() }
             }
 
             val signature = generator.nextSignatureOrNull()

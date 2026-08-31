@@ -30,17 +30,17 @@ class LyricsHelper private constructor(private val context: Context) {
     private val cache = LruCache<String, String>(24)
 
     private val baseProviders: List<LyricsProvider> = listOf(
-        LrcLibLyricsProvider,
-        PaxsenixLyricsProvider,
+        PaxsenixAppleMusicLyricsProvider,
         PaxsenixSpotifyLyricsProvider,
         PaxsenixMusixmatchLyricsProvider,
-        PaxsenixAppleMusicLyricsProvider,
-        PaxsenixNeteaseLyricsProvider,
+        UnisonLyricsProvider,
+        SimpMusicLyricsProvider,
+        YouLyPlusLyricsProvider,
+        PaxsenixLyricsProvider,
         BetterLyricsProvider,
         BetterLyricsPortatoProvider,
-        SimpMusicLyricsProvider,
-        UnisonLyricsProvider,
-        YouLyPlusLyricsProvider,
+        PaxsenixNeteaseLyricsProvider,
+        LrcLibLyricsProvider,
         KuGouLyricsProvider,
         NeteaseLyricsProvider,
         MegalobizLyricsProvider,
@@ -70,13 +70,13 @@ class LyricsHelper private constructor(private val context: Context) {
         val cleanArtist = LyricsSanitizer.cleanArtist(artist)
         val cacheKey = "${videoId}_${cleanArtist}_${cleanTitle}".replace(" ", "")
 
-
         if (!forceRefresh) {
-            cache.get(cacheKey)?.let {
-                return@withContext it
+            cache.get(cacheKey)?.let { cached ->
+                if (LyricsUtils.hasWordSyncedLyrics(cached) || LyricsUtils.isTtmlLyrics(cached)) {
+                    return@withContext cached
+                }
             }
         }
-
 
         var dbFallback: String? = null
         if (!forceRefresh) {
@@ -91,20 +91,22 @@ class LyricsHelper private constructor(private val context: Context) {
             }
         }
 
+        var lineSyncedCandidate: String? = null
+        var candidateProviderName: String? = null
 
         for (provider in providerChain(preferredProvider)) {
             try {
-                val result = withTimeout(15_000) { provider.getLyrics(videoId, title, artist, durationSeconds) }
+                val result = withTimeout(4_000) { provider.getLyrics(videoId, title, artist, durationSeconds) }
                 result.getOrNull()?.let { lyrics ->
                     if (LyricsUtils.hasMeaningfulLyricsContent(lyrics)) {
-                        cache.put(cacheKey, lyrics)
-                        if (LyricsUtils.isLineSyncedLrc(lyrics) ||
-                            LyricsUtils.hasWordSyncedLyrics(lyrics) ||
-                            LyricsUtils.isTtmlLyrics(lyrics)
-                        ) {
+                        if (LyricsUtils.hasWordSyncedLyrics(lyrics) || LyricsUtils.isTtmlLyrics(lyrics)) {
+                            cache.put(cacheKey, lyrics)
                             db.saveLyrics(videoId, title, artist, lyrics, provider.name)
+                            return@withContext lyrics
+                        } else if (lineSyncedCandidate == null && LyricsUtils.isLineSyncedLrc(lyrics)) {
+                            lineSyncedCandidate = lyrics
+                            candidateProviderName = provider.name
                         }
-                        return@withContext lyrics
                     }
                 }
             } catch (e: TimeoutCancellationException) {
@@ -114,9 +116,11 @@ class LyricsHelper private constructor(private val context: Context) {
             }
         }
 
-        dbFallback?.let { fallback ->
-            cache.put(cacheKey, fallback)
-            return@withContext fallback
+        val finalLyrics = lineSyncedCandidate ?: dbFallback
+        if (finalLyrics != null) {
+            cache.put(cacheKey, finalLyrics)
+            db.saveLyrics(videoId, title, artist, finalLyrics, candidateProviderName ?: "Cached")
+            return@withContext finalLyrics
         }
 
         android.util.Log.w("LyricsHelper", "All providers exhausted, no lyrics found")

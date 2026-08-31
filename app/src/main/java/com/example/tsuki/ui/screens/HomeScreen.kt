@@ -1,6 +1,7 @@
 package com.example.tsuki.ui.screens
 
 import androidx.compose.animation.AnimatedContent
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -63,7 +64,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -229,17 +229,17 @@ fun HomeScreen(
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val extractor = remember { YouTubeExtractor() }
     val focusManager = LocalFocusManager.current
 
     val homePreferences = remember { HomePreferences(context) }
-    val layoutMode by homePreferences.homeLayoutMode.collectAsState(initial = HomeLayoutMode.IMMERSIVE)
+    val layoutMode by homePreferences.homeLayoutMode.collectAsStateWithLifecycle(initialValue = HomeLayoutMode.IMMERSIVE)
 
     val authManager = remember { YouTubeAuthManager(context) }
-    val isLoggedIn by authManager.isLoggedIn.collectAsState(initial = false)
-    val accountInfo by authManager.accountInfo.collectAsState(initial = null)
+    val isLoggedIn by authManager.isLoggedIn.collectAsStateWithLifecycle(initialValue = false)
+    val accountInfo by authManager.accountInfo.collectAsStateWithLifecycle(initialValue = null)
     var showAccountDialog by remember { mutableStateOf(false) }
 
     var isSearchActive by remember { mutableStateOf(false) }
@@ -541,7 +541,7 @@ fun HomeScreen(
                             }
                         }
                         Text("No se pudo cargar el feed", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)
-                        Text(uiState.errorMessage!!, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(uiState.errorMessage ?: "Error desconocido", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         FilledTonalButton(onClick = { viewModel.loadFeed() }, shape = RoundedCornerShape(20.dp)) { Text("Reintentar") }
                     }
                 }
@@ -627,13 +627,13 @@ fun HomeScreen(
                         }
                     }
 
-                    displayedSections.forEach { section ->
+                    displayedSections.forEachIndexed { sIndex, section ->
                         val isShortsShelf = section.title.lowercase().contains("shorts")
                         val isMainVerticalShelf = section.title.lowercase().let { t ->
                             t.contains("para ti") || t.contains("descubrimiento") || t.contains("descargas") || t.contains("tendencias") || t.contains("suscripciones") || t.contains("canales que sigues")
                         }
                         if (isShortsShelf) {
-                            item(key = "shorts_${section.title}") {
+                            item(key = "shorts_${section.title}_$sIndex") {
                                 ShortsShelf(tracks = section.tracks, isScrolling = isFeedScrolling, onTrackClick = { track ->
                                     viewModel.onTrackClicked(track)
                                     val idx = section.tracks.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
@@ -641,7 +641,7 @@ fun HomeScreen(
                                 })
                             }
                         } else if (isMainVerticalShelf) {
-                            item(key = "header_${section.title}") {
+                            item(key = "header_${section.title}_$sIndex") {
                                 val subtitle = when {
                                     section.title.lowercase().contains("para ti") -> "RECOMENDADO PARA TI"
                                     section.title.lowercase().contains("tendencias") -> "POPULAR AHORA"
@@ -656,7 +656,7 @@ fun HomeScreen(
                                 HomeLayoutMode.IMMERSIVE -> {
                                     val revealed = revealedCount(section.title, section.tracks.size)
                                     val visibleTracks = section.tracks.take(revealed)
-                                    items(visibleTracks, key = { "${section.title}_${it.id}" }, contentType = { "video_card" }) { track ->
+                                    items(visibleTracks, key = { "${section.title}_${it.id}_$sIndex" }, contentType = { "video_card" }) { track ->
                                         VideoCardEnhanced(
                                             video = track,
                                             onClick = {
@@ -669,7 +669,7 @@ fun HomeScreen(
                                         )
                                     }
                                     if (visibleTracks.size < section.tracks.size) {
-                                        item(key = "more_${section.title}", contentType = { "load_more" }) {
+                                        item(key = "more_${section.title}_$sIndex", contentType = { "load_more" }) {
                                             RevealMoreButton(revealed = revealed, total = section.tracks.size, onReveal = { revealMore(section.title, revealed, section.tracks.size) })
                                         }
                                     }
@@ -677,7 +677,7 @@ fun HomeScreen(
                                 HomeLayoutMode.COMPACT -> {
                                     val revealed = revealedCount(section.title, section.tracks.size)
                                     val visibleTracks = section.tracks.take(revealed)
-                                    items(visibleTracks, key = { "${section.title}_${it.id}" }, contentType = { "video_compact" }) { track ->
+                                    items(visibleTracks, key = { "${section.title}_${it.id}_$sIndex" }, contentType = { "video_compact" }) { track ->
                                         VideoCardCompact(
                                             video = track,
                                             onClick = {
@@ -690,7 +690,7 @@ fun HomeScreen(
                                         )
                                     }
                                     if (visibleTracks.size < section.tracks.size) {
-                                        item(key = "more_${section.title}", contentType = { "load_more" }) {
+                                        item(key = "more_${section.title}_$sIndex", contentType = { "load_more" }) {
                                             RevealMoreButton(revealed = revealed, total = section.tracks.size, onReveal = { revealMore(section.title, revealed, section.tracks.size) })
                                         }
                                     }
@@ -698,7 +698,7 @@ fun HomeScreen(
                                 HomeLayoutMode.GRID -> {
                                     val revealed = revealedCount(section.title, section.tracks.size)
                                     val chunked = gridChunksByTitle[section.title].orEmpty().take((revealed + 1) / 2)
-                                    items(chunked, key = { chunk -> "${section.title}_grid_${chunk.firstOrNull()?.id}_${chunk.getOrNull(1)?.id}" }, contentType = { "video_grid" }) { pair ->
+                                    items(chunked, key = { chunk -> "${section.title}_grid_${chunk.firstOrNull()?.id}_${chunk.getOrNull(1)?.id}_$sIndex" }, contentType = { "video_grid" }) { pair ->
                                         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                             pair.forEach { track ->
                                                 Box(modifier = Modifier.weight(1f)) {
@@ -714,14 +714,14 @@ fun HomeScreen(
                                         }
                                     }
                                     if (revealed < section.tracks.size) {
-                                        item(key = "more_${section.title}", contentType = { "load_more" }) {
+                                        item(key = "more_${section.title}_$sIndex", contentType = { "load_more" }) {
                                             RevealMoreButton(revealed = revealed, total = section.tracks.size, onReveal = { revealMore(section.title, revealed, section.tracks.size) })
                                         }
                                     }
                                 }
                             }
                         } else {
-                            item(key = "hrow_${section.title}") {
+                            item(key = "hrow_${section.title}_$sIndex") {
                                 HorizontalMediaRow(title = section.title, tracks = section.tracks, isScrolling = isFeedScrolling, onTrackClick = { track ->
                                     viewModel.onTrackClicked(track)
                                     val idx = section.tracks.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
@@ -911,7 +911,7 @@ fun MediaCardSquare(
                         .background(Color.Black.copy(alpha = 0.78f))
                         .padding(horizontal = 6.dp, vertical = 3.dp)
                 ) {
-                    Text(text = track.durationText!!, color = Color.White, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), fontSize = 11.sp)
+                    Text(text = track.durationText.orEmpty(), color = Color.White, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), fontSize = 11.sp)
                 }
             } else {
                 Box(
