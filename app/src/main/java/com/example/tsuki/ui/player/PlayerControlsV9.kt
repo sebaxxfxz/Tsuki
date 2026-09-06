@@ -135,7 +135,7 @@ fun PlayerTopActionsV9(
                 Icon(
                     imageVector = if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
                     contentDescription = if (isFavorite) "Quitar de favoritos" else "Añadir a favoritos",
-                    tint = if (isFavorite) Color(0xFFE91E63) else MaterialTheme.colorScheme.onSurface,
+                    tint = if (isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.size(28.dp)
                 )
             }
@@ -235,14 +235,11 @@ fun V9AnimatedPlaybackControls(
                     .fillMaxHeight()
                     .clip(CircleShape)
                     .background(colorOtherButtons)
-                    .clickable {
+                    .clickable(role = androidx.compose.ui.semantics.Role.Button) {
                         lastClicked = V9PlaybackButtonType.PREVIOUS
                         clickTrigger++
                         hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        coroutineScope.launch {
-                            delay(160)
-                            onPrevious()
-                        }
+                        onPrevious()
                     },
                 contentAlignment = Alignment.Center
             ) {
@@ -260,7 +257,7 @@ fun V9AnimatedPlaybackControls(
                 label = "playWeight"
             )
             val playCorner by animateDpAsState(
-                targetValue = if (!playPauseVisualState) playPauseCornerPlaying else playPauseCornerPaused,
+                targetValue = if (playPauseVisualState) playPauseCornerPlaying else playPauseCornerPaused,
                 animationSpec = dpSpringSpec,
                 label = "playCorner"
             )
@@ -273,7 +270,7 @@ fun V9AnimatedPlaybackControls(
                         shape = RoundedCornerShape(playCorner)
                     }
                     .background(colorPlayPause)
-                    .clickable {
+                    .clickable(role = androidx.compose.ui.semantics.Role.Button) {
                         lastClicked = V9PlaybackButtonType.PLAY_PAUSE
                         clickTrigger++
                         hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -283,7 +280,10 @@ fun V9AnimatedPlaybackControls(
             ) {
                 Crossfade(
                     targetState = playPauseVisualState,
-                    animationSpec = tween(durationMillis = 200),
+                    animationSpec = androidx.compose.animation.core.tween(
+                        durationMillis = com.example.tsuki.ui.components.M3MotionTokens.DurationShort4,
+                        easing = com.example.tsuki.ui.components.M3MotionTokens.EmphasizedDecelerateEasing
+                    ),
                     label = "v9PlayPauseCrossfade"
                 ) { playing ->
                     Icon(
@@ -306,14 +306,11 @@ fun V9AnimatedPlaybackControls(
                     .fillMaxHeight()
                     .clip(CircleShape)
                     .background(colorOtherButtons)
-                    .clickable {
+                    .clickable(role = androidx.compose.ui.semantics.Role.Button) {
                         lastClicked = V9PlaybackButtonType.NEXT
                         clickTrigger++
                         hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        coroutineScope.launch {
-                            delay(160)
-                            onNext()
-                        }
+                        onNext()
                     },
                 contentAlignment = Alignment.Center
             ) {
@@ -397,11 +394,29 @@ fun PlayerSliderV9(
     onSeek: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val max = duration.coerceAtLeast(1L).toFloat()
-    val progress = (currentPosition.toFloat() / max).coerceIn(0f, 1f)
+    val hasValidDuration = duration > 0L
+    val max = if (hasValidDuration) duration.toFloat() else 1f
+    val progress = if (hasValidDuration) (currentPosition.toFloat() / max).coerceIn(0f, 1f) else 0f
     var dragValue by remember { mutableStateOf<Float?>(null) }
-    val currentDrag = dragValue
-    val displayPosition = if (currentDrag != null) (currentDrag * max).toLong() else currentPosition
+    var optimisticProgress by remember { mutableStateOf<Float?>(null) }
+
+    LaunchedEffect(currentPosition) {
+        if (optimisticProgress != null) {
+            val optPos = (optimisticProgress!! * max).toLong()
+            if (kotlin.math.abs(currentPosition - optPos) < 600L) {
+                optimisticProgress = null
+            }
+        }
+    }
+
+    LaunchedEffect(optimisticProgress) {
+        if (optimisticProgress != null) {
+            kotlinx.coroutines.delay(800)
+            optimisticProgress = null
+        }
+    }
+
+    val displayPosition = if (dragValue != null) (dragValue!! * max).toLong() else if (optimisticProgress != null) (optimisticProgress!! * max).toLong() else currentPosition
     val context = androidx.compose.ui.platform.LocalContext.current
     val prefs = remember { com.example.tsuki.data.local.PlayerPreferences(context) }
     val sliderStyle by prefs.progressBarStyle.collectAsStateWithLifecycle(initialValue = com.example.tsuki.data.local.ProgressBarStyle.STANDARD)
@@ -413,11 +428,14 @@ fun PlayerSliderV9(
 
     Column(modifier = modifier.fillMaxWidth()) {
         M3WavySlider(
-            value = dragValue ?: progress,
-            onValueChange = { frac -> dragValue = frac },
+            value = if (hasValidDuration) (dragValue ?: optimisticProgress ?: progress) else 0f,
+            onValueChange = { frac -> if (hasValidDuration) dragValue = frac },
             onValueChangeFinished = {
-                dragValue?.let { frac ->
-                    onSeek((frac * max).toLong())
+                if (hasValidDuration) {
+                    dragValue?.let { frac ->
+                        optimisticProgress = frac
+                        onSeek((frac * max).toLong())
+                    }
                 }
                 dragValue = null
             },

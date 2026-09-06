@@ -36,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.pointer.pointerInput
@@ -43,6 +44,7 @@ import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.input.pointer.util.addPointerInputChange
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
+import kotlin.math.abs
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
@@ -51,8 +53,8 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
-private val BottomSheetAnimationSpec: AnimationSpec<Dp> = spring(dampingRatio = 0.8f, stiffness = 400f)
-private val BottomSheetSoftAnimationSpec: AnimationSpec<Dp> = spring(dampingRatio = 0.85f, stiffness = 300f)
+private val BottomSheetAnimationSpec: AnimationSpec<Dp> = com.example.tsuki.ui.components.M3MotionTokens.BottomSheetSpring
+private val BottomSheetSoftAnimationSpec: AnimationSpec<Dp> = com.example.tsuki.ui.components.M3MotionTokens.BottomSheetSoftSpring
 
 @Composable
 fun PlayerBottomSheet(
@@ -85,7 +87,11 @@ fun PlayerBottomSheet(
                     val y = (state.expandedBound - state.value).roundToPx().coerceAtLeast(0)
                     IntOffset(x = 0, y = y)
                 }
-                .then(if (state.progress > 0.02f) Modifier.bottomSheetDraggable(state, onDismiss) else Modifier)
+                .then(
+                    if (!state.isCollapsed) {
+                        Modifier.bottomSheetDraggable(state, onDismiss)
+                    } else Modifier
+                )
                 .clip(
                     RoundedCornerShape(
                         topStart = if (!state.isExpanded) 16.dp else 0.dp,
@@ -97,10 +103,13 @@ fun PlayerBottomSheet(
             if (state.isExpandedOrExpanding && backHandlerEnabled) {
                 BackHandler(onBack = state::collapseSoft)
             }
-            if (!state.isCollapsed) {
+            if (state.progress > 0.15f && !state.isCollapsed) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
+                        .graphicsLayer {
+                            alpha = ((state.progress - 0.15f) / 0.85f).coerceIn(0f, 1f)
+                        }
                         .background(MaterialTheme.colorScheme.surface),
                     content = content
                 )
@@ -109,7 +118,10 @@ fun PlayerBottomSheet(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(state.collapsedBound),
+                        .height(state.collapsedBound)
+                        .graphicsLayer {
+                            alpha = if (state.progress > 0.35f) 0f else ((0.35f - state.progress) / 0.35f).coerceIn(0f, 1f)
+                        },
                     content = collapsedContent
                 )
             }
@@ -131,12 +143,14 @@ class PlayerSheetState(
     val value by animatable.asState()
     var targetAnchor by mutableIntStateOf(initialAnchor)
         private set
-    val isDismissed by derivedStateOf { value == dismissedBound }
-    val isCollapsed by derivedStateOf { value == collapsedBound }
-    val isExpanded by derivedStateOf { value == expandedBound }
+    val isDismissed by derivedStateOf { abs(value.value - dismissedBound.value) < 1f }
+    val isCollapsed by derivedStateOf { abs(value.value - collapsedBound.value) < 1f || progress <= 0.03f }
+    val isExpanded by derivedStateOf { abs(value.value - expandedBound.value) < 1f || progress >= 0.98f }
     val isExpandedOrExpanding: Boolean get() = targetAnchor == EXPANDED_ANCHOR
     val progress by derivedStateOf {
-        1f - (expandedBound - animatable.value) / (expandedBound - collapsedBound)
+        val total = expandedBound - collapsedBound
+        if (total.value <= 0f) 0f
+        else (1f - (expandedBound - animatable.value) / total).coerceIn(0f, 1f)
     }
     private fun updateAnchor(anchor: Int) {
         targetAnchor = anchor
@@ -144,11 +158,17 @@ class PlayerSheetState(
     }
     fun collapse(animationSpec: AnimationSpec<Dp> = BottomSheetAnimationSpec) {
         updateAnchor(COLLAPSED_ANCHOR)
-        coroutineScope.launch(start = CoroutineStart.UNDISPATCHED) { animatable.animateTo(collapsedBound, animationSpec) }
+        coroutineScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            animatable.animateTo(collapsedBound, animationSpec)
+            animatable.snapTo(collapsedBound)
+        }
     }
     fun expand(animationSpec: AnimationSpec<Dp> = BottomSheetAnimationSpec) {
         updateAnchor(EXPANDED_ANCHOR)
-        coroutineScope.launch(start = CoroutineStart.UNDISPATCHED) { animatable.animateTo(expandedBound, animationSpec) }
+        coroutineScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            animatable.animateTo(expandedBound, animationSpec)
+            animatable.snapTo(expandedBound)
+        }
     }
     fun collapseSoft() { collapse(BottomSheetSoftAnimationSpec) }
     fun expandSoft() { expand(BottomSheetSoftAnimationSpec) }

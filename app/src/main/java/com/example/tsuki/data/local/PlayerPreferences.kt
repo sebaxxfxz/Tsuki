@@ -26,11 +26,13 @@ private val Context.playerDataStore by preferencesDataStore(
 class PlayerPreferences(private val context: Context) {
 
     companion object {
+        private val KEY_PLAYBACK_SPEED = floatPreferencesKey("playback_speed")
         private val KEY_CROSSFADE_ENABLED = booleanPreferencesKey("crossfade_enabled")
         private val KEY_CROSSFADE_DURATION = floatPreferencesKey("crossfade_duration")
         private val KEY_CROSSFADE_GAPLESS = booleanPreferencesKey("crossfade_gapless")
         private val KEY_PREFERRED_LYRICS_PROVIDER = stringPreferencesKey("preferred_lyrics_provider")
         private val KEY_AUTO_QUEUE_ENABLED = booleanPreferencesKey("auto_queue_enabled")
+        private val KEY_SKIP_SILENCE_ENABLED = booleanPreferencesKey("skip_silence_enabled")
         private val KEY_CACHE_SIZE_MB = intPreferencesKey("cache_size_mb")
         private val KEY_AUDIO_QUALITY = stringPreferencesKey("audio_quality")
         private val KEY_DATA_SAVER = booleanPreferencesKey("data_saver")
@@ -48,6 +50,7 @@ class PlayerPreferences(private val context: Context) {
         private val KEY_SYNC_LIKED = booleanPreferencesKey("sync_liked_enabled")
         private val KEY_SYNC_PLAYLISTS = booleanPreferencesKey("sync_playlists_enabled")
         private val KEY_SYNC_HISTORY = booleanPreferencesKey("sync_history_enabled")
+        private val KEY_VOLUME_NORMALIZATION = booleanPreferencesKey("volume_normalization")
 
         const val LYRICS_SYNC_OFFSET_MIN = -2000
         const val LYRICS_SYNC_OFFSET_MAX = 2000
@@ -75,7 +78,8 @@ class PlayerPreferences(private val context: Context) {
     val crossfadeEnabled: Flow<Boolean> = context.playerDataStore.data.map { it[KEY_CROSSFADE_ENABLED] ?: false }
 
     val crossfadeDurationSeconds: Flow<Float> = context.playerDataStore.data.map {
-        (it[KEY_CROSSFADE_DURATION] ?: CROSSFADE_DEFAULT_DURATION).coerceIn(CROSSFADE_MIN_DURATION, CROSSFADE_MAX_DURATION)
+        val raw = it[KEY_CROSSFADE_DURATION] ?: CROSSFADE_DEFAULT_DURATION
+        (kotlin.math.round(raw * 2f) / 2f).coerceIn(CROSSFADE_MIN_DURATION, CROSSFADE_MAX_DURATION)
     }
 
     val crossfadeGapless: Flow<Boolean> = context.playerDataStore.data.map { it[KEY_CROSSFADE_GAPLESS] ?: false }
@@ -143,13 +147,19 @@ class PlayerPreferences(private val context: Context) {
     val syncLikedEnabled: Flow<Boolean> = context.playerDataStore.data.map { it[KEY_SYNC_LIKED] ?: true }
     val syncPlaylistsEnabled: Flow<Boolean> = context.playerDataStore.data.map { it[KEY_SYNC_PLAYLISTS] ?: true }
     val syncHistoryEnabled: Flow<Boolean> = context.playerDataStore.data.map { it[KEY_SYNC_HISTORY] ?: true }
+    val volumeNormalization: Flow<Boolean> = context.playerDataStore.data.map { it[KEY_VOLUME_NORMALIZATION] ?: true }
+
+    suspend fun setVolumeNormalization(enabled: Boolean) {
+        context.playerDataStore.edit { it[KEY_VOLUME_NORMALIZATION] = enabled }
+    }
 
     suspend fun setCrossfadeEnabled(enabled: Boolean) {
         context.playerDataStore.edit { it[KEY_CROSSFADE_ENABLED] = enabled }
     }
 
     suspend fun setCrossfadeDuration(seconds: Float) {
-        context.playerDataStore.edit { it[KEY_CROSSFADE_DURATION] = seconds.coerceIn(CROSSFADE_MIN_DURATION, CROSSFADE_MAX_DURATION) }
+        val rounded = (kotlin.math.round(seconds * 2f) / 2f).coerceIn(CROSSFADE_MIN_DURATION, CROSSFADE_MAX_DURATION)
+        context.playerDataStore.edit { it[KEY_CROSSFADE_DURATION] = rounded }
     }
 
     suspend fun setCrossfadeGapless(gapless: Boolean) {
@@ -160,8 +170,19 @@ class PlayerPreferences(private val context: Context) {
         context.playerDataStore.edit { it[KEY_PREFERRED_LYRICS_PROVIDER] = name }
     }
 
+    val skipSilenceEnabled: Flow<Boolean> = context.playerDataStore.data.map { it[KEY_SKIP_SILENCE_ENABLED] ?: false }
+    val playbackSpeed: Flow<Float> = context.playerDataStore.data.map { it[KEY_PLAYBACK_SPEED] ?: 1.0f }
+
+    suspend fun setPlaybackSpeed(speed: Float) {
+        context.playerDataStore.edit { it[KEY_PLAYBACK_SPEED] = speed.coerceIn(0.25f, 3f) }
+    }
+
     suspend fun setAutoQueueEnabled(enabled: Boolean) {
         context.playerDataStore.edit { it[KEY_AUTO_QUEUE_ENABLED] = enabled }
+    }
+
+    suspend fun setSkipSilenceEnabled(enabled: Boolean) {
+        context.playerDataStore.edit { it[KEY_SKIP_SILENCE_ENABLED] = enabled }
     }
 
     suspend fun setCacheSizeMb(sizeMb: Int) {

@@ -32,7 +32,7 @@ class LocalPlaylistDbHelper(context: Context) :
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
             """
-            CREATE TABLE $TABLE_PLAYLISTS (
+            CREATE TABLE IF NOT EXISTS $TABLE_PLAYLISTS (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
                 created_at INTEGER NOT NULL
@@ -41,7 +41,7 @@ class LocalPlaylistDbHelper(context: Context) :
         )
         db.execSQL(
             """
-            CREATE TABLE $TABLE_PLAYLIST_SONGS (
+            CREATE TABLE IF NOT EXISTS $TABLE_PLAYLIST_SONGS (
                 playlist_id INTEGER NOT NULL,
                 position INTEGER NOT NULL,
                 track_json TEXT NOT NULL,
@@ -72,7 +72,18 @@ class LocalPlaylistDbHelper(context: Context) :
         }
     }
 
+    private fun tableExists(db: SQLiteDatabase, table: String): Boolean {
+        db.rawQuery(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+            arrayOf(table)
+        ).use { cursor -> return cursor.moveToFirst() }
+    }
+
     private fun migrateTablePreservingData(db: SQLiteDatabase, table: String): Boolean {
+        if (!tableExists(db, table)) {
+            onCreate(db)
+            return true
+        }
         val oldTable = "${table}_old"
         db.execSQL("DROP TABLE IF EXISTS $oldTable")
         db.execSQL("ALTER TABLE $table RENAME TO $oldTable")
@@ -118,7 +129,8 @@ class LocalPlaylistManager private constructor(context: Context) {
                 put("created_at", System.currentTimeMillis())
             }
             val id = db.insert(LocalPlaylistDbHelper.TABLE_PLAYLISTS, null, values)
-            if (id > 0) insertTracks(db, id, tracks)
+            if (id <= 0) throw android.database.sqlite.SQLiteException("Failed to insert playlist")
+            insertTracks(db, id, tracks)
             db.setTransactionSuccessful()
             id
         } finally {
@@ -128,9 +140,9 @@ class LocalPlaylistManager private constructor(context: Context) {
 
     suspend fun addTracks(playlistId: Long, tracks: List<MediaTrack>) = withContext(Dispatchers.IO) {
         val db = dbHelper.writableDatabase
-        val existing = getCurrentTrackCount(db, playlistId)
         db.beginTransaction()
         try {
+            val existing = getNextTrackPosition(db, playlistId)
             insertTracks(db, playlistId, tracks, startPosition = existing)
             db.setTransactionSuccessful()
         } finally {
@@ -140,14 +152,40 @@ class LocalPlaylistManager private constructor(context: Context) {
     }
 
     suspend fun addTrackIfNotExists(playlistId: Long, track: MediaTrack): Boolean = withContext(Dispatchers.IO) {
-        val tracks = getPlaylistTracks(playlistId)
-        val trackVideoId = track.videoId ?: track.id
-        val alreadyExists = tracks.any { (it.videoId ?: it.id) == trackVideoId }
-        if (alreadyExists) {
-            false
-        } else {
-            addTracks(playlistId, listOf(track))
+        val db = dbHelper.writableDatabase
+        db.beginTransaction()
+        try {
+            val trackVideoId = track.videoId ?: track.id
+            var alreadyExists = false
+            db.query(
+                LocalPlaylistDbHelper.TABLE_PLAYLIST_SONGS,
+                arrayOf("track_json"),
+                "playlist_id = ?",
+                arrayOf(playlistId.toString()),
+                null, null, null
+            ).use { c ->
+                while (c.moveToNext()) {
+                    val existing = runCatching {
+                        json.decodeFromString(MediaTrack.serializer(), c.getString(0))
+                    }.getOrNull()
+                    if (existing != null && (existing.videoId ?: existing.id) == trackVideoId) {
+                        alreadyExists = true
+                        return@use
+                    }
+                }
+            }
+            if (alreadyExists) {
+                db.endTransaction()
+                return@withContext false
+            }
+            insertTracks(db, playlistId, listOf(track), startPosition = getNextTrackPosition(db, playlistId))
+            db.setTransactionSuccessful()
+            db.endTransaction()
+            refresh()
             true
+        } catch (_: Exception) {
+            runCatching { db.endTransaction() }
+            false
         }
     }
 
@@ -182,6 +220,26 @@ class LocalPlaylistManager private constructor(context: Context) {
             db.endTransaction()
         }
         refresh()
+    }
+
+    suspend fun moveTrack(playlistId: Long, from: Int, to: Int) = withContext(Dispatchers.IO) {
+        val current = getPlaylistTracks(playlistId).toMutableList()
+        if (from !in current.indices || to !in current.indices || from == to) return@withContext
+        val moved = current.removeAt(from)
+        current.add(to, moved)
+        val db = dbHelper.writableDatabase
+        db.beginTransaction()
+        try {
+            db.delete(
+                LocalPlaylistDbHelper.TABLE_PLAYLIST_SONGS,
+                "playlist_id = ?",
+                arrayOf(playlistId.toString())
+            )
+            insertTracks(db, playlistId, current)
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
     }
 
     suspend fun renamePlaylist(playlistId: Long, newName: String) = withContext(Dispatchers.IO) {
@@ -224,7 +282,44 @@ class LocalPlaylistManager private constructor(context: Context) {
         }
     }
 
-        suspend fun getAllPlaylists(): List<LocalPlaylistWithTracks> = withContext(Dispatchers.IO) {
+    data class PlaylistSummary(
+        val id: Long,
+        val name: String,
+        val trackCount: Int,
+        val firstTrackThumbnail: String?
+    )
+
+    suspend fun getPlaylistSummaries(): List<PlaylistSummary> = withContext(Dispatchers.IO) {
+        val db = dbHelper.readableDatabase
+        val list = mutableListOf<PlaylistSummary>()
+        val sql = """
+            SELECT p.id, p.name, 
+                   COUNT(s.position) AS track_count,
+                   (SELECT s2.track_json FROM ${LocalPlaylistDbHelper.TABLE_PLAYLIST_SONGS} s2 
+                    WHERE s2.playlist_id = p.id ORDER BY s2.position ASC LIMIT 1) AS first_json
+            FROM ${LocalPlaylistDbHelper.TABLE_PLAYLISTS} p
+            LEFT JOIN ${LocalPlaylistDbHelper.TABLE_PLAYLIST_SONGS} s ON p.id = s.playlist_id
+            GROUP BY p.id, p.name
+            ORDER BY p.created_at DESC
+        """.trimIndent()
+        db.rawQuery(sql, null).use { cursor ->
+            while (cursor.moveToNext()) {
+                val pid = cursor.getLong(0)
+                val name = cursor.getString(1)
+                val count = cursor.getInt(2)
+                val firstJson = cursor.getString(3)
+                val thumb = if (!firstJson.isNullOrBlank()) {
+                    runCatching {
+                        json.decodeFromString(MediaTrack.serializer(), firstJson).artworkUrl
+                    }.getOrNull()
+                } else null
+                list.add(PlaylistSummary(pid, name, count, thumb))
+            }
+        }
+        list
+    }
+
+    suspend fun getAllPlaylists(): List<LocalPlaylistWithTracks> = withContext(Dispatchers.IO) {
         val db = dbHelper.readableDatabase
         val playlists = mutableListOf<LocalPlaylistWithTracks>()
         val cursor = db.rawQuery(
@@ -276,25 +371,19 @@ class LocalPlaylistManager private constructor(context: Context) {
     }
 
     private fun insertTracks(db: SQLiteDatabase, playlistId: Long, tracks: List<MediaTrack>, startPosition: Int = 0) {
-        db.beginTransaction()
-        try {
-            tracks.forEachIndexed { offset, track ->
-                val values = ContentValues().apply {
-                    put("playlist_id", playlistId)
-                    put("position", startPosition + offset)
-                    put("track_json", json.encodeToString(MediaTrack.serializer(), track))
-                }
-                db.insert(LocalPlaylistDbHelper.TABLE_PLAYLIST_SONGS, null, values)
+        tracks.forEachIndexed { offset, track ->
+            val values = ContentValues().apply {
+                put("playlist_id", playlistId)
+                put("position", startPosition + offset)
+                put("track_json", json.encodeToString(MediaTrack.serializer(), track))
             }
-            db.setTransactionSuccessful()
-        } finally {
-            db.endTransaction()
+            db.insertWithOnConflict(LocalPlaylistDbHelper.TABLE_PLAYLIST_SONGS, null, values, SQLiteDatabase.CONFLICT_REPLACE)
         }
     }
 
-    private fun getCurrentTrackCount(db: SQLiteDatabase, playlistId: Long): Int =
+    private fun getNextTrackPosition(db: SQLiteDatabase, playlistId: Long): Int =
         db.rawQuery(
-            "SELECT COUNT(*) FROM ${LocalPlaylistDbHelper.TABLE_PLAYLIST_SONGS} WHERE playlist_id = ?",
+            "SELECT COALESCE(MAX(position), -1) + 1 FROM ${LocalPlaylistDbHelper.TABLE_PLAYLIST_SONGS} WHERE playlist_id = ?",
             arrayOf(playlistId.toString())
         ).use { c -> if (c.moveToFirst()) c.getInt(0) else 0 }
 

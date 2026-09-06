@@ -1,0 +1,19 @@
+# Configuración mínima de detekt para TSuki.
+# Se construye sobre la config por defecto (buildUponDefaultConfig = true);
+# este archivo solo activa/tunea el ruleset de coroutines.
+# La tarea `detekt` NO está enganchada a `check`: se ejecuta manualmente con ./gradlew detekt.
+
+coroutines:
+  active: true
+  RedundantSuspendModifier:
+    active: true
+  GlobalCoroutineUsage:
+    active: true
+  InjectDispatcher:
+    active: true
+    dispatcherNames:
+      - 'IO'
+      - 'Default'
+      - 'Unconfined'
+  SuspendFunWithFlowReturnType:
+    active: true

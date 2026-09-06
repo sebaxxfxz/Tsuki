@@ -55,6 +55,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -83,13 +84,13 @@ fun ImportPlaylistScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    var playlistName by remember { mutableStateOf("Playlist Importada") }
+    var playlistName by rememberSaveable { mutableStateOf("Playlist Importada") }
     var importedSongs by remember { mutableStateOf<List<ImportedSong>>(emptyList()) }
     var songResults by remember { mutableStateOf<List<ImportedSongResult>>(emptyList()) }
-    var isResolving by remember { mutableStateOf(false) }
-    var resolveProgress by remember { mutableFloatStateOf(0f) }
-    var progressText by remember { mutableStateOf("") }
-    var isSaved by remember { mutableStateOf(false) }
+    var isResolving by rememberSaveable { mutableStateOf(false) }
+    var resolveProgress by rememberSaveable { mutableFloatStateOf(0f) }
+    var progressText by rememberSaveable { mutableStateOf("") }
+    var isSaved by rememberSaveable { mutableStateOf(false) }
 
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()

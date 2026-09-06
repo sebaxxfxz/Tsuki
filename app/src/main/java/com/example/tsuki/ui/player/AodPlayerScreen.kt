@@ -85,7 +85,7 @@ import kotlin.math.abs
 private const val AUTO_DIM_TIMEOUT_MS = 5000L
 private const val AUTO_DIM_ALPHA = 0.25f
 private const val DIM_BRIGHTNESS = 0.15f
-private const val SHAKE_THRESHOLD = 18f
+private const val SHAKE_THRESHOLD = 32f
 private const val SLIDE_MAX_PX = 360f
 
 private fun formatAodTime(ms: Long): String {
@@ -163,21 +163,17 @@ fun AodPlayerScreen(
         }
     }
 
-    DisposableEffect(isDimmed) {
-        val window = activity?.window ?: return@DisposableEffect onDispose { }
+    LaunchedEffect(isDimmed) {
+        val window = activity?.window ?: return@LaunchedEffect
         window.attributes = window.attributes.apply {
             screenBrightness = if (isDimmed) DIM_BRIGHTNESS else WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
-        }
-        onDispose {
-            window.attributes = window.attributes.apply {
-                screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
-            }
         }
     }
 
     LaunchedEffect(lastInteractionAt, isLocked) {
-        if (!isLocked && !isDimmed) {
-            delay(AUTO_DIM_TIMEOUT_MS)
+        if (!isDimmed) {
+            val timeout = if (isLocked) 3000L else AUTO_DIM_TIMEOUT_MS
+            delay(timeout)
             isDimmed = true
         }
     }
@@ -210,23 +206,27 @@ fun AodPlayerScreen(
 
             override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
         }
-        if (isLocked && accelerometer != null) {
-            sensorManager.registerListener(listener, accelerometer, SensorManager.SENSOR_DELAY_UI)
+        if (isLocked) {
+            sensorManager.registerListener(listener, accelerometer, SensorManager.SENSOR_DELAY_NORMAL)
         }
         onDispose { sensorManager.unregisterListener(listener) }
     }
 
     DisposableEffect(Unit) {
+        val filter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+        val initialSticky = context.registerReceiver(null, filter)
+        batteryLevel = initialSticky?.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1) ?: -1
+
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(ctx: Context?, intent: Intent?) {
-                batteryLevel = intent?.getIntExtra("level", -1) ?: -1
+                batteryLevel = intent?.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1) ?: -1
             }
         }
         androidx.core.content.ContextCompat.registerReceiver(
             context,
             receiver,
-            IntentFilter(Intent.ACTION_BATTERY_CHANGED),
-            androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED
+            filter,
+            androidx.core.content.ContextCompat.RECEIVER_EXPORTED
         )
         onDispose { context.unregisterReceiver(receiver) }
     }
@@ -241,7 +241,6 @@ fun AodPlayerScreen(
         label = "aodContentFade"
     )
 
-    var lockSlideProgress by remember { mutableFloatStateOf(0f) }
     val unlockSlideProgress = remember { mutableStateOf(0f) }
     val audioManager = remember {
         context.getSystemService(android.content.Context.AUDIO_SERVICE) as? android.media.AudioManager
@@ -265,36 +264,6 @@ fun AodPlayerScreen(
                     onDoubleTap = {
                         resetInteraction()
                         if (!isLocked) onPlayPause()
-                    }
-                )
-            }
-            .pointerInput(Unit) {
-                var accumulated = 0f
-                detectHorizontalDragGestures(
-                    onHorizontalDrag = { change, amount ->
-                        change.consume()
-                        accumulated = (accumulated + amount).coerceIn(0f, size.width * 0.6f)
-                        val progress = accumulated / (size.width * 0.35f)
-                        if (isLocked) unlockSlideProgress.value = progress else lockSlideProgress = progress
-                    },                    onDragEnd = {
-                        val thresholdReached = accumulated >= size.width * 0.30f
-                        accumulated = 0f
-                        if (thresholdReached) {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            if (isLocked) {
-                                isLocked = false
-                                resetInteraction()
-                            } else {
-                                isLocked = true
-                            }
-                        }
-                        unlockSlideProgress.value = 0f
-                        lockSlideProgress = 0f
-                    },
-                    onDragCancel = {
-                        accumulated = 0f
-                        unlockSlideProgress.value = 0f
-                        lockSlideProgress = 0f
                     }
                 )
             }
@@ -430,7 +399,7 @@ fun AodPlayerScreen(
             ) {
                 AodSlideToLockButton(
                     accentColor = accentColor,
-                    progress = lockSlideProgress.coerceIn(0f, 1f)
+                    onLock = { isLocked = true }
                 )
             }
         }
@@ -578,13 +547,37 @@ private fun AodSliderSection(positionMs: Long, durationMs: Long, accentColor: Co
 }
 
 @Composable
-private fun AodSlideToLockButton(accentColor: Color, progress: Float) {
+private fun AodSlideToLockButton(accentColor: Color, onLock: () -> Unit) {
+    val haptic = LocalHapticFeedback.current
     val knobTravel = 200.dp
+    var progress by remember { mutableFloatStateOf(0f) }
     Box(
         modifier = Modifier
             .width(260.dp)
             .height(50.dp)
-            .background(Color.White.copy(alpha = 0.12f), RoundedCornerShape(25.dp)),
+            .background(Color.White.copy(alpha = 0.12f), RoundedCornerShape(25.dp))
+            .pointerInput(Unit) {
+                var accumulated = 0f
+                detectHorizontalDragGestures(
+                    onHorizontalDrag = { change, amount ->
+                        change.consume()
+                        accumulated = (accumulated + amount).coerceIn(0f, size.width.toFloat())
+                        progress = (accumulated / (size.width * 0.65f)).coerceIn(0f, 1f)
+                    },
+                    onDragEnd = {
+                        if (progress >= 0.85f) {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onLock()
+                        }
+                        accumulated = 0f
+                        progress = 0f
+                    },
+                    onDragCancel = {
+                        accumulated = 0f
+                        progress = 0f
+                    }
+                )
+            },
         contentAlignment = Alignment.CenterStart
     ) {
         Text(

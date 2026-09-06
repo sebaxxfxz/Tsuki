@@ -40,16 +40,14 @@ fun ResumeWatchingCard(
     watchPositionMs: Long,
     totalDurationMs: Long?,
     onResumeClick: () -> Unit,
+    playCount: Int = 0,
     modifier: Modifier = Modifier
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.96f else 1f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium
-        ),
+        targetValue = if (isPressed) 0.93f else 1f,
+        animationSpec = M3MotionTokens.expressiveBouncy(),
         label = "ResumeCardScale"
     )
 
@@ -97,6 +95,25 @@ fun ResumeWatchingCard(
                         contentDescription = "Continuar",
                         tint = Color.White,
                         modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
+
+            if (totalDurationMs == null && playCount > 1) {
+                Surface(
+                    color = MaterialTheme.colorScheme.scrim.copy(alpha = 0.75f),
+                    shape = RoundedCornerShape(4.dp),
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(6.dp)
+                ) {
+                    Text(
+                        text = "$playCount reproducciones",
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                     )
                 }
             }

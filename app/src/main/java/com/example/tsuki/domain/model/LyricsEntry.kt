@@ -19,7 +19,7 @@ data class LyricsEntry(
     val durationMs: Long = 0L,
     val isInstrumental: Boolean = false
 ) : Comparable<LyricsEntry> {
-    override fun compareTo(other: LyricsEntry): Int = (time - other.time).toInt()
+    override fun compareTo(other: LyricsEntry): Int = time.compareTo(other.time)
     val hasWordSync: Boolean get() = !words.isNullOrEmpty()
 
     companion object {

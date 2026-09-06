@@ -28,12 +28,12 @@ fun KaraokeLyricRow(
     entry: LyricsEntry,
     isActive: Boolean,
     distance: Int,
-    currentPositionMs: Long,
     isManualScrolling: Boolean,
     accentColor: Color,
     onSeekTo: (Long) -> Unit,
     modifier: Modifier = Modifier,
-    textSizeSp: Int = 30
+    textSizeSp: Int = 30,
+    currentPositionMs: Long = 0L
 ) {
     val haptic = LocalHapticFeedback.current
     val interactionSource = remember { MutableInteractionSource() }
@@ -67,40 +67,47 @@ fun KaraokeLyricRow(
 
     val blur by animateFloatAsState(
         targetValue = targetBlur,
-        animationSpec = spring(dampingRatio = 0.75f, stiffness = 500f),
+        animationSpec = com.example.tsuki.ui.components.M3MotionTokens.LyricsGlowSpring,
         label = "blur"
     )
     val rowVisibility by animateFloatAsState(
         targetValue = targetVisibility,
-        animationSpec = spring(dampingRatio = 0.8f, stiffness = 300f),
+        animationSpec = com.example.tsuki.ui.components.M3MotionTokens.effectsDefault(),
         label = "row_visibility"
     )
     val scale by animateFloatAsState(
         targetValue = targetScale,
-        animationSpec = spring(dampingRatio = 0.7f, stiffness = 700f),
+        animationSpec = com.example.tsuki.ui.components.M3MotionTokens.LyricsActiveScaleSpring,
         label = "scale"
     )
 
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .alpha(rowVisibility)
-            .blur(blur.dp)
             .graphicsLayer {
+                this.alpha = rowVisibility
                 scaleX = scale
                 scaleY = scale
             }
+            .then(
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S && blur > 0f) {
+                    Modifier.blur(blur.dp)
+                } else Modifier
+            )
             .clickable(
                 interactionSource = interactionSource,
-                indication = null
+                indication = null,
+                role = androidx.compose.ui.semantics.Role.Button
             ) {
-                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                onSeekTo(entry.time)
+                if (entry.time >= 0L) {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    onSeekTo(entry.time)
+                }
             }
     ) {
         Text(
             text = entry.text,
-            color = Color.White,
+            color = MaterialTheme.colorScheme.onSurface,
             style = MaterialTheme.typography.headlineMedium.copy(
                 fontWeight = if (isActive) FontWeight.ExtraBold else FontWeight.Bold,
                 fontSize = (if (isActive) textSizeSp.toFloat() else textSizeSp * 0.8f).sp,

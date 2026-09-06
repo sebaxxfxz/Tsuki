@@ -5,6 +5,7 @@ import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -37,6 +38,10 @@ class HomePreferences(private val context: Context) {
         private val KEY_SPEED_DIAL_PINS = stringSetPreferencesKey("speed_dial_pins")
         private val KEY_CONTENT_LANGUAGE = stringPreferencesKey("content_language_tag")
         private val KEY_CONTENT_COUNTRY = stringPreferencesKey("content_country")
+        private val KEY_SEEN_SUB_VIDEOS = stringSetPreferencesKey("seen_sub_videos")
+        private val KEY_NOTIFIED_SUB_VIDEOS = stringSetPreferencesKey("notified_sub_videos")
+        private val KEY_SUB_NOTIFY = booleanPreferencesKey("sub_notify_enabled")
+        private val KEY_LAST_WRAPPED_WEEK = longPreferencesKey("last_wrapped_week_start")
         private const val DEFAULT_CATEGORIES = "ALL"
         private const val DEFAULT_CONTENT_LANGUAGE = "es"
         private const val DEFAULT_CONTENT_COUNTRY = "ES"
@@ -117,6 +122,45 @@ class HomePreferences(private val context: Context) {
 
     suspend fun blockChannel(channelId: String) {
         context.homeDataStore.edit { it[KEY_BLOCKED_CHANNELS] = (it[KEY_BLOCKED_CHANNELS] ?: emptySet()) + channelId }
+    }
+
+    suspend fun unblockChannel(channelId: String) {
+        context.homeDataStore.edit { it[KEY_BLOCKED_CHANNELS] = (it[KEY_BLOCKED_CHANNELS] ?: emptySet()) - channelId }
+    }
+
+    val seenSubVideos: Flow<Set<String>> = context.homeDataStore.data.map { it[KEY_SEEN_SUB_VIDEOS] ?: emptySet() }
+
+    suspend fun markSeenSubVideos(ids: Collection<String>) {
+        if (ids.isEmpty()) return
+        context.homeDataStore.edit { prefs ->
+            val merged = LinkedHashSet(prefs[KEY_SEEN_SUB_VIDEOS] ?: emptySet())
+            merged.addAll(ids)
+            prefs[KEY_SEEN_SUB_VIDEOS] = if (merged.size > 500) LinkedHashSet(merged.toList().takeLast(500)) else merged
+        }
+    }
+
+    suspend fun addNotifiedSubVideos(ids: Collection<String>) {
+        if (ids.isEmpty()) return
+        context.homeDataStore.edit { prefs ->
+            val merged = LinkedHashSet(prefs[KEY_NOTIFIED_SUB_VIDEOS] ?: emptySet())
+            merged.addAll(ids)
+            prefs[KEY_NOTIFIED_SUB_VIDEOS] = if (merged.size > 500) LinkedHashSet(merged.toList().takeLast(500)) else merged
+        }
+    }
+
+    val notifiedSubVideos: Flow<Set<String>> = context.homeDataStore.data.map { it[KEY_NOTIFIED_SUB_VIDEOS] ?: emptySet() }
+
+    val subNotifyEnabled: Flow<Boolean> = context.homeDataStore.data.map { it[KEY_SUB_NOTIFY] ?: false }
+
+    suspend fun setSubNotifyEnabled(enabled: Boolean) {
+        context.homeDataStore.edit { it[KEY_SUB_NOTIFY] = enabled }
+    }
+
+    fun pendingWrappedWeek(currentWeekStartMs: Long): Flow<Boolean> =
+        context.homeDataStore.data.map { it[KEY_LAST_WRAPPED_WEEK] != currentWeekStartMs }
+
+    suspend fun markWrappedOpened(weekStartMs: Long) {
+        context.homeDataStore.edit { it[KEY_LAST_WRAPPED_WEEK] = weekStartMs }
     }
 
     suspend fun likeVideo(videoId: String) {

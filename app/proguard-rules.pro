@@ -32,3 +32,5 @@
 -keep class com.google.re2j.** { *; }
 -keep class com.grack.nanojson.** { *; }
 -keep class kotlinx.serialization.** { *; }
+-keep class * implements androidx.glance.action.ActionCallback { *; }
+-keep class com.example.tsuki.ui.widget.glance.** { *; }

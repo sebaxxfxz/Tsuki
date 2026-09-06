@@ -88,6 +88,7 @@ import com.example.tsuki.playback.PlayerController
 import com.example.tsuki.ui.components.CornerPipPlayer
 import com.example.tsuki.ui.components.M3MotionTokens
 import com.example.tsuki.ui.components.MiniPlayer
+import com.example.tsuki.ui.components.PermissionRationaleSheet
 import com.example.tsuki.ui.components.TSukiNavTabItem
 import com.example.tsuki.ui.components.TSukiPillNavBar
 import com.example.tsuki.ui.components.m3SharedAxisX
@@ -117,6 +118,10 @@ import kotlinx.coroutines.withContext
 class MainActivity : ComponentActivity() {
 
     private lateinit var playerController: PlayerController
+    companion object {
+        val pendingWidgetIntent = kotlinx.coroutines.flow.MutableStateFlow<Intent?>(null)
+    }
+
     private val appearancePreferences by lazy { AppearancePreferences(this) }
 
     private val youtubeVideoIdRegex = Regex("(?:[?&]v=|youtu\\.be/|/shorts/|/embed/|/live/)([A-Za-z0-9_-]{11})")
@@ -160,12 +165,14 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+        pendingWidgetIntent.value = intent
         handleExternalYouTubeIntent(intent)
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        pendingWidgetIntent.value = intent
         handleExternalYouTubeIntent(intent)
     }
 
@@ -252,6 +259,7 @@ fun TSukiMainScreen(playerController: PlayerController) {
     val activity = context as? ComponentActivity
     val scope = rememberCoroutineScope()
     var currentDestination by rememberSaveable { mutableStateOf(TSukiDestination.HOME) }
+    var libraryInitialSection by rememberSaveable { mutableStateOf(com.example.tsuki.ui.screens.LibrarySection.PLAYLISTS) }
     var isPlayerExpanded by rememberSaveable { mutableStateOf(false) }
     var isCornerPip by rememberSaveable { mutableStateOf(false) }
     var showPersonalization by rememberSaveable { mutableStateOf(false) }
@@ -323,10 +331,18 @@ fun TSukiMainScreen(playerController: PlayerController) {
     val youtubeExtractor = remember { YouTubeExtractor() }
     val recommendationEngine = remember { RecommendationEngine(context) }
 
+    var pendingStartupPermissions by remember { mutableStateOf<List<String>>(emptyList()) }
+    var showStartupRationale by remember { mutableStateOf(false) }
+
     val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        if (isGranted) {
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { grants ->
+        val audioPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            Manifest.permission.READ_MEDIA_AUDIO
+        } else {
+            Manifest.permission.READ_EXTERNAL_STORAGE
+        }
+        if (grants[audioPermission] == true) {
             scope.launch(Dispatchers.IO) {
                 val scanned = audioScanner.scanLocalTracks(excludedFolders)
                 withContext(Dispatchers.Main) { localTracks = scanned }
@@ -339,16 +355,25 @@ fun TSukiMainScreen(playerController: PlayerController) {
     }
     LaunchedEffect(Unit) {
         launch { playerController.downloadEngine.offlineTracks.collect { downloadedTracks = it } }
-        val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        val audioPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             Manifest.permission.READ_MEDIA_AUDIO
         } else {
             Manifest.permission.READ_EXTERNAL_STORAGE
         }
-
-        if (ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED) {
-            localTracks = withContext(Dispatchers.IO) { audioScanner.scanLocalTracks() }
+        val missing = mutableListOf<String>()
+        if (ContextCompat.checkSelfPermission(context, audioPermission) != PackageManager.PERMISSION_GRANTED) {
+            missing.add(audioPermission)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                missing.add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+        if (missing.isNotEmpty()) {
+            pendingStartupPermissions = missing
+            showStartupRationale = true
         } else {
-            permissionLauncher.launch(permission)
+            localTracks = withContext(Dispatchers.IO) { audioScanner.scanLocalTracks() }
         }
 
         scope.launch(Dispatchers.IO) {
@@ -381,12 +406,47 @@ fun TSukiMainScreen(playerController: PlayerController) {
         collapsedBound = totalCollapsedBound,
         expandedBound = screenHeight
     )
-    LaunchedEffect(isMusicPlaying) {
-        if (!isMusicPlaying) {
+    LaunchedEffect(isMusicPlaying, playerState.currentTrack) {
+        if (!isMusicPlaying || playerState.currentTrack == null) {
             if (!playerSheetState.isDismissed) playerSheetState.dismiss()
         } else {
             if (playerSheetState.isDismissed) playerSheetState.collapseSoft()
         }
+    }
+
+    val widgetIntent by MainActivity.pendingWidgetIntent.collectAsState()
+    LaunchedEffect(widgetIntent) {
+        val cur = widgetIntent ?: return@LaunchedEffect
+        val dest = cur.getStringExtra("destination") ?: cur.data?.lastPathSegment
+        if (dest != null) {
+            if (playerSheetState.isExpanded) playerSheetState.collapseSoft()
+            isPlayerExpanded = false
+            isCornerPip = false
+            when (dest) {
+                "HOME" -> currentDestination = TSukiDestination.HOME
+                "MUSIC", "SEARCH" -> currentDestination = TSukiDestination.MUSIC
+                "LIBRARY" -> {
+                    currentDestination = TSukiDestination.LIBRARY
+                    libraryInitialSection = com.example.tsuki.ui.screens.LibrarySection.PLAYLISTS
+                }
+                "LIKES" -> {
+                    currentDestination = TSukiDestination.LIBRARY
+                    libraryInitialSection = com.example.tsuki.ui.screens.LibrarySection.LIKED
+                }
+                "SUBSCRIPTIONS" -> currentDestination = TSukiDestination.SUBSCRIPTIONS
+            }
+        }
+        if (cur.getBooleanExtra("open_player", false) || cur.action == "com.example.tsuki.action.OPEN_PLAYER") {
+            if (playerController.uiState.value.currentTrack != null) {
+                if (playerController.uiState.value.isVideoMode) {
+                    isPlayerExpanded = true
+                    isCornerPip = false
+                } else {
+                    playerSheetState.expandSoft()
+                }
+            }
+        }
+        MainActivity.pendingWidgetIntent.value = null
     }
 
     fun closeCornerPip() {
@@ -398,6 +458,11 @@ fun TSukiMainScreen(playerController: PlayerController) {
     BackHandler(enabled = showShorts) { showShorts = false }
     BackHandler(enabled = showPersonalization) { showPersonalization = false }
     BackHandler(enabled = showLogin) { showLogin = false }
+    BackHandler(enabled = showStats) { showStats = false }
+    BackHandler(enabled = showImportPlaylist) { showImportPlaylist = false }
+    BackHandler(enabled = playerSheetState.isExpanded) {
+        playerSheetState.collapseSoft()
+    }
     BackHandler(enabled = isPlayerExpanded && isVideoPlaying) {
         minimizeToCornerPip()
     }
@@ -502,13 +567,17 @@ fun TSukiMainScreen(playerController: PlayerController) {
                                 playerController = playerController,
                                 onExpandPlayer = {
                                     if (playerController.uiState.value.isVideoMode) { isPlayerExpanded = true; isCornerPip = false } else { playerSheetState.expandSoft() }
-                                }
+                                },
+                                onExploreClick = { currentDestination = TSukiDestination.HOME }
                             )
 
                             TSukiDestination.LIBRARY -> LibraryScreen(
                                 localTracks = localTracks,
                                 downloadedTracks = downloadedTracks,
+                                playerController = playerController,
+                                onExpandPlayer = { playerSheetState.expandSoft() },
                                 onSettingsClick = { currentDestination = TSukiDestination.SETTINGS },
+                                initialSection = libraryInitialSection,
                                 onTrackClick = { track, queue ->
                                     val idx = queue.indexOfFirst { it.id == track.id || (track.videoId != null && it.videoId == track.videoId) }.coerceAtLeast(0)
                                     playerController.playQueue(
@@ -529,6 +598,12 @@ fun TSukiMainScreen(playerController: PlayerController) {
                             TSukiDestination.RECOGNIZE -> {
                                 com.example.tsuki.ui.screens.RecognitionScreen(
                                     onBack = { currentDestination = TSukiDestination.HOME },
+                                    playerController = playerController,
+                                    resolveTrack = { title, artist ->
+                                        runCatching {
+                                            youtubeExtractor.searchVideos("$title $artist")
+                                        }.getOrNull()?.firstOrNull()
+                                    },
                                     onPlayResult = { title, artist ->
                                         scope.launch(Dispatchers.IO) {
                                             val results = youtubeExtractor.searchVideos("$title $artist")
@@ -573,50 +648,12 @@ fun TSukiMainScreen(playerController: PlayerController) {
 
         val isOverlayOpen = showPersonalization || showShorts || showLogin || showStats || showImportPlaylist || showTogether
         val isPillHidden = isOverlayOpen
-        if (showStats) {
-            androidx.activity.compose.BackHandler { showStats = false; currentDestination = TSukiDestination.SETTINGS }
-        }
-        if (showImportPlaylist) {
-            androidx.activity.compose.BackHandler { showImportPlaylist = false; currentDestination = TSukiDestination.SETTINGS }
-        }
-        if (showPersonalization) {
-            androidx.activity.compose.BackHandler { showPersonalization = false; currentDestination = TSukiDestination.SETTINGS }
-        }
-        if (!isPillHidden) {
-            val bottomBarVisibility = remember {
-                derivedStateOf { (1f - (playerSheetState.progress * 3.5f)).coerceIn(0f, 1f) }
-            }
-            if (bottomBarVisibility.value > 0.01f) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .navigationBarsPadding()
-                        .padding(bottom = 12.dp)
-                        .graphicsLayer { alpha = bottomBarVisibility.value },
-                    contentAlignment = Alignment.Center
-                ) {
-                    val pillItems = remember(currentDestination, showTogether) {
-                        TSukiDestination.entries.map { dest ->
-                            TSukiNavTabItem(
-                                label = dest.label,
-                                icon = dest.icon,
-                                selected = dest == currentDestination,
-                                onClick = { if (showTogether) showTogether = false; currentDestination = dest }
-                            )
-                        }
-                    }
-                    TSukiPillNavBar(items = pillItems)
-                }
-            }
-        }
-
         if (!isOverlayOpen) {
             PlayerBottomSheet(
                 state = playerSheetState,
                 onDismiss = { if (isMusicPlaying) playerController.stopAndClearPlayback() },
                 collapsedContent = {
                     if (isMusicPlaying) {
-                        val tick by playerController.playbackTick.collectAsStateWithLifecycle()
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -627,11 +664,19 @@ fun TSukiMainScreen(playerController: PlayerController) {
                                 track = playerState.currentTrack,
                                 isPlaying = playerState.isPlaying,
                                 isBuffering = playerState.isBuffering,
-                                isVideoMode = false,
-                                currentPosition = tick.positionMs,
-                                duration = tick.durationMs,
+                                isVideoMode = playerState.isVideoMode,
+                                progressProvider = {
+                                    val t = playerController.playbackTick.value
+                                    if (t.durationMs > 0) (t.positionMs.toFloat() / t.durationMs.toFloat()).coerceIn(0f, 1f) else 0f
+                                },
                                 onPlayPauseClick = { playerController.togglePlayPause() },
-                                onVideoToggleClick = { playerController.toggleVideoMode() },
+                                onVideoToggleClick = {
+                                    playerController.toggleVideoMode()
+                                    if (!playerState.isVideoMode) {
+                                        isPlayerExpanded = true
+                                        isCornerPip = false
+                                    }
+                                },
                                 onNextClick = { playerController.playNext() },
                                 onPreviousClick = { playerController.playPrevious() },
                                 onClick = { playerSheetState.expandSoft() },
@@ -661,6 +706,34 @@ fun TSukiMainScreen(playerController: PlayerController) {
                     }
                 }
             )
+        }
+
+        if (!isPillHidden) {
+            val bottomBarVisibility = remember {
+                derivedStateOf { (1f - (playerSheetState.progress * 3.5f)).coerceIn(0f, 1f) }
+            }
+            if (bottomBarVisibility.value > 0.01f) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .navigationBarsPadding()
+                        .padding(bottom = 12.dp)
+                        .graphicsLayer { alpha = bottomBarVisibility.value },
+                    contentAlignment = Alignment.Center
+                ) {
+                    val pillItems = remember(currentDestination, showTogether) {
+                        TSukiDestination.entries.map { dest ->
+                            TSukiNavTabItem(
+                                label = dest.label,
+                                icon = dest.icon,
+                                selected = dest == currentDestination,
+                                onClick = { if (showTogether) showTogether = false; currentDestination = dest }
+                            )
+                        }
+                    }
+                    TSukiPillNavBar(items = pillItems)
+                }
+            }
         }
 
         AnimatedVisibility(
@@ -760,6 +833,19 @@ fun TSukiMainScreen(playerController: PlayerController) {
                 onBack = { showShorts = false },
                 initialIndex = shortsStartIndex,
                 initialTracks = shortsInitialTracks
+            )
+        }
+
+        if (showStartupRationale) {
+            PermissionRationaleSheet(
+                title = "Tu música y avisos",
+                body = "Para mostrar la música guardada en tu dispositivo y avisarte cuando salgan videos nuevos de tus suscripciones o termine una descarga. Puedes cambiarlo luego en ajustes.",
+                icon = Icons.Rounded.MusicNote,
+                onConfirm = {
+                    showStartupRationale = false
+                    permissionLauncher.launch(pendingStartupPermissions.toTypedArray())
+                },
+                onDismiss = { showStartupRationale = false }
             )
         }
     }

@@ -24,6 +24,8 @@
   - [Interfaz & Personalización](#interfaz--personalización)
 - [Estructura del Proyecto](#-estructura-del-proyecto)
 - [Compilación e Instalación](#-compilación-e-instalación)
+- [Stack Técnico](#-stack-técnico)
+- [Advertencias Técnicas](#️-advertencias-técnicas)
 - [Especiales Agradecimientos](#-especiales-agradecimientos)
 - [Estadísticas del Repositorio](#-estadísticas-del-repositorio)
 
@@ -61,6 +63,7 @@
 - 📥 **Importar Playlists de Spotify**: Parser nativo con resolución difusa de coincidencias canción por canción.
 - 📶 **Modo Sin Conexión**: Descarga canciones para escucharlas sin internet.
 - 👥 **Feed de Suscripciones**: Sigue canales, mira Shorts y accede a tu cuenta de YouTube Music.
+- 🤝 **Escuchar Juntos**: Sesiones de escucha sincronizada con otros dispositivos en tiempo real.
 - 📊 **Estadísticas e Historial**: Registro automático de escuchas y recomendaciones adaptativas.
 
 ### Interfaz & Personalización
@@ -81,7 +84,7 @@ Código fuente organizado en paquetes con separación clara de responsabilidades
 | **`playback/`** | `PlayerController` central, servicio Media3, motor de crossfade y cola automática. |
 | **`lyrics/`** | 16 proveedores de letras y parser Enhanced LRC / TTML. |
 | **`network/`** | Cliente InnerTube (YouTube Music) y extractor NewPipe de respaldo. |
-| **`data/`** | Repositorios, caché local, historial, suscripciones y descargas. |
+| **`data/`** | Repositorios, caché local, historial, suscripciones y descargas. Persistencia con SQLite raw + DataStore (sin Room). |
 | **`domain/`** | Modelos de dominio (`MediaTrack`, `LyricsEntry`) y contratos. |
 | **`shazam/`** | Generador de firmas acústicas y reconocimiento de canciones. |
 | **`playlistimport/`** | Parsers de playlists de Spotify y resolución difusa de pistas. |
@@ -91,9 +94,10 @@ Código fuente organizado en paquetes con separación clara de responsabilidades
 ## 🛠️ Compilación e Instalación
 
 ### Requisitos Previos
+- JDK 26 (ruta local del entorno de desarrollo: `/home/sebaxxfxz/.jdks/openjdk-26.0.2`)
+- Android SDK (ruta local: `/home/sebaxxfxz/Android/Sdk`)
+- `local.properties` en la raíz del proyecto (gitignored) apuntando al SDK con `sdk.dir=/home/sebaxxfxz/Android/Sdk`
 - Android Studio con soporte AGP 9+
-- JDK 17+
-- Android SDK 35+
 
 ### Compilación desde Consola
 
@@ -105,10 +109,41 @@ Código fuente organizado en paquetes con separación clara de responsabilidades
 
 2. **Compilar el APK de depuración:**
    ```bash
-   ./gradlew :app:assembleDebug
+   JAVA_HOME=/home/sebaxxfxz/.jdks/openjdk-26.0.2 ./gradlew :app:assembleDebug
    ```
 
 El ejecutable estará disponible en: `app/build/outputs/apk/debug/app-debug.apk`
+
+3. **Verificación rápida sin generar APK (~2s):**
+   ```bash
+   JAVA_HOME=/home/sebaxxfxz/.jdks/openjdk-26.0.2 ./gradlew :app:compileDebugKotlin
+   ```
+
+---
+
+## 🧰 Stack Técnico
+
+| Componente | Versión / Detalle |
+| :--- | :--- |
+| Android Gradle Plugin | 9.3.1 |
+| Kotlin | 2.2.10 |
+| Jetpack Compose | BOM 2026.06.01 |
+| Media3 / ExoPlayer | 1.5.1 |
+| Glance | Widgets de pantalla de inicio |
+| Persistencia | DataStore + SQLite raw (sin Room) |
+| Red | Ktor 3.1.0 + OkHttp + NewPipeExtractor (fallback) |
+
+---
+
+## ⚠️ Advertencias Técnicas
+
+Hacks conocidos que no deben eliminarse sin pruebas en dispositivo:
+
+1. **`mocharealm:lyrics-ui` declara `minSdk 29`** — se overridea en `app/src/main/AndroidManifest.xml` con `<uses-sdk tools:overrideLibrary="com.mocharealm.accompanist.lyrics.ui" />`. No subir `minSdk` ni quitar el override sin probar en un dispositivo con API < 29.
+2. **Media3 `DefaultMediaNotificationProvider` no expone `setSmallIcon(...)`** — el ícono de la notificación se resuelve mediante el recurso drawable `media3_notification_small_icon.xml` (vector monocromo blanco). No usar `setSmallIcon` del builder.
+3. **Playlists de YouTube Music paginadas** — `TSukiInnerTubeClient.fetchPlaylistTracks` siempre recorre los continuations (`postBrowseContinuation` + extractores de continuación). Sin paginación, la primera hoja trae ~100 items y falla con playlists de 148+ canciones.
+4. **`TOGETHER_BEARER_TOKEN`** — vive en `local.properties` (gitignored) y alimenta la función "Escuchar juntos"; también puede inyectarse vía variable de entorno `TOGETHER_BEARER_TOKEN`. Nunca versionarlo.
+5. **detekt y JDK moderno** — el plugin de Gradle de detekt 1.23.8 es incompatible con proyectos que compilan con JDK ≥ 25 ([#8714](https://github.com/detekt/detekt/issues/8714), [#8745](https://github.com/detekt/detekt/issues/8745)). Por eso el análisis se ejecuta con el script `scripts/run-detekt.sh`, que corre el fat jar de detekt con un JDK 21 y genera reportes en `build/reports/detekt/`. Cuando detekt publique soporte para JVM 25 se puede migrar de vuelta al plugin de Gradle. Nota: las reglas del ruleset `coroutines` de `config/detekt/detekt.yml` requieren type resolution (classpath de compilación) y no se ejecutan en modo CLI sin classpath.
 
 ---
 

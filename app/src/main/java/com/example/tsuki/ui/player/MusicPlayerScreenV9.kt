@@ -29,6 +29,7 @@ import androidx.compose.material.icons.automirrored.rounded.FormatListBulleted
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.BlurOn
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.Equalizer
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
@@ -36,6 +37,7 @@ import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.Group
+import androidx.compose.material.icons.rounded.Radio
 import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.RepeatOne
 import androidx.compose.material.icons.rounded.Share
@@ -126,6 +128,8 @@ fun MusicPlayerScreenV9(
     val controllerState by playerController.uiState.collectAsStateWithLifecycle()
     val downloadEngine = playerController.downloadEngine
     var isDownloaded by remember(track.id) { mutableStateOf(false) }
+    var isDownloading by remember(track.id) { mutableStateOf(false) }
+    var downloadProgress by remember(track.id) { mutableStateOf<Float?>(null) }
     LaunchedEffect(track.id) {
         isDownloaded = downloadEngine.isDownloaded(track.videoId ?: track.id)
     }
@@ -174,21 +178,41 @@ fun MusicPlayerScreenV9(
     }
 
     val downloadTrack: () -> Unit = {
-        scope.launch {
-            val done = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                downloadEngine.downloadTrack(track)
+        if (isDownloaded) {
+            val vid = track.videoId ?: track.id
+            val removed = downloadEngine.deleteDownloadedTrack(vid)
+            if (removed) {
+                isDownloaded = false
+                android.widget.Toast.makeText(context, "Canción eliminada de descargas", android.widget.Toast.LENGTH_SHORT).show()
+            } else {
+                android.widget.Toast.makeText(context, "Esta canción ya está guardada en tu biblioteca", android.widget.Toast.LENGTH_SHORT).show()
             }
-            isDownloaded = done != null
-            android.widget.Toast.makeText(
-                context,
-                if (done != null) "Descarga completada" else "No se pudo descargar",
-                android.widget.Toast.LENGTH_SHORT
-            ).show()
+        } else {
+            if (!isDownloading) {
+            isDownloading = true
+            downloadProgress = null
+            playerController.scope.launch {
+                val done = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    downloadEngine.downloadTrack(track) { p -> downloadProgress = (p / 100f).coerceIn(0f, 1f) }
+                }
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    isDownloaded = done != null
+                    isDownloading = false
+                    downloadProgress = null
+                    android.widget.Toast.makeText(
+                        context,
+                        if (done != null) "Descargado en tu biblioteca sin conexión" else "No se pudo descargar",
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+            }
         }
     }
 
-    LaunchedEffect(track.id) {
-        isFavorite = favoritesManager.isFavorite(track.id)
+    LaunchedEffect(track.id, track.videoId) {
+        val favKey = track.videoId ?: track.id
+        isFavorite = favoritesManager.isFavorite(favKey)
     }
 
     val themeBackgroundForContrast = MaterialTheme.colorScheme.background
@@ -215,7 +239,7 @@ fun MusicPlayerScreenV9(
                     .fillMaxSize()
                     .statusBarsPadding()
                     .navigationBarsPadding()
-                    .padding(horizontal = 20.dp, vertical = 8.dp),
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.SpaceBetween
             ) {
@@ -311,7 +335,9 @@ fun MusicPlayerScreenV9(
                                 isDownloaded = isDownloaded,
                                 onSound = { showSoundSheet = true },
                                 onShare = shareTrack,
-                                onDownload = downloadTrack
+                                onDownload = downloadTrack,
+                                isDownloading = isDownloading,
+                                downloadProgress = downloadProgress
                             )
                         }
                     }
@@ -401,7 +427,9 @@ fun MusicPlayerScreenV9(
                                             isDownloaded = isDownloaded,
                                             onSound = { showSoundSheet = true },
                                             onShare = shareTrack,
-                                            onDownload = downloadTrack
+                                            onDownload = downloadTrack,
+                                            isDownloading = isDownloading,
+                                            downloadProgress = downloadProgress
                                         )
                                     }
                                 }
@@ -450,7 +478,10 @@ fun MusicPlayerScreenV9(
                 playbackSpeed = controllerState.playbackSpeed,
                 crossfadeEnabled = controllerState.crossfadeEnabled,
                 crossfadeDurationSeconds = controllerState.crossfadeDurationSeconds,
-                onOpenEqualizer = { showEqualizerDialog = true },
+                onOpenEqualizer = {
+                    showSoundSheet = false
+                    showEqualizerDialog = true
+                },
                 onDismiss = { showSoundSheet = false }
             )
         }
@@ -628,15 +659,12 @@ private fun AnimatedToggleIconV9(
 ) {
     val scale by androidx.compose.animation.core.animateFloatAsState(
         targetValue = if (active) 1.18f else 1f,
-        animationSpec = androidx.compose.animation.core.spring(
-            dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
-            stiffness = androidx.compose.animation.core.Spring.StiffnessMedium
-        ),
+        animationSpec = com.example.tsuki.ui.components.M3MotionTokens.spatialBouncy(),
         label = "toggleScale"
     )
     val tint by androidx.compose.animation.animateColorAsState(
         targetValue = if (active) accentColor else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-        animationSpec = spring(stiffness = 600f),
+        animationSpec = com.example.tsuki.ui.components.M3MotionTokens.effectsDefault(),
         label = "toggleTint"
     )
     IconButton(onClick = onClick) {
@@ -701,7 +729,9 @@ private fun V9UtilityRowV9(
     isDownloaded: Boolean,
     onSound: () -> Unit,
     onShare: () -> Unit,
-    onDownload: () -> Unit
+    onDownload: () -> Unit,
+    isDownloading: Boolean = false,
+    downloadProgress: Float? = null
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -767,14 +797,39 @@ private fun V9UtilityRowV9(
                     modifier = Modifier.size(22.dp)
                 )
             }
-            AnimatedToggleIconV9(
-                active = isDownloaded,
-                icon = Icons.Rounded.Download,
-                contentDescription = if (isDownloaded) "Descargado" else "Descargar",
-                accentColor = accentColor,
-                onClick = onDownload,
-                iconSize = 22.dp
-            )
+            if (isDownloading) {
+                IconButton(onClick = {}, enabled = false) {
+                    val target = downloadProgress
+                    val smooth by androidx.compose.animation.core.animateFloatAsState(
+                        targetValue = target ?: 0f,
+                        animationSpec = com.example.tsuki.ui.components.M3MotionTokens.expressiveDefault(),
+                        label = "M3DownloadProgress"
+                    )
+                    if (target != null) {
+                        CircularProgressIndicator(
+                            progress = { smooth },
+                            modifier = Modifier.size(22.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                            strokeWidth = 2.5.dp
+                        )
+                    } else {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(22.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                            strokeWidth = 2.5.dp
+                        )
+                    }
+                }
+            } else {
+                AnimatedToggleIconV9(
+                    active = isDownloaded,
+                    icon = if (isDownloaded) Icons.Rounded.DownloadDone else Icons.Rounded.Download,
+                    contentDescription = if (isDownloaded) "Descargado (toca para eliminar)" else "Descargar",
+                    accentColor = MaterialTheme.colorScheme.primary,
+                    onClick = onDownload,
+                    iconSize = 22.dp
+                )
+            }
         }
     }
 }
@@ -811,6 +866,47 @@ private fun V9SoundSheetV9(
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold
             )
+            val context = androidx.compose.ui.platform.LocalContext.current
+            val connectivity = remember { com.example.tsuki.util.ConnectivityObserver.getInstance(context) }
+            val isOnline by connectivity.networkStatus.collectAsStateWithLifecycle(initialValue = connectivity.isCurrentlyOnline())
+            playerController.uiState.value.currentTrack?.let { currentTrack ->
+                androidx.compose.material3.Card(
+                    onClick = {
+                        onDismiss()
+                        if (!isOnline) {
+                            android.widget.Toast.makeText(context, "Sin conexión", android.widget.Toast.LENGTH_SHORT).show()
+                        } else {
+                            playerController.startRadio(currentTrack)
+                            android.widget.Toast.makeText(context, "Iniciando radio de ${currentTrack.artist}...", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    shape = RoundedCornerShape(18.dp),
+                    colors = androidx.compose.material3.CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Radio,
+                            contentDescription = null,
+                            tint = accentColor,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Column(Modifier.weight(1f)) {
+                            Text("Iniciar Radio", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                "Música similar infinita a partir de este tema",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
 
             androidx.compose.material3.Card(
                 onClick = {
@@ -917,16 +1013,26 @@ private fun V9SoundSheetV9(
                         item {
                             androidx.compose.material3.FilterChip(
                                 selected = sleepTimerInfo.stopAtSongEnd,
-                                onClick = { playerController.setSleepTimerEndOfSong() },
+                                onClick = {
+                                    if (sleepTimerInfo.stopAtSongEnd) {
+                                        playerController.cancelSleepTimer()
+                                    } else {
+                                        playerController.setSleepTimerEndOfSong()
+                                    }
+                                },
                                 label = { Text("Al terminar canción") }
                             )
                         }
                         items(listOf(5, 15, 30, 45, 60)) { minutes ->
                             androidx.compose.material3.FilterChip(
-                                selected = sleepTimerInfo.endsAtMillis?.let { endsAt ->
-                                    kotlin.math.abs((endsAt - System.currentTimeMillis()) - minutes * 60_000L) <= 5_000L
-                                } ?: false,
-                                onClick = { playerController.setSleepTimer(minutes) },
+                                selected = sleepTimerInfo.selectedMinutes == minutes,
+                                onClick = {
+                                    if (sleepTimerInfo.selectedMinutes == minutes) {
+                                        playerController.setSleepTimer(null)
+                                    } else {
+                                        playerController.setSleepTimer(minutes)
+                                    }
+                                },
                                 label = { Text("$minutes min") }
                             )
                         }
@@ -951,8 +1057,9 @@ private fun V9SoundSheetV9(
                         )
                         Column(Modifier.weight(1f)) {
                             Text("Crossfade", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                            val formattedDuration = if ((kotlin.math.round(crossfadeDurationSeconds * 2f) / 2f) % 1f == 0f) "${(kotlin.math.round(crossfadeDurationSeconds * 2f) / 2f).toInt()}s" else "${kotlin.math.round(crossfadeDurationSeconds * 2f) / 2f}s"
                             Text(
-                                if (crossfadeEnabled) "Transición suave entre pistas (${crossfadeDurationSeconds}s)" else "Transición suave entre pistas",
+                                if (crossfadeEnabled) "Transición suave entre pistas ($formattedDuration)" else "Transición suave entre pistas",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = if (crossfadeEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -963,21 +1070,53 @@ private fun V9SoundSheetV9(
                         )
                     }
                     if (crossfadeEnabled) {
+                        val formattedDuration = if ((kotlin.math.round(crossfadeDurationSeconds * 2f) / 2f) % 1f == 0f) "${(kotlin.math.round(crossfadeDurationSeconds * 2f) / 2f).toInt()}s" else "${kotlin.math.round(crossfadeDurationSeconds * 2f) / 2f}s"
                         Text(
-                            "Duración: ${crossfadeDurationSeconds}s",
+                            "Duración: $formattedDuration",
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             items(listOf(1f, 2f, 3f, 5f, 8f, 10f, 12f)) { seconds ->
                                 androidx.compose.material3.FilterChip(
-                                    selected = kotlin.math.abs(crossfadeDurationSeconds - seconds) < 0.01f,
+                                    selected = kotlin.math.abs(crossfadeDurationSeconds - seconds) < 0.05f,
                                     onClick = { playerController.setCrossfadeDuration(seconds) },
-                                    label = { Text("${seconds}s") }
+                                    label = { Text("${seconds.toInt()}s") }
                                 )
                             }
                         }
                     }
+                }
+            }
+
+            val volumeNorm by playerController.volumeNormalization.collectAsStateWithLifecycle(initialValue = true)
+            Surface(
+                shape = RoundedCornerShape(18.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.GraphicEq,
+                        contentDescription = null,
+                        tint = if (volumeNorm) accentColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Column(Modifier.weight(1f)) {
+                        Text("Normalizar volumen", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            if (volumeNorm) "Nivel sonoro uniforme (ReplayGain activo)" else "Desactivado (volumen original)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (volumeNorm) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    androidx.compose.material3.Switch(
+                        checked = volumeNorm,
+                        onCheckedChange = { playerController.setVolumeNormalization(it) }
+                    )
                 }
             }
 

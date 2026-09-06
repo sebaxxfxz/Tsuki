@@ -270,6 +270,7 @@ class TSukiInnerTubeClient private constructor() {
                     parseYouTubeHomeFeed(response)
                 }
             } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 Log.e(TAG, "fetchGuestHomeFeed failed: ${e.message}", e)
                 TSukiHomeFeed(emptyList())
             }
@@ -345,12 +346,14 @@ class TSukiInnerTubeClient private constructor() {
                                 }
                             }
                         } catch (e: Exception) {
+                            if (e is kotlinx.coroutines.CancellationException) throw e
                             Log.d(TAG, "Automix fallback failed for $videoId: ${e.message}")
                         }
                     }
                     collected
                 }
             } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 Log.w(TAG, "fetchRelatedVideos failed for $videoId: ${e.message}")
                 emptyList()
             }
@@ -475,6 +478,7 @@ class TSukiInnerTubeClient private constructor() {
                 playlists.add(ChannelPlaylist(playlistId.removePrefix("VL"), title, thumb, videos))
             }
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             Log.w(TAG, "parseChannelPlaylists error: ${e.message}")
         }
         return playlists.distinctBy { it.id }
@@ -604,6 +608,7 @@ class TSukiInnerTubeClient private constructor() {
                 }
             }
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             Log.w(TAG, "parseYouTubePlaylistVideos error: ${e.message}")
         }
         return tracks.distinctBy { it.id }.filter { it.videoId?.length == 11 }
@@ -836,7 +841,7 @@ class TSukiInnerTubeClient private constructor() {
             val seen = mutableSetOf<String>()
             var continuation: String? = null
             try {
-                repeat(maxPages) {
+                for (i in 0 until maxPages) {
                     val page = fetchChannelVideosPage(channelId, continuation)
                     val fresh = page.tracks.filter { seen.add(it.id) }
                     if (fresh.isNotEmpty()) {
@@ -844,7 +849,7 @@ class TSukiInnerTubeClient private constructor() {
                         onPageLoaded(all.toList())
                     }
                     continuation = page.continuation
-                    if (continuation.isNullOrBlank()) return@repeat
+                    if (continuation.isNullOrBlank()) break
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
@@ -914,6 +919,7 @@ class TSukiInnerTubeClient private constructor() {
 
                 ChannelVideosPage(tracks, nextToken)
             } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 Log.w(TAG, "fetchChannelVideosPage failed: ${e.message}")
                 ChannelVideosPage(emptyList(), null)
             }
@@ -1267,6 +1273,7 @@ class TSukiInnerTubeClient private constructor() {
                 }
             }
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             Log.w(TAG, "parseCommentsResponse error: ${e.message}")
         }
         return comments.distinctBy { it.id }.filter { it.text.isNotBlank() }.take(50)
@@ -1472,6 +1479,7 @@ class TSukiInnerTubeClient private constructor() {
                     if (!lyricsText.isNullOrBlank()) lyricsText else null
                 }
             } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 Log.w(TAG, "fetchLyricsForVideo failed for $videoId: ${e.message}")
                 null
             }
@@ -1525,6 +1533,7 @@ class TSukiInnerTubeClient private constructor() {
             }
             parseMusicSearchResults(resp)
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             Log.w(TAG, "searchMusic failed for '$query': ${e.message}")
             emptyList()
         }
@@ -1591,6 +1600,7 @@ class TSukiInnerTubeClient private constructor() {
                 avatarUrl = avatar
             )
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             Log.w(TAG, "fetchAccountInfo error: ${e.message}")
             null
         }
@@ -1610,6 +1620,7 @@ class TSukiInnerTubeClient private constructor() {
                 allSections.add(TSukiFeedSection("Tus Canciones que te Gustan", likedTracks))
             }
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             Log.w(TAG, "Liked songs fetch error: ${e.message}")
         }
 
@@ -1643,6 +1654,7 @@ class TSukiInnerTubeClient private constructor() {
             val libFeed = parseMusicHomeFeed(libResp)
             allSections.addAll(libFeed.sections)
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             Log.w(TAG, "Library landing fetch error: ${e.message}")
         }
 
@@ -1690,11 +1702,11 @@ class TSukiInnerTubeClient private constructor() {
         dataSyncId: String? = null
     ): List<MediaTrack> = withContext(Dispatchers.IO) {
         if (cookie.isBlank()) return@withContext emptyList()
-        var viaPlaylist: List<MediaTrack> = emptyList()
         try {
-            viaPlaylist = fetchPlaylistTracks("LM", cookie, visitorData, dataSyncId)
+            val viaPlaylist = fetchPlaylistTracks("LM", cookie, visitorData, dataSyncId)
+            if (viaPlaylist.isNotEmpty()) return@withContext viaPlaylist
         } catch (_: Exception) {}
-        var bestVia: List<MediaTrack> = viaPlaylist
+        var bestVia: List<MediaTrack> = emptyList()
         try {
             val userPls = try { fetchUserPlaylists(cookie, visitorData, dataSyncId) } catch (_: Exception) { emptyList() }
             val syncPl = userPls.firstOrNull { it.title.contains("ME GUSTA", ignoreCase = true) || it.title.contains("SINCRONIZADOS", ignoreCase = true) }
@@ -1820,6 +1832,7 @@ class TSukiInnerTubeClient private constructor() {
                 if (fallback2.isNotEmpty()) sections.add(TSukiFeedSection("Tus Me Gusta", fallback2))
             }
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             Log.w(TAG, "parseLikedContinuationFeed error: ${e.message}")
         }
         return TSukiHomeFeed(sections)
@@ -2133,7 +2146,7 @@ class TSukiInnerTubeClient private constructor() {
                     }
                 }
             }
-        } catch (e: Exception) { e.printStackTrace() }
+        } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) { e.printStackTrace() }
         return out.distinctBy { it.id }
     }
 
@@ -2200,6 +2213,7 @@ class TSukiInnerTubeClient private constructor() {
                 playlists.add(TSukiPlaylist(id, title, subtitle, thumb))
             }
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             Log.w(TAG, "parseUserPlaylists error: ${e.message}")
         }
         return playlists.distinctBy { it.id }
@@ -2382,6 +2396,7 @@ class TSukiInnerTubeClient private constructor() {
                 }
             }
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             Log.w(TAG, "parsePlaylistTracks error: ${e.message}")
         }
         return tracks.distinctBy { it.id }
@@ -2489,13 +2504,14 @@ class TSukiInnerTubeClient private constructor() {
                 ?: item.jsonObject["richItemRenderer"]?.jsonObject
                     ?.get("content")?.jsonObject?.get("continuationItemRenderer")?.jsonObject
                 ?: continue
-            return cir["continuationEndpoint"]?.jsonObject?.get("continuationCommand")?.jsonObject
+            val token = cir["continuationEndpoint"]?.jsonObject?.get("continuationCommand")?.jsonObject
                 ?.get("token")?.jsonPrimitive?.content
                 ?: cir["nextContinuationData"]?.jsonObject?.get("continuation")?.jsonPrimitive?.content
                 ?: cir["gridContinuation"]?.jsonObject?.get("continuation")?.jsonPrimitive?.content
                 ?: cir["button"]?.jsonObject?.get("buttonRenderer")?.jsonObject
                     ?.get("command")?.jsonObject?.get("continuationCommand")?.jsonObject
                     ?.get("token")?.jsonPrimitive?.content
+            if (token != null) return token
         }
         return gridObj?.get("continuations")?.jsonArray?.firstOrNull()?.jsonObject
             ?.get("nextContinuationData")?.jsonObject?.get("continuation")?.jsonPrimitive?.content
@@ -2577,7 +2593,6 @@ class TSukiInnerTubeClient private constructor() {
                         put("clientVersion", WEB_REMIX_CLIENT_VERSION)
                         put("hl", getClientHl())
                         put("gl", getClientGl())
-                        if (!visitorData.isNullOrBlank()) put("visitorData", visitorData)
                     }
                 }
                 put("target", buildJsonObject { put("videoId", videoId) })
@@ -2594,7 +2609,6 @@ class TSukiInnerTubeClient private constructor() {
                     append(HttpHeaders.UserAgent, USER_AGENT)
                     append("Cookie", cookie)
                     buildSapisidHash(cookie)?.let { append("Authorization", it) }
-                    visitorData?.takeIf { it.isNotBlank() }?.let { append("X-Goog-Visitor-Id", it) }
                 }
                 setBody(body)
             }
@@ -2604,6 +2618,7 @@ class TSukiInnerTubeClient private constructor() {
             }
             true
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             Log.w(TAG, "setLikedVideo failed: ${e.message}")
             false
         }
@@ -2658,13 +2673,17 @@ class TSukiInnerTubeClient private constructor() {
                     coroutineScope {
                         val jobs: List<kotlinx.coroutines.Deferred<Unit>> = videoIds.chunked(12).map { chunk ->
                             val job = async {
-                                addMutex.withLock {
+                                val ok = addMutex.withLock {
                                     try {
                                         addVideosToYTMPlaylist(clean, chunk, cookie, visitorData)
-                                    } catch (_: Exception) {}
+                                    } catch (_: Exception) {
+                                        false
+                                    }
                                 }
-                                val current = addedCount.addAndGet(chunk.size)
-                                onProgress?.invoke(current, videoIds.size)
+                                if (ok) {
+                                    val current = addedCount.addAndGet(chunk.size)
+                                    onProgress?.invoke(current, videoIds.size)
+                                }
                                 Unit
                             }
                             delay(60)
@@ -2679,6 +2698,7 @@ class TSukiInnerTubeClient private constructor() {
             }
             null
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             Log.w(TAG, "createYTMPlaylist failed: ${e.message}")
             null
         }
@@ -2765,6 +2785,7 @@ class TSukiInnerTubeClient private constructor() {
                 }
             }
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             Log.w(TAG, "parseAccountChannels error: ${e.message}")
         }
         return channels.distinctBy { it.channelId }
@@ -2798,6 +2819,7 @@ class TSukiInnerTubeClient private constructor() {
                 }
             }
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             Log.w(TAG, "parseMusicSearchResults error: ${e.message}")
         }
         return tracks
@@ -2848,6 +2870,7 @@ class TSukiInnerTubeClient private constructor() {
                 }
             }
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             Log.w(TAG, "parseMusicPersonalizedFeed error: ${e.message}")
         }
         return MusicPersonalizedFeed(sections, chips, continuation)
@@ -2886,6 +2909,7 @@ class TSukiInnerTubeClient private constructor() {
                 }
             }
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             Log.w(TAG, "parseMusicContinuationFeed error: ${e.message}")
         }
         return MusicPersonalizedFeed(sections, emptyList(), continuation)
@@ -2965,6 +2989,7 @@ class TSukiInnerTubeClient private constructor() {
                 }
             }
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             Log.w(TAG, "parseMusicHomeFeed error: ${e.message}")
         }
         return TSukiHomeFeed(sections)
@@ -3028,6 +3053,7 @@ class TSukiInnerTubeClient private constructor() {
                 isVideoItem       = false
             )
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             null
         }
     }
@@ -3101,6 +3127,7 @@ class TSukiInnerTubeClient private constructor() {
                 }
             }
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             Log.w(TAG, "parseYouTubeHomeFeed error: ${e.message}")
         }
         return TSukiHomeFeed(sections)
@@ -3159,6 +3186,7 @@ class TSukiInnerTubeClient private constructor() {
                 durationSeconds   = durationSec
             )
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             null
         }
     }
@@ -3224,6 +3252,7 @@ class TSukiInnerTubeClient private constructor() {
                 isLive            = isLive
             )
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             null
         }
     }
@@ -3274,6 +3303,7 @@ class TSukiInnerTubeClient private constructor() {
                 ))
             }
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             Log.w(TAG, "parseWatchNextQueue error: ${e.message}")
         }
         return tracks to automixPlaylistId

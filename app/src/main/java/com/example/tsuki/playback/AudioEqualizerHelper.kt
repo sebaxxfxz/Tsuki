@@ -26,6 +26,19 @@ object AudioEqualizerHelper {
     @Volatile private var loudness: LoudnessEnhancer? = null
     @Volatile private var currentSessionId: Int = 0
     @Volatile private var lastOutputGainMb: Int = 0
+    @Volatile private var isEnabled: Boolean = false
+    @Volatile private var bassBoostStrength: Int = 0
+    @Volatile private var virtualizerStrength: Int = 0
+    private val bandLevelsMap = java.util.concurrent.ConcurrentHashMap<Int, Int>()
+
+    @Volatile private var secondaryEqualizer: Equalizer? = null
+    @Volatile private var secondaryBassBoost: BassBoost? = null
+    @Volatile private var secondaryVirtualizer: Virtualizer? = null
+    @Volatile private var secondaryLoudness: LoudnessEnhancer? = null
+    @Volatile private var secondarySessionId: Int = 0
+
+    private val _sessionState = kotlinx.coroutines.flow.MutableStateFlow(0)
+    val sessionState: kotlinx.coroutines.flow.StateFlow<Int> = _sessionState
 
     val capabilities: EqCapabilities
         get() {
@@ -50,71 +63,156 @@ object AudioEqualizerHelper {
         }
 
     fun initAudioEffects(audioSessionId: Int) {
-        if (audioSessionId == 0) return
-        if (currentSessionId == audioSessionId && equalizer != null) return
-        release()
-        try {
-            currentSessionId = audioSessionId
-            equalizer = Equalizer(0, audioSessionId)
-            bassBoost = try { BassBoost(0, audioSessionId) } catch (_: Exception) { null }
-            virtualizer = try { Virtualizer(0, audioSessionId) } catch (_: Exception) { null }
-            loudness = try { LoudnessEnhancer(audioSessionId) } catch (_: Exception) { null }
-            Log.d(TAG, "Audio effects attached to session $audioSessionId bands=${equalizer?.numberOfBands}")
-        } catch (e: Exception) {
-            Log.e(TAG, "initAudioEffects failed", e)
+        synchronized(this) {
+            if (audioSessionId == 0) return
+            if (currentSessionId == audioSessionId && equalizer != null) return
+            releaseInternal()
+            try {
+                currentSessionId = audioSessionId
+                equalizer = Equalizer(0, audioSessionId)
+                bassBoost = try { BassBoost(0, audioSessionId) } catch (_: Exception) { null }
+                virtualizer = try { Virtualizer(0, audioSessionId) } catch (_: Exception) { null }
+                loudness = try { LoudnessEnhancer(audioSessionId) } catch (_: Exception) { null }
+                _sessionState.value = audioSessionId
+                Log.d(TAG, "Audio effects attached to session $audioSessionId bands=${equalizer?.numberOfBands}")
+            } catch (e: Exception) {
+                Log.e(TAG, "initAudioEffects failed", e)
+            }
         }
     }
 
-    fun setEnabled(enabled: Boolean) {
-        try {
-            equalizer?.enabled = enabled
-            bassBoost?.enabled = enabled
-            virtualizer?.enabled = enabled
-            loudness?.let {
-                if (enabled) {
-                    it.setTargetGain(lastOutputGainMb.coerceIn(-1500, 1500))
-                    it.enabled = true
-                } else {
-                    it.setTargetGain(0)
-                    it.enabled = false
+    fun initSecondaryAudioEffects(audioSessionId: Int) {
+        synchronized(this) {
+            if (audioSessionId == 0 || audioSessionId == currentSessionId) return
+            releaseSecondaryInternal()
+            try {
+                secondarySessionId = audioSessionId
+                val eq = Equalizer(0, audioSessionId)
+                secondaryEqualizer = eq
+                val bb = try { BassBoost(0, audioSessionId) } catch (_: Exception) { null }
+                secondaryBassBoost = bb
+                val vz = try { Virtualizer(0, audioSessionId) } catch (_: Exception) { null }
+                secondaryVirtualizer = vz
+                val ld = try { LoudnessEnhancer(audioSessionId) } catch (_: Exception) { null }
+                secondaryLoudness = ld
+
+                if (isEnabled) {
+                    eq.enabled = true
+                    bb?.enabled = true
+                    vz?.enabled = true
+                    ld?.enabled = true
                 }
+                bandLevelsMap.forEach { (band, level) ->
+                    try { eq.setBandLevel(band.toShort(), level.toShort()) } catch (_: Exception) {}
+                }
+                if (bassBoostStrength > 0) {
+                    try { bb?.setStrength(bassBoostStrength.toShort()) } catch (_: Exception) {}
+                }
+                if (virtualizerStrength > 0) {
+                    try { vz?.setStrength(virtualizerStrength.toShort()) } catch (_: Exception) {}
+                }
+                if (lastOutputGainMb > 0) {
+                    try { ld?.setTargetGain(lastOutputGainMb) } catch (_: Exception) {}
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "initSecondaryAudioEffects failed", e)
             }
-        } catch (e: Exception) {
-            Log.w(TAG, "setEnabled failed: ${e.message}")
+        }
+    }
+
+    fun releaseSecondaryAudioEffects() {
+        synchronized(this) {
+            releaseSecondaryInternal()
+        }
+    }
+
+    private fun releaseSecondaryInternal() {
+        try { secondaryEqualizer?.release() } catch (_: Exception) {}
+        try { secondaryBassBoost?.release() } catch (_: Exception) {}
+        try { secondaryVirtualizer?.release() } catch (_: Exception) {}
+        try { secondaryLoudness?.release() } catch (_: Exception) {}
+        secondaryEqualizer = null
+        secondaryBassBoost = null
+        secondaryVirtualizer = null
+        secondaryLoudness = null
+        secondarySessionId = 0
+    }
+
+    fun setEnabled(enabled: Boolean) {
+        synchronized(this) {
+            isEnabled = enabled
+            try {
+                equalizer?.enabled = enabled
+                bassBoost?.enabled = enabled
+                virtualizer?.enabled = enabled
+                secondaryEqualizer?.enabled = enabled
+                secondaryBassBoost?.enabled = enabled
+                secondaryVirtualizer?.enabled = enabled
+                val targetGain = if (enabled) lastOutputGainMb.coerceIn(0, 1500) else 0
+                loudness?.let {
+                    it.setTargetGain(targetGain)
+                    it.enabled = enabled
+                }
+                secondaryLoudness?.let {
+                    it.setTargetGain(targetGain)
+                    it.enabled = enabled
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "setEnabled failed: ${e.message}")
+            }
         }
     }
 
     fun setBandLevel(band: Int, levelMb: Int) {
-        try {
-            equalizer?.setBandLevel(band.toShort(), levelMb.toShort())
-        } catch (e: Exception) {
-            Log.w(TAG, "setBandLevel failed: ${e.message}")
+        synchronized(this) {
+            bandLevelsMap[band] = levelMb
+            try {
+                equalizer?.setBandLevel(band.toShort(), levelMb.toShort())
+                secondaryEqualizer?.setBandLevel(band.toShort(), levelMb.toShort())
+            } catch (e: Exception) {
+                Log.w(TAG, "setBandLevel failed: ${e.message}")
+            }
         }
     }
 
     fun setBassBoostStrength(strength: Int) {
-        try {
-            bassBoost?.setStrength(strength.coerceIn(0, 1000).toShort())
-        } catch (e: Exception) {
-            Log.w(TAG, "setBassBoost failed: ${e.message}")
+        synchronized(this) {
+            val clamped = strength.coerceIn(0, 1000)
+            bassBoostStrength = clamped
+            try {
+                bassBoost?.setStrength(clamped.toShort())
+                secondaryBassBoost?.setStrength(clamped.toShort())
+            } catch (e: Exception) {
+                Log.w(TAG, "setBassBoost failed: ${e.message}")
+            }
         }
     }
 
     fun setVirtualizerStrength(strength: Int) {
-        try {
-            virtualizer?.setStrength(strength.coerceIn(0, 1000).toShort())
-        } catch (e: Exception) {
-            Log.w(TAG, "setVirtualizer failed: ${e.message}")
+        synchronized(this) {
+            val clamped = strength.coerceIn(0, 1000)
+            virtualizerStrength = clamped
+            try {
+                virtualizer?.setStrength(clamped.toShort())
+                secondaryVirtualizer?.setStrength(clamped.toShort())
+            } catch (e: Exception) {
+                Log.w(TAG, "setVirtualizer failed: ${e.message}")
+            }
         }
     }
 
     fun setOutputGainMb(gainMb: Int) {
-        val clamped = gainMb.coerceIn(-1500, 1500)
-        lastOutputGainMb = clamped
-        try {
-            loudness?.setTargetGain(clamped)
-        } catch (e: Exception) {
-            Log.w(TAG, "setOutputGain failed: ${e.message}")
+        synchronized(this) {
+            val clamped = gainMb.coerceIn(0, 1500)
+            lastOutputGainMb = clamped
+            try {
+                loudness?.enabled = clamped > 0
+                loudness?.setTargetGain(clamped)
+                secondaryLoudness?.enabled = clamped > 0
+                secondaryLoudness?.setTargetGain(clamped)
+            } catch (e: Exception) {
+                Log.w(TAG, "setOutputGain failed: ${e.message}")
+            }
         }
     }
 
@@ -123,18 +221,23 @@ object AudioEqualizerHelper {
     }
 
     fun useSystemPreset(presetIndex: Int) {
-        try {
-            equalizer?.usePreset(presetIndex.toShort())
-        } catch (e: Exception) {
-            Log.w(TAG, "useSystemPreset failed: ${e.message}")
+        synchronized(this) {
+            try {
+                equalizer?.usePreset(presetIndex.toShort())
+                secondaryEqualizer?.usePreset(presetIndex.toShort())
+            } catch (e: Exception) {
+                Log.w(TAG, "useSystemPreset failed: ${e.message}")
+            }
         }
     }
 
-    fun getCurrentPreset(): Int = try {
-        equalizer?.currentPreset?.toInt() ?: -1
-    } catch (_: Exception) { -1 }
+    fun getCurrentPreset(): Int = synchronized(this) {
+        try {
+            equalizer?.currentPreset?.toInt() ?: -1
+        } catch (_: Exception) { -1 }
+    }
 
-    fun release() {
+    private fun releaseInternal() {
         try { equalizer?.release() } catch (_: Exception) {}
         try { bassBoost?.release() } catch (_: Exception) {}
         try { virtualizer?.release() } catch (_: Exception) {}
@@ -144,5 +247,13 @@ object AudioEqualizerHelper {
         virtualizer = null
         loudness = null
         currentSessionId = 0
+        _sessionState.value = 0
+    }
+
+    fun release() {
+        synchronized(this) {
+            releaseInternal()
+            releaseSecondaryInternal()
+        }
     }
 }

@@ -59,6 +59,7 @@ import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.outlined.Bookmark
 import androidx.compose.material.icons.outlined.BookmarkBorder
 import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.DownloadDone
 import androidx.compose.material.icons.outlined.Headphones
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.ThumbDown
@@ -87,6 +88,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -221,16 +223,25 @@ fun VideoPlayerScreen(
         window?.let { WindowCompat.getInsetsController(it, it.decorView) }
     }
 
+    DisposableEffect(Unit) {
+        onDispose {
+            activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
+    }
+
     LaunchedEffect(isFullscreen) {
         if (isFullscreen) {
+            activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
             insetsController?.hide(WindowInsetsCompat.Type.systemBars())
             insetsController?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         } else {
+            activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             insetsController?.show(WindowInsetsCompat.Type.systemBars())
         }
     }
 
-    LaunchedEffect(showControls) {
+    var controlsInteractionTrigger by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(showControls, controlsInteractionTrigger) {
         if (showControls) {
             delay(3500)
             showControls = false
@@ -930,10 +941,19 @@ fun VideoPlayerScreen(
                             }
 
                             item {
+                                val isDownloaded = track?.let { playerController.downloadEngine.isDownloaded(it.videoId ?: it.id) } ?: false
                                 ActionChip(
-                                    icon = Icons.Outlined.Download,
-                                    label = "Descargar",
+                                    icon = if (isDownloaded) Icons.Outlined.DownloadDone else Icons.Outlined.Download,
+                                    label = if (isDownloaded) "Descargado" else "Descargar",
                                     onClick = {
+                                        if (isDownloaded) {
+                                            track?.let {
+                                                val vid = it.videoId ?: it.id
+                                                playerController.downloadEngine.deleteDownloadedTrack(vid)
+                                                Toast.makeText(context, "Video eliminado de descargas", Toast.LENGTH_SHORT).show()
+                                            }
+                                            return@ActionChip
+                                        }
                                         scope.launch {
                                             track?.let {
                                                 Toast.makeText(context, "Iniciando descarga en MP4...", Toast.LENGTH_SHORT).show()

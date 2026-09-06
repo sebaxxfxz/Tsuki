@@ -159,7 +159,7 @@ fun rememberSmoothPositionState(
                 continue
             }
             withFrameNanos { frameTimeNanos ->
-                if (anchorFrameNanos == 0L) {
+                if (anchorFrameNanos == 0L || kotlin.math.abs(rawPositionMs - anchorPositionMs) > 1000L) {
                     anchorFrameNanos = frameTimeNanos
                     anchorPositionMs = rawPositionMs
                 }

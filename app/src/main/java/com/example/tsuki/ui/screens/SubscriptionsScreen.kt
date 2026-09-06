@@ -1,8 +1,10 @@
 package com.example.tsuki.ui.screens
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,7 +20,6 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import android.widget.Toast
@@ -28,20 +29,32 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Subscriptions
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Notifications
+import androidx.compose.material.icons.rounded.NotificationsOff
 import androidx.compose.material.icons.rounded.PersonRemove
+import androidx.compose.material.icons.rounded.Sort
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.StarBorder
 import androidx.compose.material.icons.rounded.Upload
+import androidx.compose.material.icons.rounded.VolumeOff
+import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -51,6 +64,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -59,25 +73,36 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.example.tsuki.data.local.HomePreferences
+import com.example.tsuki.data.local.TSukiChannelSubscription
 import com.example.tsuki.data.local.TSukiSubscriptionRepository
+import com.example.tsuki.data.subscriptions.SubNotifyScheduler
 import com.example.tsuki.data.subscriptions.TSukiSubscriptionFeedRepository
 import com.example.tsuki.domain.model.MediaTrack
 import com.example.tsuki.playback.PlayerController
+import com.example.tsuki.ui.components.PermissionRationaleSheet
 import com.example.tsuki.ui.components.VideoCardEnhanced
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 import androidx.compose.foundation.border
 import androidx.compose.foundation.lazy.itemsIndexed
 
-@OptIn(ExperimentalMaterial3Api::class)
+private enum class SubSort(val label: String) {
+    RECENT("Recientes"),
+    VIEWS("Más vistos"),
+    CHANNEL("Por canal")
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun SubscriptionsScreen(
     playerController: PlayerController?,
-    onExpandPlayer: () -> Unit = {}
+    onExpandPlayer: () -> Unit = {},
+    onExploreClick: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val subRepo = remember { TSukiSubscriptionRepository.getInstance(context) }
@@ -86,25 +111,39 @@ fun SubscriptionsScreen(
     val scope = rememberCoroutineScope()
     val subs by subRepo.getAllSubscriptions().collectAsStateWithLifecycle(initialValue = emptyList())
     val favChannels by homePrefs.favoriteChannels.collectAsStateWithLifecycle(initialValue = emptySet())
+    val blockedChannels by homePrefs.blockedChannels.collectAsStateWithLifecycle(initialValue = emptySet())
+    val notifyEnabled by homePrefs.subNotifyEnabled.collectAsStateWithLifecycle(initialValue = false)
     var videos by remember { mutableStateOf<List<MediaTrack>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
     var isRefreshing by remember { mutableStateOf(false) }
     var filter by remember { mutableStateOf("Todos") }
+    var showOnlyNew by remember { mutableStateOf(false) }
+    var sortMode by remember { mutableStateOf(SubSort.RECENT) }
+    var showSortMenu by remember { mutableStateOf(false) }
     var selectedChannelId by remember { mutableStateOf<String?>(null) }
+    var sheetChannel by remember { mutableStateOf<TSukiChannelSubscription?>(null) }
+    var sessionNewIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var lastMarkedKey by remember { mutableStateOf<Set<String>?>(null) }
     var loadJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
 
-    val displaySubs = remember(subs, favChannels) {
-        if (subs.isNotEmpty()) subs
+    val displaySubs = remember(subs, favChannels, blockedChannels) {
+        val list = if (subs.isNotEmpty()) subs
         else favChannels.mapNotNull { entry ->
             val parts = entry.split("|")
             if (parts.isEmpty() || parts[0].isBlank()) null
-            else com.example.tsuki.data.local.TSukiChannelSubscription(
+            else TSukiChannelSubscription(
                 channelId = parts[0],
                 channelName = parts.getOrNull(1) ?: parts[0],
                 channelThumbnail = parts.getOrNull(2) ?: ""
             )
         }
+        val distinct = list.distinctBy { it.channelId }
+        val (active, muted) = distinct.partition { it.channelId !in blockedChannels }
+        active + muted
     }
+
+    fun matchesChannel(track: MediaTrack, sub: TSukiChannelSubscription): Boolean =
+        track.channelId == sub.channelId || track.artist.equals(sub.channelName, ignoreCase = true)
 
     fun load() {
         loadJob?.cancel()
@@ -130,6 +169,57 @@ fun SubscriptionsScreen(
         }
     }
 
+    LaunchedEffect(videos) {
+        if (videos.isNotEmpty()) {
+            val key = videos.map { it.id }.toSet()
+            if (key != lastMarkedKey) {
+                lastMarkedKey = key
+                withContext(Dispatchers.IO) {
+                    val seen = try { homePrefs.seenSubVideos.first() } catch (_: Exception) { emptySet() }
+                    sessionNewIds = key - seen
+                    homePrefs.markSeenSubVideos(key)
+                }
+            }
+        }
+    }
+
+    val notifyPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) {
+            scope.launch(Dispatchers.IO) {
+                homePrefs.setSubNotifyEnabled(true)
+                SubNotifyScheduler.setEnabled(context, true)
+            }
+            Toast.makeText(context, "Te avisaré de videos nuevos", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(context, "Activa las notificaciones en ajustes del sistema", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    var showNotifyRationale by remember { mutableStateOf(false) }
+
+    fun toggleNotify() {
+        if (notifyEnabled) {
+            scope.launch(Dispatchers.IO) {
+                homePrefs.setSubNotifyEnabled(false)
+                SubNotifyScheduler.setEnabled(context, false)
+            }
+            Toast.makeText(context, "Avisos desactivados", Toast.LENGTH_SHORT).show()
+        } else {
+            val perm = android.Manifest.permission.POST_NOTIFICATIONS
+            if (androidx.core.content.ContextCompat.checkSelfPermission(context, perm) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                scope.launch(Dispatchers.IO) {
+                    homePrefs.setSubNotifyEnabled(true)
+                    SubNotifyScheduler.setEnabled(context, true)
+                }
+                Toast.makeText(context, "Te avisaré de videos nuevos", Toast.LENGTH_SHORT).show()
+            } else {
+                showNotifyRationale = true
+            }
+        }
+    }
+
     val backupRepo = remember { com.example.tsuki.data.local.TSukiBackupRepository(context) }
     var exportMsg by remember { mutableStateOf<String?>(null) }
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
@@ -152,6 +242,13 @@ fun SubscriptionsScreen(
             ) {
                 Text("Suscripciones", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    IconButton(onClick = { toggleNotify() }) {
+                        Icon(
+                            if (notifyEnabled) Icons.Rounded.Notifications else Icons.Rounded.NotificationsOff,
+                            contentDescription = "Avisos de videos nuevos",
+                            tint = if (notifyEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     IconButton(onClick = { importLauncher.launch("application/json") }) { Icon(Icons.Rounded.Download, contentDescription = null) }
                     IconButton(onClick = { exportLauncher.launch("tsuki_subs_${System.currentTimeMillis()}.json") }) { Icon(Icons.Rounded.Upload, contentDescription = null) }
                     Text("${displaySubs.size} canales", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -165,30 +262,65 @@ fun SubscriptionsScreen(
                 contentPadding = PaddingValues(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(displaySubs, key = { it.channelId }) { sub ->
+                itemsIndexed(displaySubs, key = { index, sub -> "${sub.channelId}_$index" }) { _, sub ->
                     val isSelected = selectedChannelId == sub.channelId
+                    val isMuted = sub.channelId in blockedChannels
+                    val isFav = favChannels.any { it.substringBefore("|") == sub.channelId }
+                    val hasNew = videos.any { it.id in sessionNewIds && matchesChannel(it, sub) }
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier
                             .width(64.dp)
-                            .clickable {
-                                selectedChannelId = if (selectedChannelId == sub.channelId) null else sub.channelId
-                            }
+                            .alpha(if (isMuted) 0.45f else 1f)
+                            .combinedClickable(
+                                onClick = {
+                                    selectedChannelId = if (selectedChannelId == sub.channelId) null else sub.channelId
+                                },
+                                onLongClick = { sheetChannel = sub }
+                            )
                     ) {
-                        AsyncImage(
-                            model = sub.channelThumbnail,
-                            contentDescription = null,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier
-                                .size(56.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.surfaceVariant)
-                                .then(
-                                    if (isSelected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
-                                    else Modifier
-                                )
-                        )
-                        Spacer(Modifier.height(4.dp))
+                        Box(contentAlignment = Alignment.BottomEnd) {
+                            AsyncImage(
+                                model = sub.channelThumbnail,
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .size(56.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                                    .then(
+                                        if (isSelected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
+                                        else Modifier
+                                    )
+                            )
+                            if (isFav) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(18.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                                        Icon(
+                                            Icons.Rounded.Star,
+                                            contentDescription = "Favorito",
+                                            tint = MaterialTheme.colorScheme.onPrimary,
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        if (hasNew) {
+                            Box(
+                                modifier = Modifier
+                                    .padding(top = 3.dp)
+                                    .size(7.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primary)
+                            )
+                        } else {
+                            Spacer(Modifier.height(10.dp))
+                        }
                         Text(
                             sub.channelName,
                             style = MaterialTheme.typography.labelSmall,
@@ -201,7 +333,8 @@ fun SubscriptionsScreen(
             }
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 listOf("Todos", "Videos", "Shorts").forEach { f ->
                     FilterChip(
@@ -209,6 +342,39 @@ fun SubscriptionsScreen(
                         onClick = { filter = f },
                         label = { Text(f) }
                     )
+                }
+                if (sessionNewIds.isNotEmpty()) {
+                    FilterChip(
+                        selected = showOnlyNew,
+                        onClick = { showOnlyNew = !showOnlyNew },
+                        label = { Text("Nuevos (${sessionNewIds.size})") }
+                    )
+                }
+                Spacer(Modifier.weight(1f))
+                Box {
+                    IconButton(onClick = { showSortMenu = true }) {
+                        Icon(Icons.Rounded.Sort, contentDescription = "Ordenar")
+                    }
+                    DropdownMenu(
+                        expanded = showSortMenu,
+                        onDismissRequest = { showSortMenu = false },
+                        shape = RoundedCornerShape(24.dp),
+                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        tonalElevation = 3.dp
+                    ) {
+                        SubSort.entries.forEach { mode ->
+                            DropdownMenuItem(
+                                text = { Text(mode.label) },
+                                leadingIcon = {
+                                    if (sortMode == mode) Icon(Icons.Rounded.Check, contentDescription = null)
+                                },
+                                onClick = {
+                                    sortMode = mode
+                                    showSortMenu = false
+                                }
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -237,8 +403,8 @@ fun SubscriptionsScreen(
                             shape = RoundedCornerShape(50),
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.clickable {
-                                scope.launch {
-                                    homePrefs.setOnboardingDone(false)
+                                onExploreClick?.invoke() ?: run {
+                                    android.widget.Toast.makeText(context, "Busca creadores desde la pestaña Inicio", android.widget.Toast.LENGTH_SHORT).show()
                                 }
                             }
                         ) {
@@ -261,39 +427,243 @@ fun SubscriptionsScreen(
                     }
                 }
                 else -> {
-                    val filtered = remember(videos, filter, selectedChannelId) {
-                        val base = if (selectedChannelId == null) videos
+                    val filtered = remember(videos, filter, selectedChannelId, showOnlyNew, sortMode, displaySubs) {
+                        val byChannel = if (selectedChannelId == null) videos
                         else {
                             val ch = displaySubs.firstOrNull { it.channelId == selectedChannelId }
                             videos.filter { it.channelId == selectedChannelId || (ch != null && it.artist.equals(ch.channelName, ignoreCase = true)) }
                         }
-                        when (filter) {
-                            "Shorts" -> base.filter { it.isShort || it.durationSeconds in 1..65 }
-                            "Videos" -> base.filter { !it.isShort && it.durationSeconds > 65 }
-                            else -> base
+                        val onlyNew = if (showOnlyNew) byChannel.filter { it.id in sessionNewIds } else byChannel
+                        val byType = when (filter) {
+                            "Shorts" -> onlyNew.filter { it.isShort || it.durationSeconds in 1..65 }
+                            "Videos" -> onlyNew.filter { !it.isShort && it.durationSeconds > 65 }
+                            else -> onlyNew
+                        }
+                        when (sortMode) {
+                            SubSort.VIEWS -> byType.sortedByDescending { it.viewCount }
+                            else -> byType
                         }
                     }
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(bottom = 120.dp, top = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        itemsIndexed(
-                            items = filtered,
-                            key = { index, track -> "${track.id}_$index" }
-                        ) { index, track ->
-                            VideoCardEnhanced(
-                                video = track,
-                                onClick = {
-                                    playerController?.playQueue(filtered, index, playAsVideo = true)
-                                    onExpandPlayer()
+                    if (filtered.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+                            Text("Nada por aquí con ese filtro", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    } else if (sortMode == SubSort.CHANNEL && selectedChannelId == null) {
+                        val groups = remember(filtered, displaySubs) {
+                            val order = displaySubs.map { it.channelId }
+                            filtered.groupBy { track ->
+                                displaySubs.firstOrNull {
+                                    it.channelId == track.channelId || track.artist.equals(it.channelName, ignoreCase = true)
+                                }?.channelId ?: track.channelId.orEmpty()
+                            }.toList().sortedBy { (id, _) ->
+                                order.indexOf(id).let { if (it == -1) Int.MAX_VALUE else it }
+                            }
+                        }
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(bottom = 120.dp, top = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            groups.forEach { (channelId, groupVideos) ->
+                                val sub = displaySubs.firstOrNull { it.channelId == channelId }
+                                stickyHeader(key = "ch_$channelId") {
+                                    Surface(
+                                        color = MaterialTheme.colorScheme.background.copy(alpha = 0.94f),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                        ) {
+                                            AsyncImage(
+                                                model = sub?.channelThumbnail,
+                                                contentDescription = null,
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier.size(28.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant)
+                                            )
+                                            Text(
+                                                sub?.channelName ?: groupVideos.firstOrNull()?.artist.orEmpty(),
+                                                style = MaterialTheme.typography.titleSmall,
+                                                fontWeight = FontWeight.SemiBold,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                            Text(
+                                                "${groupVideos.size}",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
                                 }
-                            )
+                                itemsIndexed(
+                                    items = groupVideos,
+                                    key = { index, track -> "g_${channelId}_${track.id}_$index" }
+                                ) { _, track ->
+                                    val playIndex = filtered.indexOf(track)
+                                    VideoCardEnhanced(
+                                        video = track,
+                                        onClick = {
+                                            playerController?.playQueue(filtered, playIndex.coerceAtLeast(0), playAsVideo = true)
+                                            onExpandPlayer()
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(bottom = 120.dp, top = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            itemsIndexed(
+                                items = filtered,
+                                key = { index, track -> "${track.id}_$index" }
+                            ) { index, track ->
+                                VideoCardEnhanced(
+                                    video = track,
+                                    onClick = {
+                                        playerController?.playQueue(filtered, index, playAsVideo = true)
+                                        onExpandPlayer()
+                                    }
+                                )
+                            }
                         }
                     }
                 }
             }
         }
+
+        val channel = sheetChannel
+        if (channel != null) {
+            val isFav = favChannels.any { it.substringBefore("|") == channel.channelId }
+            val isMuted = channel.channelId in blockedChannels
+            val inFeed = videos.count { matchesChannel(it, channel) }
+            ModalBottomSheet(
+                onDismissRequest = { sheetChannel = null },
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 32.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(14.dp),
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
+                    ) {
+                        AsyncImage(
+                            model = channel.channelThumbnail,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.size(56.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant)
+                        )
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                channel.channelName,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                if (inFeed == 1) "1 video en el feed" else "$inFeed videos en el feed",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    SubSheetRow(
+                        icon = if (isFav) Icons.Rounded.Star else Icons.Rounded.StarBorder,
+                        label = if (isFav) "Quitar de favoritos" else "Marcar favorito",
+                        onClick = {
+                            sheetChannel = null
+                            scope.launch(Dispatchers.IO) {
+                                if (isFav) {
+                                    val entry = try { favChannels.first { it.substringBefore("|") == channel.channelId } } catch (_: Exception) { null }
+                                    if (entry != null) homePrefs.removeFavoriteChannel(entry)
+                                } else {
+                                    homePrefs.addFavoriteChannel("${channel.channelId}|${channel.channelName}|${channel.channelThumbnail}")
+                                }
+                            }
+                            Toast.makeText(context, if (isFav) "Quitado de favoritos" else "Marcado como favorito", Toast.LENGTH_SHORT).show()
+                        }
+                    )
+                    SubSheetRow(
+                        icon = if (isMuted) Icons.Rounded.VolumeUp else Icons.Rounded.VolumeOff,
+                        label = if (isMuted) "Activar canal" else "Silenciar canal",
+                        onClick = {
+                            sheetChannel = null
+                            scope.launch(Dispatchers.IO) {
+                                if (isMuted) homePrefs.unblockChannel(channel.channelId)
+                                else homePrefs.blockChannel(channel.channelId)
+                            }
+                            Toast.makeText(context, if (isMuted) "Canal activado" else "Ya no verás videos de este canal", Toast.LENGTH_SHORT).show()
+                            load()
+                        }
+                    )
+                    SubSheetRow(
+                        icon = Icons.Rounded.PersonRemove,
+                        label = "Dejar de seguir",
+                        onClick = {
+                            sheetChannel = null
+                            if (selectedChannelId == channel.channelId) selectedChannelId = null
+                            scope.launch(Dispatchers.IO) { subRepo.unsubscribe(channel.channelId) }
+                            Toast.makeText(context, "Dejaste de seguir a ${channel.channelName}", Toast.LENGTH_SHORT).show()
+                        }
+                    )
+                }
+            }
+        }
+
+        if (showNotifyRationale) {
+            PermissionRationaleSheet(
+                title = "Notificaciones de TSuki",
+                body = "Te aviso cuando salgan videos nuevos de tus suscripciones y cuando la descarga termine. Puedes cambiarlo luego en ajustes.",
+                icon = Icons.Rounded.Notifications,
+                onConfirm = {
+                    showNotifyRationale = false
+                    notifyPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                },
+                onDismiss = { showNotifyRationale = false }
+            )
+        }
+    }
+}
+
+@Composable
+private fun SubSheetRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.secondaryContainer),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+        Text(label, style = MaterialTheme.typography.bodyLarge)
     }
 }
 

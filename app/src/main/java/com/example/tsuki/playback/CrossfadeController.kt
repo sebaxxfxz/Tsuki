@@ -31,7 +31,7 @@ class CrossfadeController(private val context: Context) {
         val mediaController: MediaController?
         fun crossfadeNextTrack(): MediaTrack?
         suspend fun resolveAudioUrl(track: MediaTrack): String?
-        fun loadNextOnPrimarySilently(track: MediaTrack)
+        fun loadNextOnPrimarySilently(track: MediaTrack, startPositionMs: Long = 0L)
     }
 
     companion object {
@@ -92,7 +92,6 @@ class CrossfadeController(private val context: Context) {
             android.os.Handler(android.os.Looper.getMainLooper()).post {
                 runCatching {
                     h.mediaController?.volume = 1f
-                    h.mediaController?.play()
                 }
             }
             cleanupSecondary()
@@ -151,15 +150,22 @@ class CrossfadeController(private val context: Context) {
                 if (primaryDur <= 0L) break
                 val remainingMs = primaryDur - primaryPos - END_GUARD_MS
                 if (remainingMs <= durationMs) break
-                if (!primary.isPlaying) throw Exception("Primary paused while waiting for fade window")
+                if (!primary.isPlaying) {
+                    if (primary.playbackState == Player.STATE_ENDED) break
+                    if (!primary.playWhenReady) throw Exception("Primary paused while waiting for fade window")
+                }
                 delay(30)
+            }
+
+            withContext(Dispatchers.Main) {
+                secondaryPlayer.play()
             }
 
             val fadeStartTime = SystemClock.elapsedRealtime()
             val primaryDuration = primary.duration
             val initialPos = primary.currentPosition
+            var lastPrimaryPos = initialPos
             val actualFadeMs = min(durationMs, (primaryDuration - initialPos - END_GUARD_MS).coerceAtLeast(MIN_TRACK_TAIL_MS))
-
 
             while (true) {
                 val elapsed = SystemClock.elapsedRealtime() - fadeStartTime
@@ -173,11 +179,21 @@ class CrossfadeController(private val context: Context) {
 
                 if (progress >= 1f) break
 
-
-                if (!primary.isPlaying) throw Exception("Primary stopped playing during fade")
-                val currentId = primary.currentMediaItem?.mediaId
-                if (fadeStartId != null && currentId != fadeStartId) throw Exception("Primary media changed during fade")
-                if (kotlin.math.abs(primary.currentPosition - initialPos - elapsed) > 1_500L) throw Exception("Seek detected during fade")
+                if (!primary.isPlaying) {
+                    if (primary.playbackState == Player.STATE_ENDED || (primaryDuration > 0L && lastPrimaryPos >= primaryDuration - 1500L)) {
+                        withContext(Dispatchers.Main) {
+                            primary.volume = 0f
+                            secondaryPlayer.volume = 1f
+                        }
+                        break
+                    }
+                    if (!primary.playWhenReady) throw Exception("Primary stopped playing during fade")
+                }
+                val currentPrimaryPos = primary.currentPosition
+                if (currentPrimaryPos < lastPrimaryPos - 1_500L || currentPrimaryPos > lastPrimaryPos + 4_000L) {
+                    throw Exception("Seek detected during fade")
+                }
+                lastPrimaryPos = currentPrimaryPos
 
                 delay(FRAME_MS)
             }
@@ -190,7 +206,8 @@ class CrossfadeController(private val context: Context) {
             }
 
             try {
-                host.loadNextOnPrimarySilently(next)
+                val secPosAtHandoff = secondaryPlayer.currentPosition
+                host.loadNextOnPrimarySilently(next, secPosAtHandoff)
 
                 val handoffStart = SystemClock.elapsedRealtime()
                 while (SystemClock.elapsedRealtime() - handoffStart < READY_TIMEOUT_MS) {
@@ -213,11 +230,9 @@ class CrossfadeController(private val context: Context) {
                             primary.play()
                         }
                         val posAfterSeek = secPos
-                        val deadline = SystemClock.elapsedRealtime() + 2_000L
-                        var advanced = false
+                        val deadline = SystemClock.elapsedRealtime() + 1_500L
                         while (SystemClock.elapsedRealtime() < deadline) {
                             if (hasPlaybackPositionAdvanced(posAfterSeek, primary.currentPosition)) {
-                                advanced = true
                                 break
                             }
                             delay(10)
@@ -244,6 +259,10 @@ class CrossfadeController(private val context: Context) {
                     }
                 } else {
                     withContext(Dispatchers.Main) {
+                        val secPos = secondaryPlayer.currentPosition
+                        if (secPos > 0L) {
+                            primary.seekTo(secPos)
+                        }
                         primary.volume = 1f
                         primary.play()
                     }
@@ -262,9 +281,11 @@ class CrossfadeController(private val context: Context) {
             suppressedMediaId = null
             Log.d(TAG, "Crossfade handoff succeeded smoothly")
         } catch (e: kotlinx.coroutines.CancellationException) {
+            try { host.mediaController?.volume = 1f } catch (_: Exception) {}
             cleanupSecondary()
             isActive = false
             handingOff = false
+            throw e
         } catch (e: Exception) {
             Log.w(TAG, "Crossfade aborted or failed: ${e.message}")
             isActive = false
@@ -294,6 +315,7 @@ class CrossfadeController(private val context: Context) {
     private fun cleanupSecondary() {
         val player = secondary ?: return
         secondary = null
+        AudioEqualizerHelper.releaseSecondaryAudioEffects()
         mainHandler.post {
             runCatching {
                 player.stop()
@@ -307,7 +329,24 @@ class CrossfadeController(private val context: Context) {
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(15_000, 45_000, 5_000, 5_000)
             .build()
+        val audioAttributes = androidx.media3.common.AudioAttributes.Builder()
+            .setContentType(androidx.media3.common.C.AUDIO_CONTENT_TYPE_MUSIC)
+            .setUsage(androidx.media3.common.C.USAGE_MEDIA)
+            .build()
+        val httpDataSourceFactory = YouTubeHttpDataSource.Factory()
+        val cache = PlayerCacheProvider.get(context)
+        val cacheDataSourceFactory = androidx.media3.datasource.cache.CacheDataSource.Factory()
+            .setCache(cache)
+            .setUpstreamDataSourceFactory(
+                androidx.media3.datasource.DefaultDataSource.Factory(context, httpDataSourceFactory)
+            )
+            .setFlags(androidx.media3.datasource.cache.CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+        val mediaSourceFactory = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(cacheDataSourceFactory)
         val player = ExoPlayer.Builder(context)
+            .setMediaSourceFactory(mediaSourceFactory)
+            .setAudioAttributes(audioAttributes, false)
+            .setHandleAudioBecomingNoisy(true)
+            .setWakeMode(androidx.media3.common.C.WAKE_MODE_NETWORK)
             .setLoadControl(loadControl)
             .build()
         player.volume = 0f
@@ -316,8 +355,11 @@ class CrossfadeController(private val context: Context) {
         }
         player.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
-                player.release()
                 if (isActive) cancel("secondary player error: ${error.errorCodeName}")
+            }
+
+            override fun onAudioSessionIdChanged(audioSessionId: Int) {
+                AudioEqualizerHelper.initSecondaryAudioEffects(audioSessionId)
             }
         })
         val item = MediaItem.Builder()
@@ -326,7 +368,7 @@ class CrossfadeController(private val context: Context) {
             .build()
         player.setMediaItem(item)
         player.prepare()
-        player.play()
+        AudioEqualizerHelper.initSecondaryAudioEffects(player.audioSessionId)
         return player
     }
 }

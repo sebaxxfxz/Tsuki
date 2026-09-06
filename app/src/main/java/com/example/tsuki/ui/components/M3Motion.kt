@@ -9,9 +9,23 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.SpringSpec
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.Dp
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -39,6 +53,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
+import androidx.compose.material3.Text
+import androidx.compose.material3.LocalTextStyle
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.shape.CircleShape
 
 
 
@@ -51,13 +69,11 @@ fun Modifier.m3PressBounce(
 ): Modifier {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
 
     val scale by animateFloatAsState(
         targetValue = if (isPressed) targetScale else 1f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium
-        ),
+        animationSpec = M3MotionTokens.expressiveBouncy(),
         label = "M3PressBounceScale"
     )
 
@@ -69,7 +85,10 @@ fun Modifier.m3PressBounce(
         .clickable(
             interactionSource = interactionSource,
             indication = ripple(),
-            onClick = onClick
+            onClick = {
+                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                onClick()
+            }
         )
 }
 
@@ -387,6 +406,93 @@ object M3MotionTokens {
     const val DurationExtraLong2 = 800
     const val DurationExtraLong3 = 900
     const val DurationExtraLong4 = 1000
+
+    fun <T> spatialFast(): SpringSpec<T> =
+        spring(dampingRatio = 0.65f, stiffness = 1400f)
+
+    fun <T> spatialDefault(): SpringSpec<T> =
+        spring(dampingRatio = 0.75f, stiffness = 600f)
+
+    fun <T> spatialSlow(): SpringSpec<T> =
+        spring(dampingRatio = 0.82f, stiffness = 300f)
+
+    fun <T> spatialBouncy(): SpringSpec<T> =
+        spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium)
+
+    fun <T> spatialGentle(): SpringSpec<T> =
+        spring(dampingRatio = 0.85f, stiffness = 350f)
+
+    fun <T> effectsFast(): SpringSpec<T> =
+        spring(dampingRatio = 1.0f, stiffness = 1600f)
+
+    fun <T> effectsDefault(): SpringSpec<T> =
+        spring(dampingRatio = 1.0f, stiffness = 1000f)
+
+    fun <T> effectsSlow(): SpringSpec<T> =
+        spring(dampingRatio = 1.0f, stiffness = 500f)
+
+    val CoverSwipeSpring: SpringSpec<Float> =
+        spring(dampingRatio = 0.72f, stiffness = 450f)
+
+    val CoverReleaseSpring: SpringSpec<Float> =
+        spring(dampingRatio = 0.82f, stiffness = 380f)
+
+    val ArtworkScaleSpring: SpringSpec<Float> =
+        spring(dampingRatio = 0.68f, stiffness = 350f)
+
+    val ArtworkCornerSpring: SpringSpec<Dp> =
+        spring(dampingRatio = 0.75f, stiffness = 450f)
+
+    val BottomSheetSpring: SpringSpec<Dp> =
+        spring(dampingRatio = 0.78f, stiffness = 550f)
+
+    val BottomSheetSoftSpring: SpringSpec<Dp> =
+        spring(dampingRatio = 0.85f, stiffness = 350f)
+
+    val MiniPlayerSwipeSpring: SpringSpec<Float> =
+        spring(dampingRatio = 0.75f, stiffness = 500f)
+
+    val CardPressSpring: SpringSpec<Float> =
+        spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium)
+
+    val ButtonPressSpring: SpringSpec<Float> =
+        spring(dampingRatio = 0.6f, stiffness = 800f)
+
+    val NavIconSpring: SpringSpec<Float> =
+        spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow)
+
+    val LyricsActiveScaleSpring: SpringSpec<Float> =
+        spring(dampingRatio = 0.75f, stiffness = 500f)
+
+    val LyricsGlowSpring: SpringSpec<Float> =
+        spring(dampingRatio = 0.7f, stiffness = 700f)
+
+    fun <T> expressiveFast(): SpringSpec<T> =
+        spring(dampingRatio = 0.65f, stiffness = 1200f)
+
+    fun <T> expressiveDefault(): SpringSpec<T> =
+        spring(dampingRatio = 0.72f, stiffness = 520f)
+
+    fun <T> expressiveSlow(): SpringSpec<T> =
+        spring(dampingRatio = 0.82f, stiffness = 260f)
+
+    fun <T> expressiveBouncy(): SpringSpec<T> =
+        spring(dampingRatio = 0.58f, stiffness = 420f)
+
+    val ExpressiveHeroSpring: SpringSpec<Float> =
+        spring(dampingRatio = 0.68f, stiffness = 340f)
+
+    val AuraBreathingSpring: SpringSpec<Float> =
+        spring(dampingRatio = 0.85f, stiffness = 180f)
+
+    val ExpressiveCornerSpring: SpringSpec<Dp> =
+        spring(dampingRatio = 0.76f, stiffness = 400f)
+
+    val SnappySpring: SpringSpec<Float> =
+        spring(dampingRatio = 0.7f, stiffness = 900f)
+
+    val SmoothSpring: SpringSpec<Float> =
+        spring(dampingRatio = 0.8f, stiffness = 420f)
 }
 
 
@@ -451,13 +557,125 @@ fun m3FadeThrough(): ContentTransform {
     )
 }
 
+fun m3SharedAxisY(isForward: Boolean): ContentTransform {
+    val direction = if (isForward) 1 else -1
+    return (slideInVertically(
+        animationSpec = tween(
+            durationMillis = M3MotionTokens.DurationMedium2,
+            easing = M3MotionTokens.EmphasizedDecelerateEasing
+        ),
+        initialOffsetY = { fullHeight -> direction * (fullHeight / 6) }
+    ) + fadeIn(
+        animationSpec = tween(
+            durationMillis = M3MotionTokens.DurationShort4,
+            delayMillis = 30,
+            easing = androidx.compose.animation.core.LinearEasing
+        )
+    )).togetherWith(
+        slideOutVertically(
+            animationSpec = tween(
+                durationMillis = M3MotionTokens.DurationMedium1,
+                easing = M3MotionTokens.EmphasizedAccelerateEasing
+            ),
+            targetOffsetY = { fullHeight -> -direction * (fullHeight / 6) }
+        ) + fadeOut(
+            animationSpec = tween(
+                durationMillis = M3MotionTokens.DurationShort3,
+                easing = androidx.compose.animation.core.LinearEasing
+            )
+        )
+    )
+}
 
+fun m3SharedAxisZ(isForward: Boolean): ContentTransform {
+    return if (isForward) {
+        (scaleIn(
+            initialScale = 0.86f,
+            animationSpec = M3MotionTokens.expressiveDefault()
+        ) + fadeIn(
+            animationSpec = tween(
+                durationMillis = M3MotionTokens.DurationMedium2,
+                easing = M3MotionTokens.EmphasizedDecelerateEasing
+            )
+        )).togetherWith(
+            scaleOut(
+                targetScale = 1.08f,
+                animationSpec = M3MotionTokens.expressiveFast()
+            ) + fadeOut(
+                animationSpec = tween(
+                    durationMillis = M3MotionTokens.DurationShort3,
+                    easing = M3MotionTokens.EmphasizedAccelerateEasing
+                )
+            )
+        )
+    } else {
+        (scaleIn(
+            initialScale = 1.08f,
+            animationSpec = M3MotionTokens.expressiveDefault()
+        ) + fadeIn(
+            animationSpec = tween(
+                durationMillis = M3MotionTokens.DurationMedium2,
+                easing = M3MotionTokens.EmphasizedDecelerateEasing
+            )
+        )).togetherWith(
+            scaleOut(
+                targetScale = 0.86f,
+                animationSpec = M3MotionTokens.expressiveFast()
+            ) + fadeOut(
+                animationSpec = tween(
+                    durationMillis = M3MotionTokens.DurationShort3,
+                    easing = M3MotionTokens.EmphasizedAccelerateEasing
+                )
+            )
+        )
+    }
+}
 
+fun m3ScaleFadeTransition(): ContentTransform {
+    return (fadeIn(
+        animationSpec = tween(durationMillis = M3MotionTokens.DurationMedium1, easing = M3MotionTokens.EmphasizedDecelerateEasing)
+    ) + scaleIn(
+        initialScale = 0.92f,
+        animationSpec = M3MotionTokens.spatialDefault()
+    )).togetherWith(
+        fadeOut(
+            animationSpec = tween(durationMillis = M3MotionTokens.DurationShort3, easing = M3MotionTokens.EmphasizedAccelerateEasing)
+        ) + scaleOut(
+            targetScale = 0.95f,
+            animationSpec = M3MotionTokens.spatialDefault()
+        )
+    )
+}
 
+@Composable
+fun Modifier.m3CardBounce(
+    targetScale: Float = 0.97f,
+    onClick: (() -> Unit)? = null
+): Modifier {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
 
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) targetScale else 1f,
+        animationSpec = M3MotionTokens.CardPressSpring,
+        label = "M3CardBounceScale"
+    )
 
+    val base = this.graphicsLayer {
+        scaleX = scale
+        scaleY = scale
+    }
 
-
+    return if (onClick != null) {
+        base.clickable(
+            interactionSource = interactionSource,
+            indication = ripple(),
+            onClick = onClick
+        )
+    } else {
+        base
+    }
+}
 
 @Composable
 fun M3MorphingPlayPauseButton(
@@ -602,6 +820,385 @@ fun M3MorphingPlayPauseButton(
                             scaleX = iconScale
                             scaleY = iconScale
                         }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun Modifier.m3ExpressiveClickable(
+    enabled: Boolean = true,
+    hapticFeedback: Boolean = true,
+    pressedScale: Float = 0.94f,
+    onClick: () -> Unit
+): Modifier {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed && enabled) pressedScale else 1.0f,
+        animationSpec = M3MotionTokens.expressiveBouncy(),
+        label = "M3ExpressiveClickableScale"
+    )
+
+    return this
+        .graphicsLayer {
+            scaleX = scale
+            scaleY = scale
+        }
+        .clickable(
+            interactionSource = interactionSource,
+            indication = ripple(bounded = true),
+            enabled = enabled,
+            onClick = {
+                if (hapticFeedback) {
+                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                }
+                onClick()
+            }
+        )
+}
+
+@Composable
+fun M3EqualizerLiveWave(
+    isPlaying: Boolean,
+    color: Color,
+    modifier: Modifier = Modifier,
+    barCount: Int = 4,
+    barWidth: Dp = 3.dp,
+    barSpacing: Dp = 2.5.dp,
+    maxHeight: Dp = 16.dp
+) {
+    val phase: Float = if (isPlaying) {
+        val transition = rememberInfiniteTransition(label = "M3EqTransition")
+        val animPhase by transition.animateFloat(
+            initialValue = 0f,
+            targetValue = (2.0 * Math.PI).toFloat(),
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 1100, easing = androidx.compose.animation.core.LinearEasing),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "M3EqPhase"
+        )
+        animPhase
+    } else 0f
+
+    val totalWidth = (barWidth * barCount) + (barSpacing * (barCount - 1))
+    val offsets = remember(barCount) {
+        List(barCount) { i -> (i * (Math.PI * 2.0 / barCount)).toFloat() }
+    }
+
+    androidx.compose.foundation.Canvas(modifier = modifier.size(width = totalWidth, height = maxHeight)) {
+        val widthPx = barWidth.toPx()
+        val spacingPx = barSpacing.toPx()
+        val totalHeightPx = size.height
+        val centerY = totalHeightPx / 2f
+
+        for (i in 0 until barCount) {
+            val offset = offsets[i]
+            val heightFraction = if (isPlaying) {
+                val primarySin = kotlin.math.abs(kotlin.math.sin(phase + offset))
+                val secondarySin = kotlin.math.abs(kotlin.math.sin(phase * 1.6f + offset * 0.7f))
+                ((primarySin * 0.6f + secondarySin * 0.4f) * 0.75f + 0.25f).coerceIn(0.2f, 1.0f)
+            } else {
+                0.22f
+            }
+            val barHeightPx = totalHeightPx * heightFraction
+            val startX = i * (widthPx + spacingPx)
+            val topY = centerY - barHeightPx / 2f
+
+            drawRoundRect(
+                color = color,
+                topLeft = Offset(startX, topY),
+                size = Size(widthPx, barHeightPx),
+                cornerRadius = CornerRadius(widthPx / 2f)
+            )
+        }
+    }
+}
+
+@Composable
+fun M3DynamicGlowAura(
+    isPlaying: Boolean,
+    glowColor: Color,
+    modifier: Modifier = Modifier,
+    radius: Dp = 260.dp
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "M3AuraGlow")
+    val breathingScale by infiniteTransition.animateFloat(
+        initialValue = 1.05f,
+        targetValue = 1.25f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 2400, easing = M3MotionTokens.EmphasizedEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "M3AuraScale"
+    )
+    val breathingAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.45f,
+        targetValue = 0.85f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 2400, easing = M3MotionTokens.EmphasizedEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "M3AuraAlpha"
+    )
+
+    val animatedScale by animateFloatAsState(
+        targetValue = if (isPlaying) breathingScale else 1.0f,
+        animationSpec = M3MotionTokens.AuraBreathingSpring,
+        label = "M3AuraStateScale"
+    )
+    val animatedAlpha by animateFloatAsState(
+        targetValue = if (isPlaying) breathingAlpha else 0.25f,
+        animationSpec = M3MotionTokens.effectsDefault(),
+        label = "M3AuraStateAlpha"
+    )
+
+    androidx.compose.foundation.Canvas(
+        modifier = modifier
+            .size(radius * 2)
+            .graphicsLayer {
+                scaleX = animatedScale
+                scaleY = animatedScale
+                alpha = animatedAlpha
+            }
+    ) {
+        drawCircle(
+            brush = Brush.radialGradient(
+                colors = listOf(
+                    glowColor.copy(alpha = 0.95f),
+                    glowColor.copy(alpha = 0.65f),
+                    glowColor.copy(alpha = 0.25f),
+                    Color.Transparent
+                ),
+                center = center,
+                radius = size.minDimension / 2f
+            ),
+            radius = size.minDimension / 2f,
+            center = center
+        )
+    }
+}
+
+@Composable
+fun Modifier.m3Shimmer(
+    enabled: Boolean = true,
+    durationMillis: Int = 1200
+): Modifier {
+    if (!enabled) return this
+    val transition = rememberInfiniteTransition(label = "M3ShimmerTransition")
+    val translateAnim by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1000f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = durationMillis, easing = androidx.compose.animation.core.LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "M3ShimmerTranslate"
+    )
+
+    val baseColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHighest
+    val highlightColor = androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLowest.copy(alpha = 0.6f)
+
+    val brush = Brush.linearGradient(
+        colors = listOf(baseColor, highlightColor, baseColor),
+        start = Offset(translateAnim - 500f, translateAnim - 500f),
+        end = Offset(translateAnim, translateAnim)
+    )
+
+    return this.background(brush)
+}
+
+@Composable
+fun Modifier.m3StaggeredEntrance(
+    index: Int,
+    baseDelayMs: Int = 30
+): Modifier {
+    var visible by remember { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        visible = true
+    }
+    val alpha by animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = tween(
+            durationMillis = 320,
+            delayMillis = (index * baseDelayMs).coerceAtMost(350),
+            easing = M3MotionTokens.EmphasizedDecelerateEasing
+        ),
+        label = "M3StaggeredAlpha"
+    )
+    val translateY by animateFloatAsState(
+        targetValue = if (visible) 0f else 28f,
+        animationSpec = spring(
+            dampingRatio = 0.76f,
+            stiffness = 400f
+        ),
+        label = "M3StaggeredTranslate"
+    )
+    return this.graphicsLayer {
+        this.alpha = alpha
+        this.translationY = translateY
+    }
+}
+
+@Composable
+fun Modifier.m3Pulse(
+    enabled: Boolean = true,
+    minScale: Float = 0.95f,
+    maxScale: Float = 1.05f,
+    durationMillis: Int = 1200
+): Modifier {
+    if (!enabled) return this
+    val transition = rememberInfiniteTransition(label = "M3PulseTransition")
+    val scale by transition.animateFloat(
+        initialValue = minScale,
+        targetValue = maxScale,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = durationMillis, easing = M3MotionTokens.EmphasizedEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "M3PulseScale"
+    )
+    return this.graphicsLayer {
+        scaleX = scale
+        scaleY = scale
+    }
+}
+
+@Composable
+fun Modifier.m3ElasticPress(
+    targetScale: Float = 0.94f,
+    enabled: Boolean = true,
+    onClick: () -> Unit
+): Modifier {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed && enabled) targetScale else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "M3ElasticPressScale"
+    )
+
+    return this
+        .graphicsLayer {
+            scaleX = scale
+            scaleY = scale
+        }
+        .clickable(
+            interactionSource = interactionSource,
+            indication = ripple(),
+            enabled = enabled,
+            onClick = {
+                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                onClick()
+            }
+        )
+}
+
+@Composable
+fun M3AnimatedCounter(
+    value: String,
+    modifier: Modifier = Modifier,
+    style: androidx.compose.ui.text.TextStyle = LocalTextStyle.current,
+    color: Color = Color.Unspecified
+) {
+    androidx.compose.animation.AnimatedContent(
+        targetState = value,
+        transitionSpec = {
+            (slideInVertically(
+                animationSpec = spring(dampingRatio = 0.8f, stiffness = 500f),
+                initialOffsetY = { -it / 2 }
+            ) + fadeIn()).togetherWith(
+                slideOutVertically(
+                    animationSpec = spring(dampingRatio = 0.8f, stiffness = 500f),
+                    targetOffsetY = { it / 2 }
+                ) + fadeOut()
+            )
+        },
+        modifier = modifier,
+        label = "M3AnimatedCounter"
+    ) { targetText ->
+        Text(
+            text = targetText,
+            style = style,
+            color = color
+        )
+    }
+}
+
+fun m3ContainerTransform(): ContentTransform {
+    return (fadeIn(
+        animationSpec = tween(durationMillis = 280, easing = M3MotionTokens.EmphasizedDecelerateEasing)
+    ) + scaleIn(
+        initialScale = 0.90f,
+        animationSpec = M3MotionTokens.spatialDefault()
+    )).togetherWith(
+        fadeOut(
+            animationSpec = tween(durationMillis = 180, easing = M3MotionTokens.EmphasizedAccelerateEasing)
+        ) + scaleOut(
+            targetScale = 0.94f,
+            animationSpec = M3MotionTokens.spatialFast()
+        )
+    )
+}
+
+@Composable
+fun <T> M3PillTabRow(
+    items: List<T>,
+    selectedItem: T,
+    onItemSelected: (T) -> Unit,
+    modifier: Modifier = Modifier,
+    label: (T) -> String
+) {
+    LazyRow(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 6.dp)
+    ) {
+        items(items.size) { index ->
+            val item = items[index]
+            val isSelected = item == selectedItem
+            val containerColor by androidx.compose.animation.animateColorAsState(
+                targetValue = if (isSelected) androidx.compose.material3.MaterialTheme.colorScheme.primaryContainer else androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerHigh,
+                animationSpec = spring(dampingRatio = 0.8f, stiffness = 600f),
+                label = "M3PillTabColor"
+            )
+            val contentColor by androidx.compose.animation.animateColorAsState(
+                targetValue = if (isSelected) androidx.compose.material3.MaterialTheme.colorScheme.onPrimaryContainer else androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
+                animationSpec = spring(dampingRatio = 0.8f, stiffness = 600f),
+                label = "M3PillContentColor"
+            )
+            val scale by animateFloatAsState(
+                targetValue = if (isSelected) 1.02f else 1.0f,
+                animationSpec = spring(dampingRatio = 0.75f, stiffness = 500f),
+                label = "M3PillScale"
+            )
+
+            androidx.compose.foundation.layout.Box(
+                modifier = Modifier
+                    .graphicsLayer {
+                        scaleX = scale
+                        scaleY = scale
+                    }
+                    .clip(CircleShape)
+                    .background(containerColor)
+                    .clickable { onItemSelected(item) }
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                contentAlignment = androidx.compose.ui.Alignment.Center
+            ) {
+                Text(
+                    text = label(item),
+                    style = androidx.compose.material3.MaterialTheme.typography.labelLarge,
+                    color = contentColor,
+                    fontWeight = if (isSelected) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Medium
                 )
             }
         }

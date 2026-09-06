@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="recognize"
+        android:enabled="true"
+        android:icon="@drawable/ic_tsuki_kanji"
+        android:shortcutShortLabel="@string/shortcut_recognize"
+        android:shortcutLongLabel="@string/shortcut_recognize_long">
+        <intent
+            android:action="com.example.tsuki.action.OPEN_RECOGNIZE"
+            android:data="tsuki://destination/RECOGNIZE"
+            android:targetPackage="com.example.tsuki"
+            android:targetClass="com.example.tsuki.MainActivity" />
+        <extra android:name="destination" android:value="RECOGNIZE" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="music"
+        android:enabled="true"
+        android:icon="@drawable/widget_ic_search"
+        android:shortcutShortLabel="@string/shortcut_music"
+        android:shortcutLongLabel="@string/shortcut_music_long">
+        <intent
+            android:action="com.example.tsuki.action.OPEN_MUSIC"
+            android:data="tsuki://destination/MUSIC"
+            android:targetPackage="com.example.tsuki"
+            android:targetClass="com.example.tsuki.MainActivity" />
+        <extra android:name="destination" android:value="MUSIC" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="library"
+        android:enabled="true"
+        android:icon="@drawable/widget_ic_library"
+        android:shortcutShortLabel="@string/shortcut_library"
+        android:shortcutLongLabel="@string/shortcut_library_long">
+        <intent
+            android:action="com.example.tsuki.action.OPEN_LIBRARY"
+            android:data="tsuki://destination/LIBRARY"
+            android:targetPackage="com.example.tsuki"
+            android:targetClass="com.example.tsuki.MainActivity" />
+        <extra android:name="destination" android:value="LIBRARY" />
+    </shortcut>
+</shortcuts>

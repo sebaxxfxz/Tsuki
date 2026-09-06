@@ -102,6 +102,21 @@ fun rememberHiResImageModel(url: String?): Any? {
     }
 }
 
+fun playlistCoverFile(context: android.content.Context, playlistId: String): java.io.File {
+    val safe = playlistId.replace(Regex("[^A-Za-z0-9_-]"), "_")
+    return java.io.File(java.io.File(context.filesDir, "playlist_covers"), "$safe.jpg")
+}
+
+@Composable
+fun rememberPlaylistCoverModel(playlistId: String, thumbnailUrl: String?): Any? {
+    val context = LocalContext.current
+    val custom = remember(playlistId) {
+        playlistCoverFile(context, playlistId).takeIf { it.exists() }
+    }
+    val remote = rememberHiResImageModel(thumbnailUrl)
+    return custom ?: remote
+}
+
 @Composable
 fun rememberListImageModel(url: String?): Any? {
     val context = LocalContext.current
@@ -455,7 +470,7 @@ fun PlaylistCard(
             modifier = Modifier.fillMaxWidth().aspectRatio(1f)
         ) {
             AsyncImage(
-                model = rememberHiResImageModel(playlist.thumbnailUrl),
+                model = rememberPlaylistCoverModel(playlist.id, playlist.thumbnailUrl),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()

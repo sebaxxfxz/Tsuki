@@ -11,6 +11,8 @@ import com.example.tsuki.domain.model.MediaTrack
 import com.example.tsuki.domain.model.MediaType
 import com.example.tsuki.network.YouTubeExtractor
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -36,17 +38,120 @@ class DownloadEngine(private val context: Context) {
     private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.SupervisorJob())
     private val _offlineTracks = kotlinx.coroutines.flow.MutableStateFlow<List<MediaTrack>>(emptyList())
     val offlineTracks: kotlinx.coroutines.flow.StateFlow<List<MediaTrack>> = _offlineTracks
+    private val downloadedIds = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+    private val activeDownloads = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.Job>()
 
     init {
-        scope.launch { _offlineTracks.value = getDownloadedTracks() }
+        scope.launch {
+            val tracks = getDownloadedTracks()
+            downloadedIds.clear()
+            tracks.forEach { downloadedIds[it.videoId ?: it.id] = true }
+            _offlineTracks.value = tracks
+        }
     }
 
     fun refresh() {
-        scope.launch { _offlineTracks.value = getDownloadedTracks() }
+        scope.launch {
+            val tracks = getDownloadedTracks()
+            downloadedIds.clear()
+            tracks.forEach { downloadedIds[it.videoId ?: it.id] = true }
+            _offlineTracks.value = tracks
+        }
     }
 
     private val youtubeExtractor = YouTubeExtractor()
-    private val httpClient = OkHttpClient()
+    private val httpClient = okhttp3.OkHttpClient.Builder()
+        .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+        .callTimeout(90, java.util.concurrent.TimeUnit.SECONDS)
+        .dispatcher(okhttp3.Dispatcher().apply { maxRequests = 8; maxRequestsPerHost = 6 })
+        .build()
+
+    private suspend fun downloadUrlFast(url: String, targetFile: File, onProgress: (Int) -> Unit = {}): Boolean {
+        val partFile = File(targetFile.parentFile, "${targetFile.name}.part")
+        if (tryParallelSegments(url, partFile, onProgress)) return true
+        return downloadToFile(url, targetFile, onProgress)
+    }
+
+    private suspend fun tryParallelSegments(url: String, partFile: File, onProgress: (Int) -> Unit): Boolean = kotlinx.coroutines.withContext(Dispatchers.IO) {
+        try {
+            val total = probeContentLength(url) ?: return@withContext false
+            if (total < 2L * 1024L * 1024L) return@withContext false
+            val segments = 4
+            val segFiles = (0 until segments).map { File(partFile.parentFile, "${partFile.name}.seg$it") }
+            segFiles.forEach { runCatching { it.delete() } }
+            val totalRead = java.util.concurrent.atomic.AtomicLong(0L)
+            val lastPercent = java.util.concurrent.atomic.AtomicInteger(-1)
+            val sizePer = total / segments
+            try {
+                kotlinx.coroutines.coroutineScope {
+                    (0 until segments).map { i ->
+                        async(Dispatchers.IO) {
+                            val start = i * sizePer
+                            val end = if (i == segments - 1) total - 1 else (i + 1) * sizePer - 1
+                            val req = Request.Builder().url(url)
+                                .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                                .addHeader("Range", "bytes=$start-$end").build()
+                            httpClient.newCall(req).execute().use { resp ->
+                                if (resp.code != 206) throw java.io.IOException("range unsupported:${resp.code}")
+                                val b = resp.body ?: throw java.io.IOException("empty segment")
+                                b.byteStream().use { input ->
+                                    java.io.BufferedOutputStream(java.io.FileOutputStream(segFiles[i])).use { out ->
+                                        val buf = ByteArray(128 * 1024)
+                                        var n: Int
+                                        while (input.read(buf).also { n = it } != -1) {
+                                            out.write(buf, 0, n)
+                                            val read = totalRead.addAndGet(n.toLong())
+                                            val pct = ((read * 100) / total).toInt().coerceIn(0, 100)
+                                            val prev = lastPercent.getAndSet(pct)
+                                            if (prev < pct) onProgress(pct)
+                                        }
+                                        out.flush()
+                                    }
+                                }
+                            }
+                        }
+                    }.forEach { it.await() }
+                }
+            } catch (_: Exception) {
+                segFiles.forEach { runCatching { it.delete() } }
+                return@withContext false
+            }
+            try {
+                java.io.BufferedOutputStream(java.io.FileOutputStream(partFile)).use { out ->
+                    val buf = ByteArray(128 * 1024)
+                    segFiles.forEach { seg ->
+                        seg.inputStream().use { input ->
+                            var n: Int
+                            while (input.read(buf).also { n = it } != -1) out.write(buf, 0, n)
+                        }
+                    }
+                    out.flush()
+                }
+            } finally {
+                segFiles.forEach { runCatching { it.delete() } }
+            }
+            if (!partFile.exists() || partFile.length() < total) {
+                runCatching { partFile.delete() }
+                return@withContext false
+            }
+            onProgress(100)
+            true
+        } catch (_: Exception) { false }
+    }
+
+    private fun probeContentLength(url: String): Long? {
+        return try {
+            val req = Request.Builder().url(url)
+                .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .addHeader("Range", "bytes=0-0").build()
+            httpClient.newCall(req).execute().use { resp ->
+                if (resp.code != 206) return null
+                val cr = resp.header("Content-Range") ?: return null
+                cr.substringAfter("/").toLongOrNull()
+            }
+        } catch (_: Exception) { null }
+    }
 
     @kotlinx.serialization.Serializable
     private data class DownloadMeta(
@@ -90,9 +195,36 @@ class DownloadEngine(private val context: Context) {
         track: MediaTrack,
         onProgress: (Int) -> Unit = {}
     ): MediaTrack? = withContext(Dispatchers.IO) {
+        val videoId = track.videoId ?: track.id
+        if (videoId.isBlank()) return@withContext null
+        File(downloadDir, "$videoId.m4a").takeIf { it.exists() && it.length() > 0 }?.let {
+            downloadedIds[videoId] = true
+            return@withContext track.copy(isLocal = true, streamUrl = android.net.Uri.fromFile(it).toString(), mediaType = MediaType.LOCAL_AUDIO, isVideoItem = false)
+        }
+        File(downloadDir, "$videoId.webm").takeIf { it.exists() && it.length() > 0 }?.let {
+            downloadedIds[videoId] = true
+            return@withContext track.copy(isLocal = true, streamUrl = android.net.Uri.fromFile(it).toString(), mediaType = MediaType.LOCAL_AUDIO, isVideoItem = false)
+        }
+        val currentJob = coroutineContext[kotlinx.coroutines.Job]
+        if (currentJob != null) {
+            val busy = activeDownloads.putIfAbsent(videoId, currentJob)
+            if (busy != null) {
+                try {
+                    kotlinx.coroutines.withTimeoutOrNull(60_000L) { busy.join() }
+                } catch (_: Exception) {}
+                val doneFile = File(downloadDir, "$videoId.m4a").takeIf { it.exists() && it.length() > 0 }
+                    ?: File(downloadDir, "$videoId.webm").takeIf { it.exists() && it.length() > 0 }
+                if (doneFile != null) {
+                    downloadedIds[videoId] = true
+                    return@withContext track.copy(isLocal = true, streamUrl = android.net.Uri.fromFile(doneFile).toString(), mediaType = MediaType.LOCAL_AUDIO, isVideoItem = false)
+                }
+                return@withContext null
+            }
+        }
         try {
-            val videoId = track.videoId ?: track.id
-            val detailed = youtubeExtractor.getStreamUrlsDetailed(videoId)
+            val detailed = try {
+                kotlinx.coroutines.withTimeoutOrNull(30_000L) { youtubeExtractor.getStreamUrlsDetailed(videoId) }
+            } catch (_: Exception) { null } ?: return@withContext null
 
 
             val downloadUrl = detailed.audioUrl ?: detailed.aacAudioUrl ?: detailed.videoUrl
@@ -104,36 +236,7 @@ class DownloadEngine(private val context: Context) {
             val targetFile = File(downloadDir, "$videoId.$ext")
             val partFile = File(downloadDir, "$videoId.$ext.part")
 
-            val request = Request.Builder()
-                .url(downloadUrl)
-                .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-                .build()
-
-            httpClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    return@withContext null
-                }
-                val body = response.body ?: return@withContext null
-                val contentLength = body.contentLength()
-
-                body.byteStream().use { input ->
-                    FileOutputStream(partFile).use { output ->
-                        val buffer = ByteArray(8 * 1024)
-                        var bytesRead: Int
-                        var totalRead = 0L
-
-                        while (input.read(buffer).also { bytesRead = it } != -1) {
-                            output.write(buffer, 0, bytesRead)
-                            totalRead += bytesRead
-                            if (contentLength > 0) {
-                                val percent = ((totalRead * 100) / contentLength).toInt()
-                                onProgress(percent)
-                            }
-                        }
-                        output.flush()
-                    }
-                }
-            }
+            if (!downloadUrlFast(downloadUrl, targetFile, onProgress)) return@withContext null
 
             if (!partFile.renameTo(targetFile)) {
                 Log.e(TAG, "Could not finalize audio download for $videoId")
@@ -142,6 +245,7 @@ class DownloadEngine(private val context: Context) {
             }
 
             writeMeta(track, videoId)
+            downloadedIds[videoId] = true
             refresh()
 
             return@withContext track.copy(
@@ -150,32 +254,66 @@ class DownloadEngine(private val context: Context) {
                 mediaType = MediaType.LOCAL_AUDIO,
                 isVideoItem = false
             )
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            File(downloadDir, "$videoId.m4a.part").delete()
+            File(downloadDir, "$videoId.webm.part").delete()
+            File(downloadDir, "$videoId.tmp").delete()
+            activeDownloads.remove(videoId)
+            throw e
         } catch (e: Exception) {
             val fallbackId = track.videoId ?: track.id
             Log.e(TAG, "downloadTrack failed for $fallbackId", e)
             File(downloadDir, "$fallbackId.m4a.part").delete()
             File(downloadDir, "$fallbackId.webm.part").delete()
+            File(downloadDir, "$fallbackId.tmp").delete()
+            activeDownloads.remove(videoId)
             return@withContext null
+        } finally {
+            activeDownloads.remove(videoId)
         }
     }
 
     suspend fun downloadVideo(
         track: MediaTrack,
+        quality: String = "720p",
         onProgress: (Int) -> Unit = {}
     ): MediaTrack? = withContext(Dispatchers.IO) {
+        val videoId = track.videoId ?: track.id
+        if (videoId.isBlank()) return@withContext null
+        File(downloadDir, "$videoId.mp4").takeIf { it.exists() && it.length() > 0 }?.let {
+            downloadedIds[videoId] = true
+            return@withContext track.copy(isLocal = true, streamUrl = android.net.Uri.fromFile(it).toString(), mediaType = MediaType.STREAM_VIDEO, isVideoItem = true)
+        }
+        val currentJob = coroutineContext[kotlinx.coroutines.Job]
+        if (currentJob != null) {
+            val busy = activeDownloads.putIfAbsent(videoId, currentJob)
+            if (busy != null) {
+                try {
+                    kotlinx.coroutines.withTimeoutOrNull(90_000L) { busy.join() }
+                } catch (_: Exception) {}
+                File(downloadDir, "$videoId.mp4").takeIf { it.exists() && it.length() > 0 }?.let {
+                    downloadedIds[videoId] = true
+                    return@withContext track.copy(isLocal = true, streamUrl = android.net.Uri.fromFile(it).toString(), mediaType = MediaType.STREAM_VIDEO, isVideoItem = true)
+                }
+                return@withContext null
+            }
+        }
         try {
-            val videoId = track.videoId ?: track.id
-            val streams = youtubeExtractor.getStreamUrlsDetailed(videoId)
+            val streams = try {
+                kotlinx.coroutines.withTimeoutOrNull(30_000L) { youtubeExtractor.getStreamUrlsDetailed(videoId) }
+            } catch (_: Exception) { null } ?: return@withContext null
             val targetFile = File(downloadDir, "$videoId.mp4")
 
+            val qualityMatch = streams?.availableQualities?.firstOrNull { it.label.contains(quality, ignoreCase = true) }?.url
             val progressiveUrl = streams?.progressiveVideoUrl
-            val videoUrl = streams?.videoUrl
+            val videoUrl = qualityMatch ?: streams?.videoUrl
             val audioUrl = streams?.aacAudioUrl ?: streams?.audioUrl
 
             if (progressiveUrl != null) {
                 val downloaded = downloadToFile(progressiveUrl, targetFile, onProgress)
                 if (downloaded) {
                     writeMeta(track, videoId)
+                    downloadedIds[videoId] = true
                     refresh()
                     return@withContext track.copy(
                         isLocal = true,
@@ -205,6 +343,7 @@ class DownloadEngine(private val context: Context) {
                     if (muxSuccess) {
                         onProgress(100)
                         writeMeta(track, videoId)
+                        downloadedIds[videoId] = true
                         refresh()
                         return@withContext track.copy(
                             isLocal = true,
@@ -221,22 +360,28 @@ class DownloadEngine(private val context: Context) {
                 }
             }
 
-            val fallbackUrl = progressiveUrl ?: videoUrl ?: audioUrl ?: return@withContext null
-            val fallbackSuccess = downloadToFile(fallbackUrl, targetFile, onProgress)
-            if (fallbackSuccess) {
-                writeMeta(track, videoId)
-                refresh()
-                return@withContext track.copy(
-                    isLocal = true,
-                    streamUrl = android.net.Uri.fromFile(targetFile).toString(),
-                    mediaType = MediaType.STREAM_VIDEO,
-                    isVideoItem = true
-                )
-            }
+            targetFile.delete()
+            File(downloadDir, "$videoId.video.tmp").delete()
+            File(downloadDir, "$videoId.audio.tmp").delete()
+            File(downloadDir, "$videoId.mp4.part").delete()
             return@withContext null
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            val cancelId = track.videoId ?: track.id
+            File(downloadDir, "$cancelId.mp4.part").delete()
+            File(downloadDir, "$cancelId.video.tmp").delete()
+            File(downloadDir, "$cancelId.audio.tmp").delete()
+            activeDownloads.remove(cancelId)
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "downloadVideo failed for ${track.videoId ?: track.id}", e)
+            val failId = track.videoId ?: track.id
+            File(downloadDir, "$failId.mp4.part").delete()
+            File(downloadDir, "$failId.video.tmp").delete()
+            File(downloadDir, "$failId.audio.tmp").delete()
+            activeDownloads.remove(failId)
             return@withContext null
+        } finally {
+            activeDownloads.remove(track.videoId ?: track.id)
         }
     }
 
@@ -253,19 +398,31 @@ class DownloadEngine(private val context: Context) {
                 val contentLength = body.contentLength()
                 val partFile = File(file.parentFile, "${file.name}.part")
                 body.byteStream().use { input ->
-                    FileOutputStream(partFile).use { output ->
-                        val buffer = ByteArray(8 * 1024)
+                    java.io.BufferedOutputStream(FileOutputStream(partFile)).use { output ->
+                        val buffer = ByteArray(128 * 1024)
                         var bytesRead: Int
                         var totalRead = 0L
+                        var lastPercent = -1
                         while (input.read(buffer).also { bytesRead = it } != -1) {
                             output.write(buffer, 0, bytesRead)
                             totalRead += bytesRead
                             if (contentLength > 0) {
                                 val percent = ((totalRead * 100) / contentLength).toInt().coerceIn(0, 100)
-                                onProgress(percent)
+                                if (percent != lastPercent) {
+                                    lastPercent = percent
+                                    onProgress(percent)
+                                }
                             }
                         }
                         output.flush()
+                        if (contentLength > 0 && totalRead < contentLength) {
+                            partFile.delete()
+                            return@use false
+                        }
+                        if (contentLength <= 0 && totalRead <= 0) {
+                            partFile.delete()
+                            return@use false
+                        }
                     }
                 }
                 if (!partFile.renameTo(file)) {
@@ -284,6 +441,7 @@ class DownloadEngine(private val context: Context) {
 
     @SuppressLint("WrongConstant")
     private fun muxAudioVideo(videoFile: File, audioFile: File, outputFile: File): Boolean {
+        val muxOutput = File(outputFile.parentFile, "${outputFile.name}.mux.tmp")
         var muxer: MediaMuxer? = null
         var videoExtractor: MediaExtractor? = null
         var audioExtractor: MediaExtractor? = null
@@ -325,9 +483,10 @@ class DownloadEngine(private val context: Context) {
                 return false
             }
 
+            if (muxOutput.exists()) muxOutput.delete()
             if (outputFile.exists()) outputFile.delete()
             muxer = try {
-                MediaMuxer(outputFile.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+                MediaMuxer(muxOutput.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
             } catch (e: Exception) {
                 Log.e(TAG, "MediaMuxer init failed", e)
                 return false
@@ -361,6 +520,8 @@ class DownloadEngine(private val context: Context) {
 
             var videoDone = false
             var audioDone = (muxerAudioTrack == -1)
+            var lastVideoPts = 0L
+            var lastAudioPts = 0L
 
             while (!videoDone || !audioDone) {
                 val videoTime = if (!videoDone) videoExtractor.sampleTime else Long.MAX_VALUE
@@ -372,7 +533,9 @@ class DownloadEngine(private val context: Context) {
                     if (bufferInfo.size < 0) {
                         videoDone = true
                     } else {
-                        bufferInfo.presentationTimeUs = videoTime
+                        val pts = if (videoTime >= 0L) maxOf(lastVideoPts, videoTime) else lastVideoPts
+                        lastVideoPts = pts
+                        bufferInfo.presentationTimeUs = pts
                         bufferInfo.flags = videoExtractor.sampleFlags
                         muxer.writeSampleData(muxerVideoTrack, buffer, bufferInfo)
                         videoExtractor.advance()
@@ -383,7 +546,9 @@ class DownloadEngine(private val context: Context) {
                     if (bufferInfo.size < 0) {
                         audioDone = true
                     } else {
-                        bufferInfo.presentationTimeUs = audioTime
+                        val pts = if (audioTime >= 0L) maxOf(lastAudioPts, audioTime) else lastAudioPts
+                        lastAudioPts = pts
+                        bufferInfo.presentationTimeUs = pts
                         bufferInfo.flags = audioExtractor.sampleFlags
                         muxer.writeSampleData(muxerAudioTrack, buffer, bufferInfo)
                         audioExtractor.advance()
@@ -392,10 +557,16 @@ class DownloadEngine(private val context: Context) {
             }
 
             muxer.stop()
+            if (outputFile.exists()) outputFile.delete()
+            if (!muxOutput.renameTo(outputFile)) {
+                Log.e(TAG, "Could not finalize mux output to ${outputFile.name}")
+                muxOutput.delete()
+                return false
+            }
             return true
         } catch (e: Exception) {
             Log.e(TAG, "muxAudioVideo failed", e)
-            if (outputFile.exists()) outputFile.delete()
+            if (muxOutput.exists()) muxOutput.delete()
             return false
         } finally {
             try { muxer?.release() } catch (_: Exception) {}
@@ -405,8 +576,15 @@ class DownloadEngine(private val context: Context) {
     }
 
     fun isDownloaded(videoId: String): Boolean {
-        return File(downloadDir, "$videoId.m4a").exists() || File(downloadDir, "$videoId.mp4").exists() || File(downloadDir, "$videoId.webm").exists() ||
-            File(legacyDownloadDir, "$videoId.m4a").exists() || File(legacyDownloadDir, "$videoId.mp4").exists() || File(legacyDownloadDir, "$videoId.webm").exists()
+        if (videoId.isBlank()) return false
+        if (downloadedIds.containsKey(videoId)) return true
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) return false
+        if (legacyDownloadDir.absolutePath != downloadDir.absolutePath) {
+            val legacyFiles = legacyDownloadDir.listFiles()
+            if (legacyFiles != null && legacyFiles.any { it.nameWithoutExtension == videoId && it.length() > 0 }) return true
+        }
+        val files = downloadDir.listFiles() ?: return false
+        return files.any { it.nameWithoutExtension == videoId && it.length() > 0 }
     }
 
     fun getDownloadedTracks(): List<MediaTrack> {
@@ -442,6 +620,73 @@ class DownloadEngine(private val context: Context) {
                     isVideoItem = true
                 )
             } else null
+        }.distinctBy { "${it.videoId ?: it.id}_${it.isVideoItem}" }
+    }
+
+    fun deleteDownloadedTrack(videoId: String, onlyVideo: Boolean? = null): Boolean {
+        if (videoId.isBlank()) return false
+        var deleted = false
+        val exts = when (onlyVideo) {
+            true -> listOf("mp4")
+            false -> listOf("m4a", "webm", "opus", "mp3")
+            null -> listOf("m4a", "webm", "opus", "mp3", "mp4")
         }
+        exts.forEach { ext ->
+            val f1 = File(downloadDir, "$videoId.$ext")
+            if (f1.exists()) { f1.delete(); deleted = true }
+            val f2 = File(legacyDownloadDir, "$videoId.$ext")
+            if (f2.exists()) { f2.delete(); deleted = true }
+            File(downloadDir, "$videoId.$ext.part").delete()
+            File(downloadDir, "$videoId.video.tmp").delete()
+            File(downloadDir, "$videoId.audio.tmp").delete()
+        }
+        val stillExists = downloadDir.listFiles()?.any { it.nameWithoutExtension == videoId && it.length() > 0 } == true ||
+            legacyDownloadDir.listFiles()?.any { it.nameWithoutExtension == videoId && it.length() > 0 } == true
+        if (!stillExists) {
+            metaFile(videoId).delete()
+            legacyMetaFile(videoId).delete()
+            downloadedIds.remove(videoId)
+        }
+        refresh()
+        return deleted
+    }
+
+    fun getDownloadStorageSizeMb(): Float {
+        var totalBytes = 0L
+        downloadDir.listFiles()?.forEach { totalBytes += it.length() }
+        legacyDownloadDir.listFiles()?.forEach { totalBytes += it.length() }
+        return totalBytes / (1024f * 1024f)
+    }
+
+    data class DownloadBatchResult(
+        val success: Int,
+        val failed: Int,
+        val skipped: Int
+    )
+
+    suspend fun downloadTracksBatch(
+        tracks: List<MediaTrack>,
+        onProgress: (current: Int, total: Int, trackTitle: String) -> Unit = { _, _, _ -> }
+    ): DownloadBatchResult = withContext(Dispatchers.IO) {
+        val pending = tracks.filterNot { isDownloaded(it.videoId ?: it.id) }
+        val skipped = tracks.size - pending.size
+        var success = 0
+        var failed = 0
+        try {
+            pending.forEachIndexed { index, track ->
+                onProgress(index + 1, pending.size, track.title)
+                val res = try {
+                    downloadTrack(track)
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    null
+                }
+                if (res != null) success++ else failed++
+            }
+        } finally {
+            refresh()
+        }
+        DownloadBatchResult(success, failed, skipped)
     }
 }

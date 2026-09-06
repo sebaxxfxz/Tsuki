@@ -8,6 +8,8 @@ import com.example.tsuki.domain.model.MediaTrack
 import com.example.tsuki.domain.model.MediaType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -49,7 +51,18 @@ class FavoritesDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_N
         }
     }
 
+    private fun tableExists(db: SQLiteDatabase, table: String): Boolean {
+        db.rawQuery(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+            arrayOf(table)
+        ).use { cursor -> return cursor.moveToFirst() }
+    }
+
     private fun migrateTablePreservingData(db: SQLiteDatabase, table: String): Boolean {
+        if (!tableExists(db, table)) {
+            onCreate(db)
+            return true
+        }
         val oldTable = "${table}_old"
         db.execSQL("DROP TABLE IF EXISTS $oldTable")
         db.execSQL("ALTER TABLE $table RENAME TO $oldTable")
@@ -80,6 +93,7 @@ class FavoritesDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_N
 class FavoritesManager private constructor(context: Context) {
 
     private val dbHelper = FavoritesDbHelper(context.applicationContext)
+    private val toggleMutex = Mutex()
     private val _favoritesVersion = MutableStateFlow(System.currentTimeMillis())
     val favoritesVersion: StateFlow<Long> = _favoritesVersion.asStateFlow()
 
@@ -121,14 +135,16 @@ class FavoritesManager private constructor(context: Context) {
     }
 
     suspend fun toggleFavorite(track: MediaTrack): Boolean = withContext(Dispatchers.IO) {
-        val key = track.videoId ?: track.id
-        val isFav = isFavorite(key)
-        if (isFav) {
-            removeFavorite(key)
-            false
-        } else {
-            addFavorite(track)
-            true
+        toggleMutex.withLock {
+            val key = track.videoId ?: track.id
+            val isFav = isFavorite(key)
+            if (isFav) {
+                removeFavorite(key)
+                false
+            } else {
+                addFavorite(track)
+                true
+            }
         }
     }
 
@@ -136,13 +152,23 @@ class FavoritesManager private constructor(context: Context) {
         try {
             val db = dbHelper.writableDatabase
             val videoId = track.videoId ?: track.id
+            var existingTs: Long? = null
+            db.query(
+                FavoritesDbHelper.TABLE_FAVORITES,
+                arrayOf("added_timestamp"),
+                "video_id = ?",
+                arrayOf(videoId),
+                null, null, null
+            ).use { c ->
+                if (c.moveToFirst()) existingTs = c.getLong(0)
+            }
             val values = ContentValues().apply {
                 put("video_id", videoId)
                 put("title", track.title)
                 put("artist", track.artist)
                 put("artwork_url", track.artworkUrl)
                 put("is_video", if (track.isVideoItem) 1 else 0)
-                put("added_timestamp", System.currentTimeMillis())
+                put("added_timestamp", existingTs ?: System.currentTimeMillis())
             }
             db.insertWithOnConflict(
                 FavoritesDbHelper.TABLE_FAVORITES,
@@ -179,6 +205,11 @@ class FavoritesManager private constructor(context: Context) {
         } catch (e: Exception) {
             false
         }
+    }
+
+    suspend fun isTrackFavorite(track: MediaTrack): Boolean = withContext(Dispatchers.IO) {
+        val key = track.videoId ?: track.id
+        isFavorite(key) || (track.videoId != null && isFavorite(track.id))
     }
 
     suspend fun getFavoriteTracks(): List<MediaTrack> = withContext(Dispatchers.IO) {
