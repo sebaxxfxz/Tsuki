@@ -10,6 +10,10 @@ import okhttp3.Request
 import org.xmlpull.v1.XmlPullParser
 import org.xmlpull.v1.XmlPullParserFactory
 import java.io.StringReader
+import java.text.ParseException
+import java.text.SimpleDateFormat
+import java.util.Locale
+import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 
 private const val TAG = "ChannelRssClient"
@@ -31,7 +35,8 @@ data class ChannelRssEntry(
         mediaType = MediaType.STREAM_VIDEO,
         isVideoItem = true,
         channelId = channelId,
-        viewCount = viewCount
+        viewCount = viewCount,
+        publishedAt = publishedAt
     )
 }
 
@@ -69,6 +74,26 @@ class ChannelRssClient {
         }
     }
 
+    private fun parseRssDate(raw: String?): Long? {
+        val value = raw?.trim().takeUnless { it.isNullOrEmpty() } ?: return null
+        val normalized = if (value.endsWith("Z")) value.dropLast(1) + "+00:00" else value
+        val formats = listOf(
+            "yyyy-MM-dd'T'HH:mm:ssXXX",
+            "yyyy-MM-dd'T'HH:mm:ss.SSSXXX",
+            "yyyy-MM-dd'T'HH:mm:ss"
+        )
+        for (pattern in formats) {
+            try {
+                val format = SimpleDateFormat(pattern, Locale.US)
+                if (pattern == formats.last()) format.timeZone = TimeZone.getTimeZone("UTC")
+                val parsed = format.parse(normalized) ?: continue
+                return parsed.time
+            } catch (_: ParseException) {
+            }
+        }
+        return null
+    }
+
     private fun parseRssXml(xml: String, fallbackChannelId: String): List<ChannelRssEntry> {
         val entries = mutableListOf<ChannelRssEntry>()
         try {
@@ -84,6 +109,7 @@ class ChannelRssClient {
             var thumbnail: String? = null
             var channelName: String? = null
             var viewCount = 0L
+            var published: String? = null
 
             var eventType = parser.eventType
             while (eventType != XmlPullParser.END_DOCUMENT) {
@@ -97,6 +123,7 @@ class ChannelRssClient {
                             thumbnail = null
                             channelName = null
                             viewCount = 0L
+                            published = null
                         } else if (insideEntry) {
                             when {
                                 tagName.equals("videoId", ignoreCase = true) -> {
@@ -114,6 +141,9 @@ class ChannelRssClient {
                                 tagName.equals("statistics", ignoreCase = true) && viewCount == 0L -> {
                                     viewCount = parser.getAttributeValue(null, "views")?.toLongOrNull() ?: 0L
                                 }
+                                tagName.equals("published", ignoreCase = true) && published == null -> {
+                                    published = parser.nextText()
+                                }
                             }
                         } else if (tagName.equals("title", ignoreCase = true) && channelTitle.isEmpty()) {
                             channelTitle = parser.nextText()
@@ -130,7 +160,7 @@ class ChannelRssClient {
                                         channelId = fallbackChannelId,
                                         channelName = channelName ?: channelTitle,
                                         thumbnailUrl = thumbnail ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg",
-                                        publishedAt = System.currentTimeMillis(),
+                                        publishedAt = parseRssDate(published) ?: System.currentTimeMillis(),
                                         viewCount = viewCount
                                     )
                                 )

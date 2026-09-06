@@ -68,6 +68,7 @@ fun TSukiShortsScreen(
     var isLoading by remember { mutableStateOf(initialTracks.isEmpty()) }
 
     LaunchedEffect(Unit) {
+        com.example.tsuki.playback.PlayerController.getInstance(context).mediaController?.pause()
         if (shorts.isEmpty()) {
             withContext(Dispatchers.IO) {
                 val fetched = repo.getHomeFeedShorts()
@@ -126,42 +127,73 @@ private fun ShortPage(track: MediaTrack, isCurrentPage: Boolean, extractor: YouT
     var streamUrl by remember(track.id) { mutableStateOf<String?>(null) }
     var isBuffering by remember { mutableStateOf(true) }
     var isPlaying by remember { mutableStateOf(true) }
-    val player = remember(track.id) {
-        ExoPlayer.Builder(context).build().apply {
-            repeatMode = Player.REPEAT_MODE_ONE
-        }
+    val player = remember(isCurrentPage) {
+        if (isCurrentPage) {
+            ExoPlayer.Builder(context).build().apply {
+                repeatMode = Player.REPEAT_MODE_ONE
+            }
+        } else null
     }
 
-    LaunchedEffect(isCurrentPage, isPlaying) {
-        player.playWhenReady = isCurrentPage && isPlaying
+    LaunchedEffect(player, isPlaying) {
+        player?.playWhenReady = isPlaying
     }
 
-    LaunchedEffect(track.id) {
+    LaunchedEffect(player, track.id) {
+        if (player == null) return@LaunchedEffect
+        isBuffering = true
         withContext(Dispatchers.IO) {
             val res = try { extractor.getStreamUrlsDetailed(track.id) } catch (_: Exception) { null }
-            val url = res?.videoUrl ?: res?.audioUrl
+            val progressiveUrl = res?.progressiveVideoUrl
+            val videoUrl = res?.videoUrl
+            val audioUrl = res?.audioUrl
             withContext(Dispatchers.Main) {
-                streamUrl = url
-                if (url != null) {
-                    player.setMediaItem(MediaItem.fromUri(url))
+                if (progressiveUrl != null) {
+                    streamUrl = progressiveUrl
+                    player.setMediaItem(MediaItem.fromUri(progressiveUrl))
                     player.prepare()
-                    player.playWhenReady = isCurrentPage && isPlaying
+                    player.playWhenReady = isPlaying
+                } else if (videoUrl != null && audioUrl != null) {
+                    streamUrl = videoUrl
+                    val dataSourceFactory = androidx.media3.datasource.DefaultDataSource.Factory(context)
+                    val videoSource = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(dataSourceFactory).createMediaSource(MediaItem.fromUri(videoUrl))
+                    val audioSource = androidx.media3.exoplayer.source.ProgressiveMediaSource.Factory(dataSourceFactory).createMediaSource(MediaItem.fromUri(audioUrl))
+                    val mergedSource = androidx.media3.exoplayer.source.MergingMediaSource(videoSource, audioSource)
+                    player.setMediaSource(mergedSource)
+                    player.prepare()
+                    player.playWhenReady = isPlaying
+                } else if (videoUrl != null || audioUrl != null) {
+                    val fallback = videoUrl ?: audioUrl!!
+                    streamUrl = fallback
+                    player.setMediaItem(MediaItem.fromUri(fallback))
+                    player.prepare()
+                    player.playWhenReady = isPlaying
                 }
                 isBuffering = false
             }
         }
     }
 
-    DisposableEffect(track.id) {
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, player) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_PAUSE || event == androidx.lifecycle.Lifecycle.Event.ON_STOP) {
+                player?.playWhenReady = false
+            } else if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                if (isPlaying) player?.playWhenReady = true
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
-            player.release()
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            player?.release()
         }
     }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black).clickable {
         val next = !isPlaying
         isPlaying = next
-        player.playWhenReady = isCurrentPage && next
+        player?.playWhenReady = next
     }) {
         AsyncImage(
             model = track.artworkUrl,

@@ -9,6 +9,8 @@ import com.example.tsuki.domain.model.MediaType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+import java.util.Calendar
+
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -47,10 +49,6 @@ class WatchHistoryDbHelper(context: Context) : SQLiteOpenHelper(context, DATABAS
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        if (oldVersion < 1) {
-            db.execSQL("DROP TABLE IF EXISTS $TABLE_HISTORY")
-            onCreate(db)
-        }
         if (oldVersion < 2) {
             db.execSQL(SQL_CREATE_PLAY_EVENTS)
         }
@@ -100,6 +98,49 @@ class WatchHistoryManager private constructor(context: Context) {
                 videoId = entry.videoId,
                 isVideoItem = entry.isVideoItem
             )
+        }
+    }
+
+    suspend fun getAllHistory(): List<WatchHistoryEntry> = getRecentHistory(Int.MAX_VALUE)
+
+    suspend fun insertEntry(entry: WatchHistoryEntry) = withContext(Dispatchers.IO) {
+        try {
+            val db = dbHelper.writableDatabase
+            db.beginTransaction()
+            try {
+                val exists = db.query(
+                    WatchHistoryDbHelper.TABLE_HISTORY,
+                    arrayOf("video_id"),
+                    "video_id = ?",
+                    arrayOf(entry.videoId),
+                    null, null, null
+                ).use { it.moveToFirst() }
+                if (exists) {
+                    db.execSQL(
+                        "UPDATE ${WatchHistoryDbHelper.TABLE_HISTORY} SET play_count = MAX(play_count, ?), " +
+                            "last_played = MAX(last_played, ?), watch_duration = MAX(watch_duration, ?) WHERE video_id = ?",
+                        arrayOf<Any>(entry.playCount, entry.lastPlayedTimestamp, entry.watchDurationMs, entry.videoId)
+                    )
+                } else {
+                    val values = ContentValues().apply {
+                        put("video_id", entry.videoId)
+                        put("title", entry.title)
+                        put("artist", entry.artist)
+                        put("artwork_url", entry.artworkUrl)
+                        put("is_video", if (entry.isVideoItem) 1 else 0)
+                        put("play_count", entry.playCount)
+                        put("last_played", entry.lastPlayedTimestamp)
+                        put("watch_duration", entry.watchDurationMs)
+                    }
+                    db.insert(WatchHistoryDbHelper.TABLE_HISTORY, null, values)
+                }
+                db.setTransactionSuccessful()
+            } finally {
+                db.endTransaction()
+            }
+            _historyVersion.value = System.currentTimeMillis()
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 
@@ -434,6 +475,119 @@ class WatchHistoryManager private constructor(context: Context) {
             }
         } catch (_: Exception) {}
         buckets
+    }
+
+    data class DailyListen(val dayStartMs: Long, val timeListenedMs: Long, val plays: Int)
+
+    suspend fun getDailyListenTime(days: Int = 365): List<DailyListen> = withContext(Dispatchers.IO) {
+        val fromTs = System.currentTimeMillis() - days * 24L * 3600L * 1000L
+        val byDay = LinkedHashMap<Long, DailyListen>()
+        try {
+            val db = dbHelper.readableDatabase
+            db.query(
+                WatchHistoryDbHelper.TABLE_PLAY_EVENTS,
+                arrayOf("timestamp", "play_time_ms"),
+                "timestamp >= ?",
+                arrayOf(fromTs.toString()),
+                null, null, null
+            ).use { cursor ->
+                while (cursor.moveToNext()) {
+                    val ts = cursor.getLong(0)
+                    val ms = cursor.getLong(1)
+                    val key = startOfDayLocal(ts)
+                    val existing = byDay[key]
+                    byDay[key] = if (existing == null) DailyListen(key, ms, 1)
+                    else existing.copy(timeListenedMs = existing.timeListenedMs + ms, plays = existing.plays + 1)
+                }
+            }
+        } catch (_: Exception) {}
+        byDay.values.sortedBy { it.dayStartMs }
+    }
+
+    data class WeeklyWrapped(
+        val weekStartMs: Long,
+        val totalTimeMs: Long,
+        val plays: Int,
+        val topSongs: List<TopEntry>,
+        val topArtists: List<TopEntry>
+    )
+
+    private class WeekAgg(val title: String, val artist: String, val artworkUrl: String?) {
+        var plays: Int = 0
+        var ms: Long = 0L
+    }
+
+    suspend fun getWeeklyWrapped(weeksCount: Int = 12, topLimit: Int = 5): List<WeeklyWrapped> = withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis()
+        val currentWeekStart = startOfWeekLocal(now)
+        val fromTs = currentWeekStart - (weeksCount - 1) * 7L * 24L * 3600L * 1000L
+        val weekMs = HashMap<Long, Long>()
+        val weekPlays = HashMap<Long, Int>()
+        val songAgg = HashMap<Long, HashMap<String, WeekAgg>>()
+        val artistAgg = HashMap<Long, HashMap<String, WeekAgg>>()
+        try {
+            val db = dbHelper.readableDatabase
+            db.query(
+                WatchHistoryDbHelper.TABLE_PLAY_EVENTS,
+                arrayOf("timestamp", "play_time_ms", "title", "artist", "artwork_url"),
+                "timestamp >= ?",
+                arrayOf(fromTs.toString()),
+                null, null, null
+            ).use { cursor ->
+                while (cursor.moveToNext()) {
+                    val ts = cursor.getLong(0)
+                    val ms = cursor.getLong(1)
+                    val title = cursor.getString(2) ?: ""
+                    val artist = cursor.getString(3) ?: ""
+                    val artwork = cursor.getString(4)
+                    val ws = startOfWeekLocal(ts)
+                    weekMs[ws] = (weekMs[ws] ?: 0L) + ms
+                    weekPlays[ws] = (weekPlays[ws] ?: 0) + 1
+                    songAgg.getOrPut(ws) { HashMap() }.getOrPut("$title|$artist") { WeekAgg(title, artist, artwork) }.let {
+                        it.plays += 1
+                        it.ms += ms
+                    }
+                    artistAgg.getOrPut(ws) { HashMap() }.getOrPut(artist) { WeekAgg(artist, artist, artwork) }.let {
+                        it.plays += 1
+                        it.ms += ms
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+        val result = mutableListOf<WeeklyWrapped>()
+        for (w in 0 until weeksCount) {
+            val ws = currentWeekStart - w * 7L * 24L * 3600L * 1000L
+            val songs = (songAgg[ws]?.values ?: emptyList())
+                .sortedWith(compareByDescending<WeekAgg> { it.plays }.thenByDescending { it.ms })
+                .take(topLimit)
+                .map { TopEntry(it.title, it.artist, it.artworkUrl, it.plays, it.ms) }
+            val artists = (artistAgg[ws]?.values ?: emptyList())
+                .sortedWith(compareByDescending<WeekAgg> { it.ms }.thenByDescending { it.plays })
+                .take(topLimit)
+                .map { TopEntry(it.title, "", it.artworkUrl, it.plays, it.ms) }
+            result.add(WeeklyWrapped(ws, weekMs[ws] ?: 0L, weekPlays[ws] ?: 0, songs, artists))
+        }
+        result.sortedByDescending { it.weekStartMs }
+    }
+
+    private fun startOfDayLocal(timestamp: Long): Long {
+        val cal = Calendar.getInstance()
+        cal.timeInMillis = timestamp
+        cal.set(Calendar.HOUR_OF_DAY, 0)
+        cal.set(Calendar.MINUTE, 0)
+        cal.set(Calendar.SECOND, 0)
+        cal.set(Calendar.MILLISECOND, 0)
+        return cal.timeInMillis
+    }
+
+    private fun startOfWeekLocal(timestamp: Long): Long {
+        val cal = Calendar.getInstance()
+        cal.firstDayOfWeek = Calendar.MONDAY
+        cal.timeInMillis = startOfDayLocal(timestamp)
+        val dow = cal.get(Calendar.DAY_OF_WEEK)
+        val diff = if (dow == Calendar.SUNDAY) 6 else dow - Calendar.MONDAY
+        cal.add(Calendar.DAY_OF_YEAR, -diff)
+        return cal.timeInMillis
     }
 
     companion object {

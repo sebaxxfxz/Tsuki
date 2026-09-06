@@ -149,8 +149,7 @@ fun ChannelScreen(
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
                     titleContentColor = MaterialTheme.colorScheme.onBackground
-                ),
-                modifier = Modifier.statusBarsPadding()
+                )
             )
         }
     ) { innerPadding ->

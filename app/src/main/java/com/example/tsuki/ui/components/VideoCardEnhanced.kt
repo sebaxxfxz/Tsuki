@@ -29,6 +29,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
+import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.FavoriteBorder
@@ -36,9 +37,11 @@ import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.rounded.Audiotrack
 import androidx.compose.material.icons.rounded.AvTimer
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.DownloadDone
 import androidx.compose.material.icons.rounded.Hd
 import androidx.compose.material.icons.rounded.Movie
 import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Radio
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -200,7 +203,7 @@ fun DownloadQualityDialog(
                             isDownloading = true
                             onDownloadStarted("Iniciando descarga de Video 1080p...")
                             scope.launch {
-                                val res = downloadEngine.downloadVideo(track) { p -> progressPercent = p }
+                                val res = downloadEngine.downloadVideo(track, quality = "1080p") { p -> progressPercent = p }
                                 isDownloading = false
                                 if (res != null) {
                                     Toast.makeText(context, "Video descargado correctamente", Toast.LENGTH_SHORT).show()
@@ -232,7 +235,7 @@ fun DownloadQualityDialog(
                             isDownloading = true
                             onDownloadStarted("Iniciando descarga de Video 720p...")
                             scope.launch {
-                                val res = downloadEngine.downloadVideo(track) { p -> progressPercent = p }
+                                val res = downloadEngine.downloadVideo(track, quality = "720p") { p -> progressPercent = p }
                                 isDownloading = false
                                 if (res != null) {
                                     Toast.makeText(context, "Video 720p descargado", Toast.LENGTH_SHORT).show()
@@ -303,13 +306,96 @@ fun SponsorBlockProgressOverlay(
 }
 
 @Composable
+fun MixArtworkPlaceholder(modifier: Modifier = Modifier) {
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val tertiaryColor = MaterialTheme.colorScheme.tertiary
+    Box(
+        modifier = modifier.background(
+            Brush.linearGradient(
+                colors = listOf(
+                    primaryColor.copy(alpha = 0.32f),
+                    tertiaryColor.copy(alpha = 0.14f),
+                    MaterialTheme.colorScheme.surfaceContainerLow
+                )
+            )
+        )
+    ) {
+        Canvas(Modifier.matchParentSize()) {
+            drawCircle(
+                Color.White.copy(alpha = 0.05f),
+                radius = size.minDimension * 0.42f,
+                center = Offset(size.width * 0.78f, size.height * 0.30f)
+            )
+            drawCircle(
+                Color.White.copy(alpha = 0.04f),
+                radius = size.minDimension * 0.30f,
+                center = Offset(size.width * 0.18f, size.height * 0.78f)
+            )
+        }
+        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.align(Alignment.Center)) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.QueueMusic,
+                contentDescription = null,
+                tint = primaryColor.copy(alpha = 0.85f),
+                modifier = Modifier.size(72.dp)
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = "Mix sin portada",
+                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 1.sp),
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
+            )
+        }
+        Surface(
+            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.9f),
+            shape = RoundedCornerShape(6.dp),
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(10.dp)
+        ) {
+            Text(
+                text = "MIX",
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Black, letterSpacing = 2.sp),
+                color = MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun QuickAddToQueueButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        onClick = onClick,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.85f),
+        shape = CircleShape,
+        modifier = modifier.size(28.dp)
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Rounded.PlaylistAdd,
+                contentDescription = "Añadir a la cola",
+                tint = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(16.dp)
+            )
+        }
+    }
+}
+
+@Composable
 fun VideoCardEnhanced(
     video: MediaTrack,
     onClick: () -> Unit,
     onMoreClick: () -> Unit = {},
     onChannelClick: ((String) -> Unit)? = null,
     onAddToQueue: ((MediaTrack) -> Unit)? = null,
+    onPlayNext: ((MediaTrack) -> Unit)? = null,
+    onPlayRadio: ((MediaTrack) -> Unit)? = null,
     watchProgress: Float? = null,
+    showQuickAdd: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -328,30 +414,18 @@ fun VideoCardEnhanced(
 
     LaunchedEffect(showMenu) {
         if (showMenu) {
-            isFavorite = runCatching { favManager.isFavorite(video.id) }.getOrDefault(false)
+            isFavorite = runCatching { favManager.isTrackFavorite(video) }.getOrDefault(false)
         }
     }
 
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.97f else 1f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium
-        ),
+        targetValue = if (isPressed) 0.93f else 1f,
+        animationSpec = M3MotionTokens.expressiveBouncy(),
         label = "CardSpringScale"
     )
 
-    val primaryColor = MaterialTheme.colorScheme.primary
-    val placeholderBrush = remember(primaryColor) {
-        Brush.radialGradient(
-            colors = listOf(
-                primaryColor.copy(alpha = 0.15f),
-                Color.Transparent
-            )
-        )
-    }
     var thumbnailReady by remember(video.id) { mutableStateOf(false) }
 
     Column(
@@ -396,11 +470,9 @@ fun VideoCardEnhanced(
                     }
                 }
         ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(placeholderBrush)
-            )
+            if (video.artworkUrl.isNullOrBlank()) {
+                MixArtworkPlaceholder(modifier = Modifier.fillMaxSize())
+            }
 
             AsyncImage(
                 model = rememberListImageModel(video.artworkUrl),
@@ -469,6 +541,18 @@ fun VideoCardEnhanced(
                         )
                     }
                 }
+            }
+
+            if (showQuickAdd && onAddToQueue != null) {
+                QuickAddToQueueButton(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(8.dp),
+                    onClick = {
+                        onAddToQueue.invoke(video)
+                        Toast.makeText(context, "Añadido a la cola", Toast.LENGTH_SHORT).show()
+                    }
+                )
             }
 
             androidx.compose.animation.AnimatedVisibility(
@@ -633,6 +717,30 @@ fun VideoCardEnhanced(
                             }
                         }
                     )
+                    if (onPlayRadio != null) {
+                        DropdownMenuItem(
+                            text = { Text("Iniciar radio") },
+                            leadingIcon = {
+                                Icon(Icons.Rounded.Radio, contentDescription = null)
+                            },
+                            onClick = {
+                                showMenu = false
+                                onPlayRadio.invoke(video)
+                                Toast.makeText(context, "Iniciando radio de ${video.artist}...", Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                    }
+                    DropdownMenuItem(
+                        text = { Text("Reproducir a continuación") },
+                        leadingIcon = {
+                            Icon(Icons.AutoMirrored.Rounded.QueueMusic, contentDescription = null)
+                        },
+                        onClick = {
+                            showMenu = false
+                            onPlayNext?.invoke(video)
+                            Toast.makeText(context, "Se reproducirá a continuación", Toast.LENGTH_SHORT).show()
+                        }
+                    )
                     DropdownMenuItem(
                         text = { Text("Añadir a la cola") },
                         leadingIcon = {
@@ -644,12 +752,25 @@ fun VideoCardEnhanced(
                             Toast.makeText(context, "Añadido a la cola", Toast.LENGTH_SHORT).show()
                         }
                     )
+                    val downloadEngine = remember { DownloadEngine.getInstance(context) }
+                    val isDownloaded = remember(video.id) { downloadEngine.isDownloaded(video.videoId ?: video.id) }
                     DropdownMenuItem(
-                        text = { Text("Descargar") },
-                        leadingIcon = { Icon(Icons.Rounded.Download, contentDescription = null) },
+                        text = { Text(if (isDownloaded) "Descargado (Guardado)" else "Descargar") },
+                        leadingIcon = {
+                            Icon(
+                                if (isDownloaded) Icons.Rounded.DownloadDone else Icons.Rounded.Download,
+                                contentDescription = null,
+                                tint = if (isDownloaded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
                         onClick = {
                             showMenu = false
-                            showDownloadDialog = true
+                            if (isDownloaded) {
+                                downloadEngine.deleteDownloadedTrack(video.videoId ?: video.id)
+                                Toast.makeText(context, "Eliminado de descargas", Toast.LENGTH_SHORT).show()
+                            } else {
+                                showDownloadDialog = true
+                            }
                         }
                     )
                     DropdownMenuItem(
@@ -694,6 +815,7 @@ fun VideoCardCompact(
     onClick: () -> Unit,
     onChannelClick: ((String) -> Unit)? = null,
     onAddToQueue: ((MediaTrack) -> Unit)? = null,
+    onPlayNext: ((MediaTrack) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -715,12 +837,16 @@ fun VideoCardCompact(
                 .clip(RoundedCornerShape(12.dp))
                 .background(MaterialTheme.colorScheme.surfaceContainerHighest)
         ) {
-            AsyncImage(
-                model = rememberListImageModel(video.artworkUrl),
-                contentDescription = video.title,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
-            )
+            if (video.artworkUrl.isNullOrBlank()) {
+                MixArtworkPlaceholder(modifier = Modifier.fillMaxSize())
+            } else {
+                AsyncImage(
+                    model = rememberListImageModel(video.artworkUrl),
+                    contentDescription = video.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
             if (video.durationSeconds > 0) {
                 Surface(
                     color = MaterialTheme.colorScheme.scrim.copy(alpha = 0.75f),
@@ -781,6 +907,88 @@ fun VideoCardCompact(
 }
 
 @Composable
+fun CompactVideoCard(
+    video: MediaTrack,
+    onClick: () -> Unit,
+    onAddToQueue: ((MediaTrack) -> Unit)? = null,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    Column(
+        modifier = modifier
+            .width(240.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(16f / 9f)
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+        ) {
+            if (video.artworkUrl.isNullOrBlank()) {
+                MixArtworkPlaceholder(modifier = Modifier.fillMaxSize())
+            } else {
+                AsyncImage(
+                    model = rememberListImageModel(video.artworkUrl),
+                    contentDescription = video.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+            if (video.durationSeconds > 0) {
+                Surface(
+                    color = MaterialTheme.colorScheme.scrim.copy(alpha = 0.75f),
+                    shape = RoundedCornerShape(4.dp),
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp)
+                ) {
+                    Text(
+                        text = formatDuration(video.durationSeconds),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White,
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                        fontSize = 10.sp
+                    )
+                }
+            }
+            if (onAddToQueue != null) {
+                QuickAddToQueueButton(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(6.dp),
+                    onClick = {
+                        onAddToQueue.invoke(video)
+                        Toast.makeText(context, "Añadido a la cola", Toast.LENGTH_SHORT).show()
+                    }
+                )
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = video.title,
+            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold, lineHeight = 18.sp),
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+        Text(
+            text = buildString {
+                append(video.artist)
+                if (!video.publishedTimeText.isNullOrBlank()) {
+                    append(" • ")
+                    append(video.publishedTimeText)
+                }
+            },
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+@Composable
 fun VideoCardGrid(
     video: MediaTrack,
     onClick: () -> Unit,
@@ -790,11 +998,8 @@ fun VideoCardGrid(
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.96f else 1f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium
-        ),
+        targetValue = if (isPressed) 0.93f else 1f,
+        animationSpec = M3MotionTokens.expressiveBouncy(),
         label = "pressScale"
     )
 
@@ -813,12 +1018,16 @@ fun VideoCardGrid(
                 .clip(RoundedCornerShape(14.dp))
                 .background(MaterialTheme.colorScheme.surfaceContainerHighest)
         ) {
-            AsyncImage(
-                model = rememberListImageModel(video.artworkUrl),
-                contentDescription = video.title,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
-            )
+            if (video.artworkUrl.isNullOrBlank()) {
+                MixArtworkPlaceholder(modifier = Modifier.fillMaxSize())
+            } else {
+                AsyncImage(
+                    model = rememberListImageModel(video.artworkUrl),
+                    contentDescription = video.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
             if (video.isLive || video.durationSeconds > 0) {
                 Surface(
                     color = MaterialTheme.colorScheme.surfaceContainer,

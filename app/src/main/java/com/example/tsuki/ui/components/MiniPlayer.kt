@@ -1,12 +1,14 @@
 package com.example.tsuki.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -56,29 +58,24 @@ fun MiniPlayer(
     isPlaying: Boolean,
     isBuffering: Boolean,
     isVideoMode: Boolean,
-    currentPosition: Long,
-    duration: Long,
     onPlayPauseClick: () -> Unit,
     onVideoToggleClick: () -> Unit,
     onNextClick: () -> Unit,
     onPreviousClick: () -> Unit,
     onClick: () -> Unit,
     onDismiss: () -> Unit = {},
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    currentPosition: Long = 0L,
+    duration: Long = 0L,
+    progressProvider: (() -> Float)? = null
 ) {
     AnimatedVisibility(
         visible = track != null,
         enter = slideInVertically(
-            animationSpec = androidx.compose.animation.core.spring(
-                dampingRatio = androidx.compose.animation.core.Spring.DampingRatioLowBouncy,
-                stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow
-            )
+            animationSpec = M3MotionTokens.spatialDefault()
         ) { it },
         exit = slideOutVertically(
-            animationSpec = androidx.compose.animation.core.spring(
-                dampingRatio = androidx.compose.animation.core.Spring.DampingRatioNoBouncy,
-                stiffness = androidx.compose.animation.core.Spring.StiffnessMediumLow
-            )
+            animationSpec = M3MotionTokens.spatialDefault()
         ) { it },
         modifier = modifier
     ) {
@@ -87,19 +84,24 @@ fun MiniPlayer(
             val isPressed by interactionSource.collectIsPressedAsState()
             val scale by androidx.compose.animation.core.animateFloatAsState(
                 targetValue = if (isPressed) 0.98f else 1f,
-                animationSpec = androidx.compose.animation.core.spring(
-                    dampingRatio = androidx.compose.animation.core.Spring.DampingRatioMediumBouncy,
-                    stiffness = androidx.compose.animation.core.Spring.StiffnessMedium
-                ),
+                animationSpec = M3MotionTokens.CardPressSpring,
                 label = "MiniPlayerScale"
             )
-            val dragOffsetX = androidx.compose.runtime.remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
-            val dragOffsetY = androidx.compose.runtime.remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
-            val dragAlpha = androidx.compose.runtime.remember { androidx.compose.runtime.mutableFloatStateOf(1f) }
+            val animOffsetX = androidx.compose.runtime.remember { androidx.compose.animation.core.Animatable(0f) }
+            val animOffsetY = androidx.compose.runtime.remember { androidx.compose.animation.core.Animatable(0f) }
+            val animAlpha = androidx.compose.runtime.remember { androidx.compose.animation.core.Animatable(1f) }
+            val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
+
             fun resetDrag() {
-                dragOffsetX.floatValue = 0f
-                dragOffsetY.floatValue = 0f
-                dragAlpha.floatValue = 1f
+                coroutineScope.launch {
+                    animOffsetX.animateTo(0f, M3MotionTokens.CardPressSpring)
+                }
+                coroutineScope.launch {
+                    animOffsetY.animateTo(0f, M3MotionTokens.CardPressSpring)
+                }
+                coroutineScope.launch {
+                    animAlpha.animateTo(1f, M3MotionTokens.CardPressSpring)
+                }
             }
 
             androidx.compose.material3.Surface(
@@ -111,60 +113,81 @@ fun MiniPlayer(
                     1.dp,
                     MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
                 ),
-                onClick = onClick,
-                interactionSource = interactionSource,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(68.dp)
                     .graphicsLayer {
                         scaleX = scale
                         scaleY = scale
-                        translationX = dragOffsetX.floatValue
-                        translationY = dragOffsetY.floatValue
-                        alpha = dragAlpha.floatValue
+                        translationX = animOffsetX.value
+                        translationY = animOffsetY.value
+                        alpha = animAlpha.value
                     }
                     .pointerInput(Unit) {
-                        coroutineScope {
-                            launch {
-                                var offsetY = 0f
-                                detectVerticalDragGestures(
-                                    onDragEnd = {
-                                        when {
-                                            offsetY < -60.dp.toPx() -> { resetDrag(); onClick() }
-                                            offsetY > 80.dp.toPx() -> { resetDrag(); onDismiss() }
-                                            else -> resetDrag()
-                                        }
-                                        offsetY = 0f
-                                    },
-                                    onVerticalDrag = { change, dragAmount ->
-                                        change.consume()
-                                        offsetY += dragAmount
-                                        if (offsetY < 0f) dragOffsetY.floatValue = offsetY * 0.4f
-                                        else dragOffsetY.floatValue = offsetY
-                                        dragAlpha.floatValue = (1f - (offsetY / 320.dp.toPx()).coerceIn(0f, 0.85f))
+                        detectTapGestures(
+                            onTap = { onClick() }
+                        )
+                    }
+                    .pointerInput(Unit) {
+                        var totalX = 0f
+                        var totalY = 0f
+                        var isHorizontal: Boolean? = null
+                        detectDragGestures(
+                            onDragStart = {
+                                totalX = 0f
+                                totalY = 0f
+                                isHorizontal = null
+                            },
+                            onDragEnd = {
+                                if (isHorizontal == true) {
+                                    when {
+                                        totalX < -70.dp.toPx() -> { resetDrag(); onNextClick() }
+                                        totalX > 70.dp.toPx() -> { resetDrag(); onPreviousClick() }
+                                        else -> resetDrag()
                                     }
-                                )
-                            }
-                            launch {
-                                var offsetX = 0f
-                                detectHorizontalDragGestures(
-                                    onDragEnd = {
-                                        when {
-                                            offsetX < -70.dp.toPx() -> { resetDrag(); onNextClick() }
-                                            offsetX > 70.dp.toPx() -> { resetDrag(); onPreviousClick() }
-                                            else -> resetDrag()
-                                        }
-                                        offsetX = 0f
-                                    },
-                                    onHorizontalDrag = { change, dragAmount ->
-                                        change.consume()
-                                        offsetX += dragAmount
-                                        dragOffsetX.floatValue = offsetX * 0.55f
-                                        dragAlpha.floatValue = (1f - (kotlin.math.abs(offsetX) / 400.dp.toPx()).coerceIn(0f, 0.7f))
+                                } else if (isHorizontal == false) {
+                                    when {
+                                        totalY < -60.dp.toPx() -> { resetDrag(); onClick() }
+                                        totalY > 80.dp.toPx() -> { resetDrag(); onDismiss() }
+                                        else -> resetDrag()
                                     }
-                                )
+                                } else {
+                                    resetDrag()
+                                }
+                                totalX = 0f
+                                totalY = 0f
+                                isHorizontal = null
+                            },
+                            onDragCancel = {
+                                resetDrag()
+                                totalX = 0f
+                                totalY = 0f
+                                isHorizontal = null
+                            },
+                            onDrag = { change, dragAmount ->
+                                totalX += dragAmount.x
+                                totalY += dragAmount.y
+                                if (isHorizontal == null) {
+                                    val absX = kotlin.math.abs(totalX)
+                                    val absY = kotlin.math.abs(totalY)
+                                    if (absX > 16f || absY > 16f) {
+                                        isHorizontal = absX > absY
+                                    }
+                                }
+                                change.consume()
+                                if (isHorizontal == true) {
+                                    coroutineScope.launch { animOffsetX.snapTo(totalX * 0.55f) }
+                                    coroutineScope.launch { animAlpha.snapTo((1f - (kotlin.math.abs(totalX) / 400.dp.toPx()).coerceIn(0f, 0.7f))) }
+                                } else if (isHorizontal == false) {
+                                    if (totalY < 0f) {
+                                        coroutineScope.launch { animOffsetY.snapTo(totalY * 0.4f) }
+                                    } else {
+                                        coroutineScope.launch { animOffsetY.snapTo(totalY) }
+                                    }
+                                    coroutineScope.launch { animAlpha.snapTo((1f - (totalY / 320.dp.toPx()).coerceIn(0f, 0.85f))) }
+                                }
                             }
-                        }
+                        )
                     }
             ) {
                 Row(
@@ -173,14 +196,25 @@ fun MiniPlayer(
                         .padding(start = 8.dp, end = 10.dp, top = 8.dp, bottom = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    val progress = if (duration > 0) (currentPosition.toFloat() / duration.toFloat()).coerceIn(0f, 1f) else 0f
+                    val defaultProgress = if (duration > 0) (currentPosition.toFloat() / duration.toFloat()).coerceIn(0f, 1f) else 0f
+
+                    val infiniteTransition = androidx.compose.animation.core.rememberInfiniteTransition(label = "MiniVinylSpin")
+                    val spinAngle by infiniteTransition.animateFloat(
+                        initialValue = 0f,
+                        targetValue = 360f,
+                        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+                            animation = androidx.compose.animation.core.tween(durationMillis = 8000, easing = androidx.compose.animation.core.LinearEasing),
+                            repeatMode = androidx.compose.animation.core.RepeatMode.Restart
+                        ),
+                        label = "MiniVinylAngle"
+                    )
 
                     Box(
                         modifier = Modifier.size(46.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         androidx.compose.material3.CircularProgressIndicator(
-                            progress = { progress },
+                            progress = { progressProvider?.invoke() ?: defaultProgress },
                             modifier = Modifier.fillMaxSize(),
                             strokeWidth = 2.5.dp,
                             color = MaterialTheme.colorScheme.primary,
@@ -191,6 +225,11 @@ fun MiniPlayer(
                             modifier = Modifier
                                 .size(36.dp)
                                 .clip(CircleShape)
+                                .graphicsLayer {
+                                    if (isPlaying) {
+                                        rotationZ = spinAngle
+                                    }
+                                }
                                 .background(MaterialTheme.colorScheme.surfaceContainerHighest),
                             contentAlignment = Alignment.Center
                         ) {
@@ -237,9 +276,9 @@ fun MiniPlayer(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Movie,
-                                contentDescription = "Modo Video",
-                                modifier = Modifier.size(20.dp),
-                                tint = MaterialTheme.colorScheme.primary
+                                contentDescription = "Cambiar a video",
+                                modifier = Modifier.size(22.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                         Spacer(modifier = Modifier.width(2.dp))
@@ -256,12 +295,21 @@ fun MiniPlayer(
                                 color = MaterialTheme.colorScheme.primary
                             )
                         } else {
-                            Icon(
-                                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                contentDescription = if (isPlaying) "Pausar" else "Reproducir",
-                                modifier = Modifier.size(24.dp),
-                                tint = MaterialTheme.colorScheme.onSurface
-                            )
+                            androidx.compose.animation.AnimatedContent(
+                                targetState = isPlaying,
+                                transitionSpec = {
+                                    (androidx.compose.animation.scaleIn(animationSpec = M3MotionTokens.expressiveBouncy()) + androidx.compose.animation.fadeIn())
+                                        .togetherWith(androidx.compose.animation.scaleOut(animationSpec = M3MotionTokens.expressiveFast()) + androidx.compose.animation.fadeOut())
+                                },
+                                label = "MiniPlayPauseAnim"
+                            ) { playing ->
+                                Icon(
+                                    imageVector = if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                    contentDescription = if (playing) "Pausar" else "Reproducir",
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
                         }
                     }
 

@@ -23,6 +23,7 @@ import java.util.concurrent.TimeUnit
 class YouTubeHttpDataSource private constructor(
     private val userAgent: String,
     private val defaultRequestProperties: Map<String, String>,
+    private val client: OkHttpClient,
 ) : BaseDataSource(true), HttpDataSource {
 
     constructor(
@@ -30,24 +31,26 @@ class YouTubeHttpDataSource private constructor(
         defaultHeaders: Map<String, String> = emptyMap()
     ) : this(
         userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0",
-        defaultRequestProperties = defaultHeaders
+        defaultRequestProperties = defaultHeaders,
+        client = client
     ) {
     }
 
     private var dataSource: DataSource? = null
     private var currentUri: Uri? = null
+    private var isTransferStarted = false
 
-    class Factory : HttpDataSource.Factory {
+    class Factory(private val client: OkHttpClient = sharedClient()) : HttpDataSource.Factory {
         private val requestProperties = HashMap<String, String>()
         private var userAgent =
             "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
 
-        constructor()
-        constructor(client: OkHttpClient, defaultHeaders: Map<String, String> = emptyMap()) : this() {
+        constructor() : this(sharedClient())
+        constructor(client: OkHttpClient, defaultHeaders: Map<String, String> = emptyMap()) : this(client) {
             requestProperties.putAll(defaultHeaders)
         }
 
-        override fun createDataSource(): HttpDataSource = YouTubeHttpDataSource(userAgent, requestProperties.toMap())
+        override fun createDataSource(): HttpDataSource = YouTubeHttpDataSource(userAgent, requestProperties.toMap(), client)
 
         override fun setDefaultRequestProperties(defaultRequestProperties: MutableMap<String, String>): HttpDataSource.Factory {
             requestProperties.clear()
@@ -82,7 +85,7 @@ class YouTubeHttpDataSource private constructor(
         transferInitializing(dataSpec)
         currentUri = dataSpec.uri
         val requestUserAgent = if (isYouTubeUri(dataSpec.uri)) resolveYouTubeUserAgent(dataSpec.uri) else userAgent
-        val factory = OkHttpDataSource.Factory(sharedClient()).setUserAgent(requestUserAgent)
+        val factory = OkHttpDataSource.Factory(client).setUserAgent(requestUserAgent)
         val requestHeaders = LinkedHashMap<String, String>()
         requestHeaders.putAll(defaultRequestProperties)
         if (isYouTubeUri(dataSpec.uri)) requestHeaders.putAll(youtubeHeaders())
@@ -95,6 +98,7 @@ class YouTubeHttpDataSource private constructor(
             if (e.responseCode == 403) logForbidden(dataSpec)
             throw e
         }
+        isTransferStarted = true
         transferStarted(dataSpec)
         return bytesToRead
     }
@@ -122,7 +126,10 @@ class YouTubeHttpDataSource private constructor(
     override fun close() {
         dataSource?.close()
         dataSource = null
-        transferEnded()
+        if (isTransferStarted) {
+            isTransferStarted = false
+            transferEnded()
+        }
     }
 
     override fun getUri(): Uri? = currentUri

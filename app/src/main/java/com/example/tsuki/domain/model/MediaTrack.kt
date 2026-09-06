@@ -31,6 +31,7 @@ data class MediaTrack(
     val videoId: String? = null,
     val viewCountText: String? = null,
     val publishedTimeText: String? = null,
+    val publishedAt: Long = 0L,
     val channelId: String? = null,
     val isVideoItem: Boolean = false,
     val videoStreamUrl: String? = null,

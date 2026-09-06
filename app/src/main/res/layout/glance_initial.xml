@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#111218"
+    android:gravity="center"
+    android:orientation="vertical"
+    android:padding="16dp">
+    <ImageView
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:contentDescription="@string/widget_desc"
+        android:src="@drawable/ic_tsuki_kanji" />
+</LinearLayout>

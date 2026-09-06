@@ -68,31 +68,34 @@ class LyricsHelper private constructor(private val context: Context) {
     ): String = withContext(Dispatchers.IO) {
         val cleanTitle = LyricsSanitizer.cleanTitle(title)
         val cleanArtist = LyricsSanitizer.cleanArtist(artist)
-        val cacheKey = "${videoId}_${cleanArtist}_${cleanTitle}".replace(" ", "")
+        val providerKey = preferredProvider ?: "auto"
+        val cacheKey = "${videoId}_${cleanArtist}_${cleanTitle}_${providerKey}".replace(" ", "")
 
         if (!forceRefresh) {
             cache.get(cacheKey)?.let { cached ->
-                if (LyricsUtils.hasWordSyncedLyrics(cached) || LyricsUtils.isTtmlLyrics(cached)) {
+                if (LyricsUtils.hasMeaningfulLyricsContent(cached)) {
                     return@withContext cached
                 }
             }
         }
 
-        var dbFallback: String? = null
         if (!forceRefresh) {
-            db.getLyrics(videoId)?.let { raw ->
-                if (LyricsUtils.hasMeaningfulLyricsContent(raw)) {
-                    if (LyricsUtils.hasWordSyncedLyrics(raw) || LyricsUtils.isTtmlLyrics(raw)) {
-                        cache.put(cacheKey, raw)
-                        return@withContext raw
-                    }
-                    dbFallback = raw
+            val cachedDb = db.getCachedLyrics(videoId)
+            if (cachedDb != null && LyricsUtils.hasMeaningfulLyricsContent(cachedDb.raw)) {
+                val isPreferredMatch = preferredProvider.isNullOrBlank() ||
+                    preferredProvider.equals("Auto", ignoreCase = true) ||
+                    cachedDb.source.equals(preferredProvider, ignoreCase = true)
+                if (isPreferredMatch) {
+                    cache.put(cacheKey, cachedDb.raw)
+                    return@withContext cachedDb.raw
                 }
             }
         }
 
         var lineSyncedCandidate: String? = null
         var candidateProviderName: String? = null
+        var plainTextCandidate: String? = null
+        var plainTextProviderName: String? = null
 
         for (provider in providerChain(preferredProvider)) {
             try {
@@ -106,20 +109,24 @@ class LyricsHelper private constructor(private val context: Context) {
                         } else if (lineSyncedCandidate == null && LyricsUtils.isLineSyncedLrc(lyrics)) {
                             lineSyncedCandidate = lyrics
                             candidateProviderName = provider.name
+                        } else if (plainTextCandidate == null) {
+                            plainTextCandidate = lyrics
+                            plainTextProviderName = provider.name
                         }
                     }
                 }
             } catch (e: TimeoutCancellationException) {
                 android.util.Log.w("LyricsHelper", "Provider ${provider.name} timed out")
             } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 android.util.Log.e("LyricsHelper", "Provider ${provider.name} threw exception", e)
             }
         }
 
-        val finalLyrics = lineSyncedCandidate ?: dbFallback
+        val finalLyrics = lineSyncedCandidate ?: plainTextCandidate
         if (finalLyrics != null) {
             cache.put(cacheKey, finalLyrics)
-            db.saveLyrics(videoId, title, artist, finalLyrics, candidateProviderName ?: "Cached")
+            db.saveLyrics(videoId, title, artist, finalLyrics, (if (lineSyncedCandidate != null) candidateProviderName else plainTextProviderName) ?: "Cached")
             return@withContext finalLyrics
         }
 

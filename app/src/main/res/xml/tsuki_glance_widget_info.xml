@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="260dp"
+    android:minHeight="120dp"
+    android:maxResizeWidth="640dp"
+    android:maxResizeHeight="480dp"
+    android:targetCellWidth="4"
+    android:targetCellHeight="2"
+    android:updatePeriodMillis="0"
+    android:initialLayout="@layout/glance_initial"
+    android:previewLayout="@layout/widget_tsuki_player"
+    android:description="@string/widget_now_playing"
+    android:widgetCategory="home_screen"
+    android:resizeMode="horizontal|vertical" />

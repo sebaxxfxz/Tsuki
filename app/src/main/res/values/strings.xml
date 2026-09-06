@@ -31,4 +31,25 @@
     <string name="import_hint_ytm_info">Se creará como playlist privada con %1$d canciones. No necesitas salir de la app: usa pull-to-refresh en Música o reentra a la pestaña. Los likes del reproductor ya se sincronizan con Google.</string>
     <string name="import_zip_default_name">Importado ZIP</string>
     <string name="import_default_spotify_name">Spotify Playlist</string>
+    <string name="auto_root_title">TSuki Auto</string>
+    <string name="auto_favorites">Tus Me Gusta</string>
+    <string name="auto_recent">Reproducidas recientemente</string>
+    <string name="auto_most_played">Más escuchadas</string>
+    <string name="auto_playlists">Tus playlists</string>
+    <string name="auto_local_music">Música local</string>
+    <string name="auto_downloads">Descargas</string>
+    <string name="auto_subtitle_songs">%1$d canciones</string>
+    <string name="widget_desc">TSuki Now Playing con Material You</string>
+    <string name="widget_label">TSuki</string>
+    <string name="widget_now_playing">TSuki Reproductor (4x2)</string>
+    <string name="widget_mini_player">TSuki Mini (4x1)</string>
+    <string name="widget_square_player">TSuki Cuadrado (2x2)</string>
+    <string name="widget_quick_resume">TSuki Reanudar (1x1)</string>
+    <string name="shortcut_recognize">Reconocer</string>
+    <string name="shortcut_recognize_long">Reconocer música</string>
+    <string name="shortcut_music">Buscar</string>
+    <string name="shortcut_music_long">Buscar música</string>
+    <string name="shortcut_library">Biblioteca</string>
+    <string name="shortcut_library_long">Abrir Biblioteca</string>
+    <string name="widget_hero">TSuki Dashboard (4x3)</string>
 </resources>

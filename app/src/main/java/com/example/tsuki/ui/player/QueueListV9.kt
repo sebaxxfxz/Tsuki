@@ -41,6 +41,7 @@ import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -83,7 +84,7 @@ fun ReorderableQueueList(
 
 
     LaunchedEffect(queueIndex) {
-        if (queueIndex in queue.indices) {
+        if (!lazyListState.isScrollInProgress && queueIndex in queue.indices) {
             lazyListState.animateScrollToItem((queueIndex - 1).coerceAtLeast(0))
         }
     }
@@ -97,14 +98,24 @@ fun ReorderableQueueList(
         listState = lazyListState,
         modifier = modifier
     ) {
+        val itemKeys = remember(queue) {
+            val occurrenceMap = mutableMapOf<String, Int>()
+            queue.map { item ->
+                val count = occurrenceMap.getOrDefault(item.id, 0)
+                occurrenceMap[item.id] = count + 1
+                "${item.id}_#$count"
+            }
+        }
+
         LazyColumn(
             state = lazyListState,
             verticalArrangement = Arrangement.spacedBy(10.dp),
             contentPadding = PaddingValues(vertical = 2.dp),
             modifier = Modifier.fillMaxSize()
         ) {
-        itemsIndexed(queue, key = { index, item -> "${item.id}_$index" }) { index, item ->
-            ReorderableItem(reorderableState, key = "${item.id}_$index") { isDragging ->
+        itemsIndexed(queue, key = { index, _ -> itemKeys.getOrElse(index) { "${queue[index].id}_$index" } }) { index, item ->
+            val itemKey = itemKeys.getOrElse(index) { "${item.id}_$index" }
+            ReorderableItem(reorderableState, key = itemKey) { isDragging ->
                 val isCurrent = index == queueIndex
                 val rowShape = RoundedCornerShape(18.dp)
                 val currentIndex by androidx.compose.runtime.rememberUpdatedState(index)
@@ -114,39 +125,33 @@ fun ReorderableQueueList(
                         isDragging -> MaterialTheme.colorScheme.surfaceContainerHighest
                         else -> MaterialTheme.colorScheme.surfaceContainer
                     }
-                val dismissState = rememberSwipeToDismissBoxState(
-                    confirmValueChange = { value ->
-                        if (value == SwipeToDismissBoxValue.EndToStart || value == SwipeToDismissBoxValue.StartToEnd) {
-                            val removed = playerController.removeQueueItem(currentIndex)
-                            if (removed != null) {
-                                scope.launch {
-                                    val result = snackbarHostState.showSnackbar(
-                                        message = "\"${removed.title}\" eliminado",
-                                        actionLabel = "Deshacer",
-                                        duration = SnackbarDuration.Short
-                                    )
-                                    if (result == SnackbarResult.ActionPerformed) {
-                                        val liveQueue = playerController.uiState.value.queue
-                                        val alreadyPresent = liveQueue.any { it.id == removed.id }
-                                        val anchorId = queue.getOrNull(currentIndex - 1)?.id
-                                        val restoreIndex = when {
-                                            alreadyPresent -> -1
-                                            anchorId == null -> 0
-                                            else -> {
-                                                val pos = liveQueue.indexOfFirst { it.id == anchorId }
-                                                if (pos == -1) -1 else pos + 1
-                                            }
-                                        }
-                                        if (restoreIndex != -1) {
-                                            playerController.restoreQueueItem(restoreIndex, removed)
+                val dismissState = key(itemKey) { rememberSwipeToDismissBoxState() }
+                LaunchedEffect(dismissState.currentValue) {
+                    if (dismissState.currentValue == SwipeToDismissBoxValue.EndToStart || dismissState.currentValue == SwipeToDismissBoxValue.StartToEnd) {
+                        val removed = playerController.removeQueueItem(currentIndex)
+                        if (removed != null) {
+                            scope.launch {
+                                val result = snackbarHostState.showSnackbar(
+                                    message = "\"${removed.title}\" eliminado",
+                                    actionLabel = "Deshacer",
+                                    duration = SnackbarDuration.Short
+                                )
+                                if (result == SnackbarResult.ActionPerformed) {
+                                    val liveQueue = playerController.uiState.value.queue
+                                    val anchorId = queue.getOrNull(currentIndex - 1)?.id
+                                    val restoreIndex = when {
+                                        anchorId == null -> 0
+                                        else -> {
+                                            val pos = liveQueue.indexOfFirst { it.id == anchorId }
+                                            if (pos == -1) currentIndex.coerceIn(0, liveQueue.size) else pos + 1
                                         }
                                     }
+                                    playerController.restoreQueueItem(restoreIndex, removed)
                                 }
                             }
-                            true
-                        } else false
+                        }
                     }
-                )
+                }
                 SwipeToDismissBox(
                     state = dismissState,
                     enableDismissFromStartToEnd = false,
@@ -238,10 +243,10 @@ fun ReorderableQueueList(
                             )
                         }
                         if (isCurrent) {
-                            NowPlayingBars(
+                            com.example.tsuki.ui.components.M3EqualizerLiveWave(
                                 isPlaying = isPlaying,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.padding(end = 2.dp)
+                                modifier = Modifier.padding(end = 4.dp)
                             )
                         }
                         Box(
@@ -266,42 +271,6 @@ fun ReorderableQueueList(
                 }
             }
         }
-        }
-    }
-}
-
-
-@Composable
-private fun NowPlayingBars(    isPlaying: Boolean,
-    color: Color,
-    modifier: Modifier = Modifier
-) {
-    val wavePhase: Float = if (isPlaying) {
-        val transition = rememberInfiniteTransition(label = "nowPlayingBars")
-        val animatedPhase by transition.animateFloat(
-            initialValue = 0f,
-            targetValue = (2.0 * PI).toFloat(),
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 1200, easing = LinearEasing),
-                repeatMode = RepeatMode.Restart
-            ),
-            label = "phase"
-        )
-        animatedPhase
-    } else 0f
-    Canvas(modifier = modifier.size(width = 15.dp, height = 14.dp)) {
-        val barWidth = 3.dp.toPx()
-        val step = 6.dp.toPx()
-        val centerY = size.height / 2f
-        listOf(0f, 2.09f, 4.19f).forEachIndexed { index, offset ->
-            val normalized = abs(sin(wavePhase + offset)).coerceIn(0.12f, 1f)
-            val barHeight = size.height * (0.3f + 0.7f * normalized)
-            drawRoundRect(
-                color = color,
-                topLeft = Offset(index * step, centerY - barHeight / 2f),
-                size = Size(barWidth, barHeight),
-                cornerRadius = CornerRadius(barWidth / 2f)
-            )
         }
     }
 }

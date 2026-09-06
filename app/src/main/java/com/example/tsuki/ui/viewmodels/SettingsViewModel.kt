@@ -43,7 +43,8 @@ data class SettingsUiState(
     val lyricsSyncOffsetMs: Int = 0,
     val syncLikedEnabled: Boolean = true,
     val syncPlaylistsEnabled: Boolean = true,
-    val syncHistoryEnabled: Boolean = true
+    val syncHistoryEnabled: Boolean = true,
+    val skipSilenceEnabled: Boolean = false
 )
 
 private data class PlayerSettingsData(
@@ -51,7 +52,8 @@ private data class PlayerSettingsData(
     val crossfadeDuration: Float,
     val crossfadeGapless: Boolean,
     val autoQueueEnabled: Boolean,
-    val preferredLyricsProvider: String
+    val preferredLyricsProvider: String,
+    val skipSilenceEnabled: Boolean
 )
 
 private data class AudioDataSettingsData(
@@ -96,18 +98,24 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     private val playerSettings = combine(
-        playerPrefs.crossfadeEnabled,
-        playerPrefs.crossfadeDurationSeconds,
-        playerPrefs.crossfadeGapless,
-        playerPrefs.autoQueueEnabled,
-        playerPrefs.preferredLyricsProvider
-    ) { crossfadeEnabled, crossfadeDuration, crossfadeGapless, autoQueueEnabled, preferredLyricsProvider ->
+        combine(
+            playerPrefs.crossfadeEnabled,
+            playerPrefs.crossfadeDurationSeconds,
+            playerPrefs.crossfadeGapless
+        ) { enabled, dur, gapless -> Triple(enabled, dur, gapless) },
+        combine(
+            playerPrefs.autoQueueEnabled,
+            playerPrefs.preferredLyricsProvider,
+            playerPrefs.skipSilenceEnabled
+        ) { autoQueue, lyrics, skipSilence -> Triple(autoQueue, lyrics, skipSilence) }
+    ) { (crossfadeEnabled, crossfadeDuration, crossfadeGapless), (autoQueueEnabled, preferredLyricsProvider, skipSilenceEnabled) ->
         PlayerSettingsData(
             crossfadeEnabled = crossfadeEnabled,
             crossfadeDuration = crossfadeDuration,
             crossfadeGapless = crossfadeGapless,
             autoQueueEnabled = autoQueueEnabled,
-            preferredLyricsProvider = preferredLyricsProvider
+            preferredLyricsProvider = preferredLyricsProvider,
+            skipSilenceEnabled = skipSilenceEnabled
         )
     }
 
@@ -209,7 +217,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             lyricsLineBlur = l.lineBlur,
             progressBarStyle = l.progressBarStyle,
             seekExtraSeconds = l.seekExtra,
-            lyricsSyncOffsetMs = l.syncOffset
+            lyricsSyncOffsetMs = l.syncOffset,
+            skipSilenceEnabled = p.skipSilenceEnabled
         )
     }
 
@@ -227,6 +236,12 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         )
     )
 
+    fun setSkipSilenceEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            playerPrefs.setSkipSilenceEnabled(enabled)
+        }
+    }
+
     fun setAutoQueueEnabled(enabled: Boolean) {
         viewModelScope.launch {
             playerPrefs.setAutoQueueEnabled(enabled)
@@ -240,8 +255,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun setCrossfadeDuration(seconds: Float) {
+        val rounded = kotlin.math.round(seconds * 2f) / 2f
         viewModelScope.launch {
-            playerPrefs.setCrossfadeDuration(seconds)
+            playerPrefs.setCrossfadeDuration(rounded)
         }
     }
 

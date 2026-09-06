@@ -36,6 +36,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -85,14 +86,22 @@ fun EqualizerDialog(
     var selectedPreset by remember { mutableStateOf("custom") }
     val bandLevels = remember { mutableStateListOf<Int>() }
     var capabilities by remember { mutableStateOf(AudioEqualizerHelper.capabilities) }
+    val activeSession by AudioEqualizerHelper.sessionState.collectAsState()
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(activeSession) {
         capabilities = AudioEqualizerHelper.capabilities
         val count = if (capabilities.bandCount > 0) capabilities.bandCount else 5
         if (bandLevels.isEmpty()) {
             val saved = prefs.eqBandLevels.first()
             repeat(count) { index -> bandLevels.add(saved.getOrNull(index) ?: 0) }
+        } else if (bandLevels.size != count && count > 0) {
+            val saved = prefs.eqBandLevels.first()
+            bandLevels.clear()
+            repeat(count) { index -> bandLevels.add(saved.getOrNull(index) ?: 0) }
         }
+    }
+
+    LaunchedEffect(Unit) {
         eqEnabled = prefs.eqEnabled.first()
         bassBoost = prefs.eqBassBoost.first()
         virtualizer = prefs.eqVirtualizer.first()
@@ -107,7 +116,7 @@ fun EqualizerDialog(
     fun applyPreset(name: String) {
         val levels = EQ_PRESETS[name] ?: return
         val count = if (bandLevels.isEmpty()) 5 else bandLevels.size
-        for (i in 0 until count) {
+        val newValues = (0 until count).map { i ->
             val value = if (count == levels.size) {
                 levels[i]
             } else {
@@ -118,9 +127,11 @@ fun EqualizerDialog(
                 val t = presetIdxFloat - lowerIdx
                 (levels[lowerIdx] + t * (levels[upperIdx] - levels[lowerIdx])).toInt()
             }
-            bandLevels[i] = value
             AudioEqualizerHelper.setBandLevel(i, value)
+            value
         }
+        bandLevels.clear()
+        bandLevels.addAll(newValues)
         persistBands()
     }
 
@@ -269,13 +280,14 @@ fun EqualizerDialog(
                     )
                 }
                 Slider(
-                    value = outputGain.toFloat(),
+                    value = outputGain.toFloat().coerceIn(0f, 1500f),
                     onValueChange = {
-                        outputGain = it.toInt()
-                        AudioEqualizerHelper.setOutputGainMb(it.toInt())
+                        val clamped = it.toInt().coerceIn(0, 1500)
+                        outputGain = clamped
+                        AudioEqualizerHelper.setOutputGainMb(clamped)
                     },
                     onValueChangeFinished = { scope.launch { prefs.setEqOutputGainMb(outputGain) } },
-                    valueRange = -1500f..1500f,
+                    valueRange = 0f..1500f,
                     enabled = eqEnabled,
                     colors = SliderDefaults.colors(
                         thumbColor = MaterialTheme.colorScheme.primary,
@@ -368,6 +380,9 @@ private fun VerticalEqSlider(
     val trackBgColor = MaterialTheme.colorScheme.surfaceContainerHighest
     val thumbColor = if (enabled) primaryColor else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
     val activeTrackColor = if (enabled) primaryColor else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.24f)
+    val verticalPadding = 12.dp
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val paddingPx = with(density) { verticalPadding.toPx() }
 
     BoxWithConstraints(
         modifier = modifier
@@ -375,28 +390,26 @@ private fun VerticalEqSlider(
             .width(44.dp)
             .then(
                 if (enabled) {
-                    Modifier.pointerInput(valueRange) {
+                    Modifier.pointerInput(valueRange, paddingPx) {
                         detectVerticalDragGestures(
                             onDragEnd = onValueChangeFinished,
                             onDragCancel = onValueChangeFinished
                         ) { change, _ ->
                             change.consume()
-                            val h = size.height.toFloat()
-                            if (h > 0) {
-                                val fraction = (1f - (change.position.y / h)).coerceIn(0f, 1f)
-                                val newValue = valueRange.start + fraction * (valueRange.endInclusive - valueRange.start)
-                                onValueChange(newValue)
-                            }
+                            val trackHeight = (size.height.toFloat() - (paddingPx * 2f)).coerceAtLeast(1f)
+                            val localY = (change.position.y - paddingPx).coerceIn(0f, trackHeight)
+                            val fraction = (1f - (localY / trackHeight)).coerceIn(0f, 1f)
+                            val newValue = valueRange.start + fraction * (valueRange.endInclusive - valueRange.start)
+                            onValueChange(newValue)
                         }
-                    }.pointerInput(valueRange) {
+                    }.pointerInput(valueRange, paddingPx) {
                         detectTapGestures { offset ->
-                            val h = size.height.toFloat()
-                            if (h > 0) {
-                                val fraction = (1f - (offset.y / h)).coerceIn(0f, 1f)
-                                val newValue = valueRange.start + fraction * (valueRange.endInclusive - valueRange.start)
-                                onValueChange(newValue)
-                                onValueChangeFinished()
-                            }
+                            val trackHeight = (size.height.toFloat() - (paddingPx * 2f)).coerceAtLeast(1f)
+                            val localY = (offset.y - paddingPx).coerceIn(0f, trackHeight)
+                            val fraction = (1f - (localY / trackHeight)).coerceIn(0f, 1f)
+                            val newValue = valueRange.start + fraction * (valueRange.endInclusive - valueRange.start)
+                            onValueChange(newValue)
+                            onValueChangeFinished()
                         }
                     }
                 } else Modifier
@@ -406,7 +419,7 @@ private fun VerticalEqSlider(
         val totalRange = (valueRange.endInclusive - valueRange.start).takeIf { it > 0f } ?: 1f
         val fraction = ((value - valueRange.start) / totalRange).coerceIn(0f, 1f)
 
-        Canvas(modifier = Modifier.fillMaxSize().padding(vertical = 12.dp)) {
+        Canvas(modifier = Modifier.fillMaxSize().padding(vertical = verticalPadding)) {
             val w = size.width
             val h = size.height
             val trackWidth = 6.dp.toPx()

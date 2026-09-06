@@ -1,15 +1,13 @@
 package com.example.tsuki.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -94,17 +92,22 @@ import com.example.tsuki.data.local.HomeLayoutMode
 import com.example.tsuki.data.local.HomePreferences
 import com.example.tsuki.domain.model.MediaTrack
 import com.example.tsuki.network.YouTubeExtractor
+import com.example.tsuki.ui.components.M3MotionTokens
+import com.example.tsuki.ui.components.OfflineBanner
 import com.example.tsuki.ui.components.ResumeWatchingCard
 import com.example.tsuki.ui.components.ShimmerVideoCardFullWidth
 import com.example.tsuki.ui.components.ShimmerVideoCardHorizontal
 import com.example.tsuki.ui.components.VideoCardCompact
+import com.example.tsuki.ui.components.CompactVideoCard
 import com.example.tsuki.ui.components.VideoCardEnhanced
 import com.example.tsuki.ui.components.VideoCardGrid
 import com.example.tsuki.ui.components.VideoCardShort
 import com.example.tsuki.ui.viewmodels.TSukiHomeViewModel
+import com.example.tsuki.util.ConnectivityObserver
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -174,41 +177,6 @@ private fun HomeSectionHeader(
 }
 
 @Composable
-private fun OfflineBanner() {
-    Surface(
-        color = MaterialTheme.colorScheme.secondaryContainer,
-        shape = RoundedCornerShape(16.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp)
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(28.dp)) {
-                Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                    Icon(Icons.Rounded.WifiOff, contentDescription = null, tint = MaterialTheme.colorScheme.onSecondary, modifier = Modifier.size(16.dp))
-                }
-            }
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Modo sin conexión",
-                    style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onSecondaryContainer
-                )
-                Text(
-                    text = "Mostrando contenido disponible sin datos",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
-                )
-            }
-        }
-    }
-}
-
-@Composable
 private fun RevealMoreButton(revealed: Int, total: Int, onReveal: () -> Unit, label: String = "Mostrar más") {
     Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
         FilledTonalButton(onClick = onReveal, shape = RoundedCornerShape(20.dp)) {
@@ -230,6 +198,8 @@ fun HomeScreen(
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val connectivity = remember { ConnectivityObserver.getInstance(context) }
+    val isOnline by connectivity.networkStatus.collectAsStateWithLifecycle(initialValue = connectivity.isCurrentlyOnline())
     val scope = rememberCoroutineScope()
     val extractor = remember { YouTubeExtractor() }
     val focusManager = LocalFocusManager.current
@@ -252,6 +222,13 @@ fun HomeScreen(
         mutableStateOf<YouTubeExtractor.ChannelResult?>(null)
     }
     val searchFocusRequester = remember { FocusRequester() }
+
+    BackHandler(enabled = openChannelResult != null) {
+        openChannelResult = null
+    }
+    BackHandler(enabled = isSearchActive) {
+        isSearchActive = false
+    }
 
     LaunchedEffect(isSearchActive) {
         if (isSearchActive) {
@@ -313,15 +290,31 @@ fun HomeScreen(
                                         searchJob = scope.launch {
                                             delay(340)
                                             isSearching = true
-                                            val videosDeferred = async { withContext(Dispatchers.IO) { extractor.searchVideos(q) } }
-                                            val channelsDeferred = async { withContext(Dispatchers.IO) { extractor.searchChannels(q) } }
-                                            val videos = videosDeferred.await()
-                                            val channels = channelsDeferred.await()
-                                            if (searchQuery == q) {
-                                                searchResults = videos
-                                                searchChannels = channels
+                                            try {
+                                                coroutineScope {
+                                                    val videosDeferred = async(Dispatchers.IO) {
+                                                        runCatching { extractor.searchVideos(q) }.getOrDefault(emptyList())
+                                                    }
+                                                    val channelsDeferred = async(Dispatchers.IO) {
+                                                        runCatching { extractor.searchChannels(q) }.getOrDefault(emptyList())
+                                                    }
+                                                    val videos = videosDeferred.await()
+                                                    val channels = channelsDeferred.await()
+                                                    if (searchQuery == q) {
+                                                        searchResults = videos
+                                                        searchChannels = channels
+                                                    }
+                                                }
+                                            } catch (_: Exception) {
+                                                if (searchQuery == q) {
+                                                    searchResults = emptyList()
+                                                    searchChannels = emptyList()
+                                                }
+                                            } finally {
+                                                if (searchQuery == q) {
+                                                    isSearching = false
+                                                }
                                             }
-                                            isSearching = false
                                         }
                                     }
                                 },
@@ -346,15 +339,31 @@ fun HomeScreen(
                                         searchJob?.cancel()
                                         searchJob = scope.launch {
                                             isSearching = true
-                                            val videosDeferred = async { withContext(Dispatchers.IO) { extractor.searchVideos(q) } }
-                                            val channelsDeferred = async { withContext(Dispatchers.IO) { extractor.searchChannels(q) } }
-                                            val videos = videosDeferred.await()
-                                            val channels = channelsDeferred.await()
-                                            if (searchQuery == q) {
-                                                searchResults = videos
-                                                searchChannels = channels
+                                            try {
+                                                coroutineScope {
+                                                    val videosDeferred = async(Dispatchers.IO) {
+                                                        runCatching { extractor.searchVideos(q) }.getOrDefault(emptyList())
+                                                    }
+                                                    val channelsDeferred = async(Dispatchers.IO) {
+                                                        runCatching { extractor.searchChannels(q) }.getOrDefault(emptyList())
+                                                    }
+                                                    val videos = videosDeferred.await()
+                                                    val channels = channelsDeferred.await()
+                                                    if (searchQuery == q) {
+                                                        searchResults = videos
+                                                        searchChannels = channels
+                                                    }
+                                                }
+                                            } catch (_: Exception) {
+                                                if (searchQuery == q) {
+                                                    searchResults = emptyList()
+                                                    searchChannels = emptyList()
+                                                }
+                                            } finally {
+                                                if (searchQuery == q) {
+                                                    isSearching = false
+                                                }
                                             }
-                                            isSearching = false
                                         }
                                     }
                                 }),
@@ -403,15 +412,24 @@ fun HomeScreen(
                                     }
                                     scope.launch { homePreferences.setHomeLayoutMode(nextMode) }
                                 }) {
-                                    Icon(
-                                        imageVector = when (layoutMode) {
-                                            HomeLayoutMode.IMMERSIVE -> Icons.Rounded.ViewAgenda
-                                            HomeLayoutMode.GRID -> Icons.Rounded.GridView
-                                            HomeLayoutMode.COMPACT -> Icons.AutoMirrored.Rounded.ViewList
+                                    androidx.compose.animation.AnimatedContent(
+                                        targetState = layoutMode,
+                                        transitionSpec = {
+                                            (androidx.compose.animation.scaleIn(animationSpec = M3MotionTokens.expressiveBouncy()) + androidx.compose.animation.fadeIn())
+                                                .togetherWith(androidx.compose.animation.scaleOut(animationSpec = M3MotionTokens.expressiveFast()) + androidx.compose.animation.fadeOut())
                                         },
-                                        contentDescription = "Cambiar vista",
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
+                                        label = "LayoutModeAnim"
+                                    ) { mode ->
+                                        Icon(
+                                            imageVector = when (mode) {
+                                                HomeLayoutMode.IMMERSIVE -> Icons.Rounded.ViewAgenda
+                                                HomeLayoutMode.GRID -> Icons.Rounded.GridView
+                                                HomeLayoutMode.COMPACT -> Icons.AutoMirrored.Rounded.ViewList
+                                            },
+                                            contentDescription = "Cambiar vista",
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
                                 }
                                 if (isLoggedIn && accountInfo != null) {
                                     Box(
@@ -450,13 +468,7 @@ fun HomeScreen(
             }
         }
 
-        AnimatedVisibility(
-            visible = uiState.isOfflineMode && !isSearchActive,
-            enter = expandVertically() + fadeIn(),
-            exit = shrinkVertically() + fadeOut()
-        ) {
-            OfflineBanner()
-        }
+        OfflineBanner(visible = uiState.isOfflineMode && !isSearchActive)
 
         if (isSearchActive) {
             when {
@@ -474,7 +486,11 @@ fun HomeScreen(
                                 }
                             }
                             Text("Sin resultados para \"$searchQuery\"", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold), color = MaterialTheme.colorScheme.onSurface)
-                            Text("Prueba con otras palabras clave", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                if (!isOnline) "Sin conexión, revisa tu red" else "Prueba con otras palabras clave",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
                 }
@@ -498,13 +514,22 @@ fun HomeScreen(
                                 video = track,
                                 onClick = {
                                     viewModel.onTrackClicked(track)
-                                    if (playerController != null) {
-                                        val idx = searchResults.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
-                                        playerController.playQueue(searchResults, idx, playAsVideo = true)
+                                    if (!isOnline) {
+                                        android.widget.Toast.makeText(context, "Sin conexión", android.widget.Toast.LENGTH_SHORT).show()
+                                    } else if (playerController != null) {
+                                        playerController.playWithRadio(track, playAsVideo = true)
                                         onExpandPlayer()
                                     }
                                 },
-                                onAddToQueue = { item -> playerController?.playQueue(listOf(item), 0, playAsVideo = item.isVideoItem) }
+                                onAddToQueue = { item -> playerController?.addToQueue(item) },
+                                onPlayNext = { item -> playerController?.playNext(item) },
+                                onPlayRadio = { item ->
+                                    if (!isOnline) {
+                                        android.widget.Toast.makeText(context, "Sin conexión", android.widget.Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        playerController?.playWithRadio(item)
+                                    }
+                                }
                             )
                         }
                     }
@@ -614,6 +639,7 @@ fun HomeScreen(
                                             track = track,
                                             watchPositionMs = entry.watchDurationMs,
                                             totalDurationMs = null,
+                                            playCount = entry.playCount,
                                             onResumeClick = {
                                                 viewModel.onTrackClicked(track)
                                                 playerController?.playQueue(listOf(track), 0, playAsVideo = true)
@@ -654,23 +680,64 @@ fun HomeScreen(
                             }
                             when (layoutMode) {
                                 HomeLayoutMode.IMMERSIVE -> {
-                                    val revealed = revealedCount(section.title, section.tracks.size)
-                                    val visibleTracks = section.tracks.take(revealed)
-                                    items(visibleTracks, key = { "${section.title}_${it.id}_$sIndex" }, contentType = { "video_card" }) { track ->
-                                        VideoCardEnhanced(
-                                            video = track,
-                                            onClick = {
-                                                viewModel.onTrackClicked(track)
-                                                val idx = section.tracks.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
-                                                playerController?.playQueue(section.tracks, idx, playAsVideo = true)
-                                                onExpandPlayer()
-                                            },
-                                            onAddToQueue = { t -> playerController?.playQueue(listOf(t), 0, playAsVideo = t.isVideoItem) }
-                                        )
-                                    }
-                                    if (visibleTracks.size < section.tracks.size) {
-                                        item(key = "more_${section.title}_$sIndex", contentType = { "load_more" }) {
-                                            RevealMoreButton(revealed = revealed, total = section.tracks.size, onReveal = { revealMore(section.title, revealed, section.tracks.size) })
+                                    if (section.tracks.size >= 4) {
+                                        val hero = section.tracks.first()
+                                        item(key = "hero_${section.title}_$sIndex", contentType = "video_card") {
+                                            VideoCardEnhanced(
+                                                video = hero,
+                                                showQuickAdd = true,
+                                                onClick = {
+                                                    viewModel.onTrackClicked(hero)
+                                                    playerController?.playQueue(section.tracks, 0, playAsVideo = true)
+                                                    onExpandPlayer()
+                                                },
+                                                onAddToQueue = { t -> playerController?.addToQueue(t) },
+                                                onPlayNext = { t -> playerController?.playNext(t) }
+                                            )
+                                        }
+                                        item(key = "shelf_${section.title}_$sIndex", contentType = "video_shelf") {
+                                            Column(modifier = Modifier.fillMaxWidth()) {
+                                                Spacer(Modifier.height(2.dp))
+                                                LazyRow(
+                                                    contentPadding = PaddingValues(horizontal = 16.dp),
+                                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                                ) {
+                                                    items(section.tracks.drop(1), key = { "${section.title}_${it.id}_shelf_$sIndex" }, contentType = { "video_compact_shelf" }) { track ->
+                                                        CompactVideoCard(
+                                                            video = track,
+                                                            onClick = {
+                                                                viewModel.onTrackClicked(track)
+                                                                val idx = section.tracks.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
+                                                                playerController?.playQueue(section.tracks, idx, playAsVideo = true)
+                                                                onExpandPlayer()
+                                                            },
+                                                            onAddToQueue = { t -> playerController?.addToQueue(t) }
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        val revealed = revealedCount(section.title, section.tracks.size)
+                                        val visibleTracks = section.tracks.take(revealed)
+                                        items(visibleTracks, key = { "${section.title}_${it.id}_$sIndex" }, contentType = { "video_card" }) { track ->
+                                            VideoCardEnhanced(
+                                                video = track,
+                                                showQuickAdd = true,
+                                                onClick = {
+                                                    viewModel.onTrackClicked(track)
+                                                    val idx = section.tracks.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
+                                                    playerController?.playQueue(section.tracks, idx, playAsVideo = true)
+                                                    onExpandPlayer()
+                                                },
+                                                onAddToQueue = { t -> playerController?.addToQueue(t) },
+                                                onPlayNext = { t -> playerController?.playNext(t) }
+                                            )
+                                        }
+                                        if (visibleTracks.size < section.tracks.size) {
+                                            item(key = "more_${section.title}_$sIndex", contentType = { "load_more" }) {
+                                                RevealMoreButton(revealed = revealed, total = section.tracks.size, onReveal = { revealMore(section.title, revealed, section.tracks.size) })
+                                            }
                                         }
                                     }
                                 }
@@ -686,7 +753,8 @@ fun HomeScreen(
                                                 playerController?.playQueue(section.tracks, idx, playAsVideo = true)
                                                 onExpandPlayer()
                                             },
-                                            onAddToQueue = { t -> playerController?.playQueue(listOf(t), 0, playAsVideo = t.isVideoItem) }
+                                            onAddToQueue = { t -> playerController?.addToQueue(t) },
+                                            onPlayNext = { t -> playerController?.playNext(t) }
                                         )
                                     }
                                     if (visibleTracks.size < section.tracks.size) {
@@ -885,7 +953,7 @@ fun MediaCardSquare(
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
         targetValue = if (isPressed) 0.96f else 1f,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
+        animationSpec = com.example.tsuki.ui.components.M3MotionTokens.CardPressSpring,
         label = "MediaCardBounce"
     )
     Column(

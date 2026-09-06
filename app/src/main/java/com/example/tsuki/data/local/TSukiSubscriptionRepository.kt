@@ -83,19 +83,23 @@ class TSukiSubscriptionRepository private constructor(private val context: Conte
         return data?.let { deserialize(it) }
     }
 
+    private fun escape(value: String): String = value.replace("|", "%7C")
+
+    private fun unescape(value: String): String = value.replace("%7C", "|")
+
     private fun serialize(c: TSukiChannelSubscription): String =
-        listOf(c.channelId, c.channelName, c.channelThumbnail, c.subscribedAt.toString(), c.lastVideoId ?: "", c.lastCheckTime.toString()).joinToString("|")
+        listOf(escape(c.channelId), escape(c.channelName), escape(c.channelThumbnail), c.subscribedAt.toString(), escape(c.lastVideoId ?: ""), c.lastCheckTime.toString()).joinToString("|")
 
     private fun deserialize(s: String): TSukiChannelSubscription? {
         return try {
             val p = s.split("|")
             if (p.size < 4) return null
             TSukiChannelSubscription(
-                channelId = p[0],
-                channelName = p[1],
-                channelThumbnail = p[2],
+                channelId = unescape(p[0]),
+                channelName = unescape(p[1]),
+                channelThumbnail = unescape(p[2]),
                 subscribedAt = p[3].toLongOrNull() ?: System.currentTimeMillis(),
-                lastVideoId = p.getOrNull(4)?.takeIf { it.isNotEmpty() },
+                lastVideoId = unescape(p.getOrNull(4) ?: "").takeIf { it.isNotEmpty() },
                 lastCheckTime = p.getOrNull(5)?.toLongOrNull() ?: 0L
             )
         } catch (_: Exception) { null }

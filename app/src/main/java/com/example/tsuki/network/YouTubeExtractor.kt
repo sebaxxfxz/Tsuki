@@ -19,7 +19,8 @@ data class QualityOption(
     val label: String,
     val url: String,
     val bitrate: Int,
-    val height: Int
+    val height: Int,
+    val isVideoOnly: Boolean = false
 )
 
 data class AudioTrackOption(
@@ -82,7 +83,7 @@ class YouTubeExtractor {
             val kioskList = service.kioskList
             kioskList.forceContentCountry(country)
             val extractor = kioskList.getExtractorById("Trending", null) as KioskExtractor<*>
-            extractor.fetchPage()
+            if (nextPage == null) extractor.fetchPage()
             val page = if (nextPage != null) extractor.getPage(nextPage) else extractor.initialPage
             val videos = page.items.filterIsInstance<StreamInfoItem>().mapNotNull { it.toMediaTrack(true) }
             Pair(videos.distinctBy { it.id }, page.nextPage)
@@ -250,10 +251,15 @@ class YouTubeExtractor {
 
     companion object {
         private val streamMemoryCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, StreamResult>>()
-        private const val STREAM_CACHE_TTL_MS = 3 * 60 * 60 * 1000L
+        private const val STREAM_CACHE_TTL_MS = 90 * 60 * 1000L
         private const val STREAM_CACHE_MAX_ENTRIES = 120
         private val RESOLUTION_HEIGHT_REGEX = Regex("""(\d+)p""")
 
+        fun evictStreamCache(videoId: String) {
+            streamMemoryCache.remove(videoId)
+        }
+
+        @Synchronized
         private fun putStreamCache(videoId: String, result: StreamResult) {
             val now = System.currentTimeMillis()
             streamMemoryCache.entries.removeIf { now - it.value.first > STREAM_CACHE_TTL_MS }
@@ -330,11 +336,11 @@ class YouTubeExtractor {
 
             val originalTrack = distinctAudioTracks.firstOrNull { it.isOriginal } ?: distinctAudioTracks.firstOrNull()
 
-            val originalStreams = rawAudioStreams.filter { s ->
+            val originalStreams = rawAudioStreams.mapIndexed { index, s -> s to index }.filter { (s, index) ->
                 val isOrig = determineStreamIsOriginal(s, hasExplicitOriginal, hasExplicitDubbed)
-                val lbl = resolveAudioTrackDisplayName(s, 0, isOrig)
+                val lbl = resolveAudioTrackDisplayName(s, index, isOrig)
                 isOrig || (originalTrack != null && lbl == originalTrack.label)
-            }.ifEmpty { rawAudioStreams }
+            }.map { it.first }.ifEmpty { rawAudioStreams }
 
             val sortedOriginalAudioStreams = originalStreams.sortedWith(
                 compareByDescending<org.schabi.newpipe.extractor.stream.AudioStream> { s ->
@@ -426,7 +432,7 @@ class YouTubeExtractor {
                 val u = vs.getUrl() ?: return@forEach
                 val h = vs.getHeight().takeIf { it > 0 } ?: vs.getResolution()?.filter { it.isDigit() }?.toIntOrNull() ?: 0
                 val label = if (h > 0) "${h}p" else (vs.getResolution() ?: "Video")
-                allQualities.add(QualityOption(label, u, vs.getBitrate(), h))
+                allQualities.add(QualityOption(label, u, vs.getBitrate(), h, isVideoOnly = true))
             }
 
             val videoOnlyLabels = allQualities.map { it.label }.toSet()
@@ -435,7 +441,7 @@ class YouTubeExtractor {
                 val h = vs.getHeight().takeIf { it > 0 } ?: vs.getResolution()?.filter { it.isDigit() }?.toIntOrNull() ?: 0
                 val label = if (h > 0) "${h}p" else (vs.getResolution() ?: "Video")
                 if (label !in videoOnlyLabels) {
-                    allQualities.add(QualityOption(label, u, vs.getBitrate(), h))
+                    allQualities.add(QualityOption(label, u, vs.getBitrate(), h, isVideoOnly = false))
                 }
             }
             val distinctQualities = allQualities

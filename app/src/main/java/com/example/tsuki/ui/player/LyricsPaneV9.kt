@@ -33,6 +33,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -114,7 +115,7 @@ fun LyricsPaneV9(
                     Icon(
                         imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                         contentDescription = if (isPlaying) "Pausar" else "Reproducir",
-                        tint = Color.White,
+                        tint = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier
                             .size(28.dp)
                             .padding(start = if (!isPlaying) 2.dp else 0.dp)
@@ -135,12 +136,17 @@ private fun VolumeSliderV9(modifier: Modifier = Modifier) {
     val audioManager = remember { context.getSystemService(Context.AUDIO_SERVICE) as AudioManager }
     var volume by remember { mutableFloatStateOf(audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat()) }
     val maxVolume = remember { audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).toFloat().coerceAtLeast(1f) }
-    var sliderPos by remember(volume) { mutableFloatStateOf(volume / maxVolume) }
+    var isDragging by remember { mutableStateOf(false) }
+    var sliderPos by remember { mutableFloatStateOf(volume / maxVolume) }
 
     DisposableEffect(audioManager) {
         val observer = object : ContentObserver(Handler(android.os.Looper.getMainLooper())) {
             override fun onChange(selfChange: Boolean) {
-                volume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat()
+                val currentVol = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat()
+                volume = currentVol
+                if (!isDragging) {
+                    sliderPos = currentVol / maxVolume
+                }
             }
         }
         context.contentResolver.registerContentObserver(Settings.System.CONTENT_URI, true, observer)
@@ -155,8 +161,12 @@ private fun VolumeSliderV9(modifier: Modifier = Modifier) {
         Icon(imageVector = Icons.Rounded.VolumeDown, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
         Slider(
             value = sliderPos,
-            onValueChange = { sliderPos = it },
+            onValueChange = {
+                isDragging = true
+                sliderPos = it
+            },
             onValueChangeFinished = {
+                isDragging = false
                 val vol = (sliderPos * maxVolume).toInt().coerceIn(0, maxVolume.toInt())
                 audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, vol, 0)
                 volume = vol.toFloat()

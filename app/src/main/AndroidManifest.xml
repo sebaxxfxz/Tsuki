@@ -7,9 +7,12 @@
     <uses-permission android:name="android.intent.action.MEDIA_BUTTON" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -38,6 +41,9 @@
             android:supportsPictureInPicture="true"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
             android:windowSoftInputMode="adjustResize">
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
@@ -72,10 +78,10 @@
                 <data android:scheme="tsuki" android:host="together" />
             </intent-filter>
         </activity>
-
         <!-- Home Screen App Widget -->
         <receiver
             android:name=".ui.widget.TSukiWidgetProvider"
+            android:enabled="false"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
@@ -85,6 +91,64 @@
                 android:resource="@xml/tsuki_widget_info" />
         </receiver>
 
+        <receiver
+            android:name=".ui.widget.glance.TSukiGlanceReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/tsuki_glance_widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".ui.widget.glance.TSukiMiniGlanceReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/tsuki_glance_widget_info_mini" />
+        </receiver>
+
+        <receiver
+            android:name=".ui.widget.glance.TSukiSquareGlanceReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/tsuki_glance_widget_info_square" />
+        </receiver>
+
+        <receiver
+            android:name=".ui.widget.glance.TSukiQuickResumeGlanceReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/tsuki_glance_widget_info_quick" />
+        </receiver>
+
+        <receiver
+            android:name=".ui.widget.glance.TSukiHeroGlanceReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/tsuki_glance_widget_info_hero" />
+        </receiver>
+
+        <meta-data
+            android:name="com.google.android.gms.car.application"
+            android:resource="@xml/automotive_app_desc" />
         <!-- Media3 Playback & MediaLibraryService for Background, Lockscreen & Android Auto -->
         <service
             android:name=".playback.TSukiPlaybackService"
@@ -96,6 +160,10 @@
                 <action android:name="android.media.browse.MediaBrowserService" />
             </intent-filter>
         </service>
+
+        <receiver
+            android:name=".util.UpdateDownloadReceiver"
+            android:exported="false" />
     </application>
 
 </manifest>

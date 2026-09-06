@@ -84,6 +84,9 @@ import com.example.tsuki.ui.components.MusicHeroCard
 import com.example.tsuki.ui.components.MusicHomeSkeleton
 import com.example.tsuki.ui.components.MusicSectionHeader
 import com.example.tsuki.ui.components.PlaylistCard
+import com.example.tsuki.ui.components.OfflineBanner
+import com.example.tsuki.ui.components.WeeklyWrappedOverlay
+import com.example.tsuki.util.ConnectivityObserver
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -211,16 +214,6 @@ fun MusicScreen(
         if (localRecentTracks.isNotEmpty()) localRecentTracks else historyTracks.filter { !it.isVideoItem }
     }
     var shuffleNonce by remember { androidx.compose.runtime.mutableIntStateOf(0) }
-    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
-    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
-        val obs = androidx.lifecycle.LifecycleEventObserver { _, ev ->
-            if (ev == androidx.lifecycle.Lifecycle.Event.ON_RESUME || ev == androidx.lifecycle.Lifecycle.Event.ON_START) {
-                shuffleNonce++
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(obs)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
-    }
     val quickPicks: List<MediaTrack> by remember {
         androidx.compose.runtime.derivedStateOf<List<MediaTrack>> {
             val n = shuffleNonce
@@ -241,6 +234,8 @@ fun MusicScreen(
     val syncPlaylistsEnabled by playerPrefs.syncPlaylistsEnabled.collectAsStateWithLifecycle(initialValue = true)
     val syncHistoryEnabled by playerPrefs.syncHistoryEnabled.collectAsStateWithLifecycle(initialValue = true)
     val speedDialPins by homePrefs.speedDialPins.collectAsStateWithLifecycle(initialValue = emptySet())
+    val localPlaylistManager = remember { com.example.tsuki.data.local.LocalPlaylistManager.getInstance(context) }
+    val favManager = remember { com.example.tsuki.data.local.FavoritesManager.getInstance(context) }
 
     var playlistTrackTarget by remember { mutableStateOf<MediaTrack?>(null) }
     var openPlaylist by remember { mutableStateOf<TSukiPlaylist?>(null) }
@@ -250,7 +245,38 @@ fun MusicScreen(
     val scope = rememberCoroutineScope()
     val extractor = remember { YouTubeExtractor() }
     val focusManager = LocalFocusManager.current
+    val currentWrappedWeekStart = remember {
+        val cal = java.util.Calendar.getInstance()
+        val daysSinceMonday = (cal.get(java.util.Calendar.DAY_OF_WEEK) + 5) % 7
+        cal.add(java.util.Calendar.DAY_OF_MONTH, -daysSinceMonday)
+        cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
+        cal.set(java.util.Calendar.MINUTE, 0)
+        cal.set(java.util.Calendar.SECOND, 0)
+        cal.set(java.util.Calendar.MILLISECOND, 0)
+        cal.timeInMillis
+    }
+    val wrappedPending by homePrefs.pendingWrappedWeek(currentWrappedWeekStart).collectAsStateWithLifecycle(initialValue = false)
+    var showWrappedOverlay by remember { mutableStateOf(false) }
+    var wrappedWeek by remember { mutableStateOf<com.example.tsuki.data.local.WatchHistoryManager.WeeklyWrapped?>(null) }
+    if (showWrappedOverlay) {
+        LaunchedEffect(Unit) {
+            wrappedWeek = historyManager.getWeeklyWrapped(1, 10).firstOrNull()
+        }
+        wrappedWeek?.let { week ->
+            WeeklyWrappedOverlay(
+                week = week,
+                isCurrentWeek = true,
+                onDismiss = {
+                    showWrappedOverlay = false
+                    scope.launch(Dispatchers.IO) { homePrefs.markWrappedOpened(currentWrappedWeekStart) }
+                }
+            )
+        }
+    }
     val refreshSignal by MusicRefreshBus.refreshFlow.collectAsStateWithLifecycle(initialValue = 0)
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val connectivity = remember { ConnectivityObserver.getInstance(context) }
+    val isOnline by connectivity.networkStatus.collectAsStateWithLifecycle(initialValue = connectivity.isCurrentlyOnline())
 
     LaunchedEffect(isLoggedIn, cookie, refreshSignal) {
         if (isLoggedIn && !cookie.isNullOrBlank()) {
@@ -300,12 +326,12 @@ fun MusicScreen(
                             try { innerTubeClient.fetchUserPlaylists(ck, visitorData, dataSyncId) } catch (_: Exception) { emptyList() }
                         } else emptyList()
                         val local = try {
-                            com.example.tsuki.data.local.LocalPlaylistManager.getInstance(context).getAllPlaylists().map { pl ->
+                            com.example.tsuki.data.local.LocalPlaylistManager.getInstance(context).getPlaylistSummaries().map { pl ->
                                 TSukiPlaylist(
                                     id = pl.id.toString(),
                                     title = pl.name,
-                                    subtitle = "Local • ${pl.tracks.size} canciones",
-                                    thumbnailUrl = pl.tracks.firstOrNull()?.artworkUrl
+                                    subtitle = "Local • ${pl.trackCount} canciones",
+                                    thumbnailUrl = pl.firstTrackThumbnail
                                 )
                             }
                         } catch (_: Exception) { emptyList() }
@@ -384,8 +410,6 @@ fun MusicScreen(
             }
         } else {
             personalizedSections = emptyList()
-            userPlaylists = emptyList()
-            likedTracks = emptyList()
             historyTracks = emptyList()
             musicChips = emptyList()
             personalizedContinuation = null
@@ -393,6 +417,18 @@ fun MusicScreen(
             forgottenTracks = emptyList()
             similarSections = emptyList()
             isSessionExpired = false
+            try {
+                val localSummaries = withContext(Dispatchers.IO) { localPlaylistManager.getPlaylistSummaries() }
+                userPlaylists = localSummaries.map { summary ->
+                    TSukiPlaylist(
+                        id = "local_${summary.id}",
+                        title = summary.name,
+                        subtitle = "Playlist local • ${summary.trackCount} canciones",
+                        thumbnailUrl = summary.firstTrackThumbnail
+                    )
+                }
+                likedTracks = withContext(Dispatchers.IO) { favManager.getFavoriteTracks() }
+            } catch (_: Exception) {}
         }
     }
 
@@ -440,9 +476,12 @@ fun MusicScreen(
     }
 
     fun playSearchResult(track: MediaTrack) {
+        if (!isOnline) {
+            android.widget.Toast.makeText(context, "Sin conexión", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
         if (playerController != null) {
-            val idx = searchResults.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
-            playerController.playQueue(searchResults, idx, false)
+            playerController.playWithRadio(track, false)
             onExpandPlayer()
         } else {
             onTrackClick(track)
@@ -521,6 +560,7 @@ fun MusicScreen(
                 modifier = Modifier.fillMaxWidth().focusRequester(focusRequester)
             )
             Spacer(Modifier.height(4.dp))
+            OfflineBanner(visible = !isOnline)
             Text("Resultados • YouTube Music", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(12.dp))
             when {
@@ -529,15 +569,18 @@ fun MusicScreen(
                     Text("Escribe el nombre de una canción o artista para buscar", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
                 }
                 searchResults.isEmpty() -> Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-                    Text("No se encontraron resultados para \"$searchQuery\"", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        if (!isOnline) "Sin conexión, revisa tu red" else "No se encontraron resultados para \"$searchQuery\"",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
                 else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 120.dp)) {
                     item {
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            items(searchResults.take(6), key = { it.id }) { track -> TrackCard(track = track, onClick = { playSearchResult(track) }) }
+                            itemsIndexed(searchResults.take(6), key = { i, track -> "search_top_${track.id}_$i" }) { _, track -> TrackCard(track = track, onClick = { playSearchResult(track) }) }
                         }
                     }
-                    items(searchResults, key = { it.id }) { track ->
+                    itemsIndexed(searchResults, key = { i, track -> "search_list_${track.id}_$i" }) { _, track ->
                         TrackListItem(
                             track = track,
                             onClick = { playSearchResult(track) },
@@ -587,7 +630,6 @@ fun MusicScreen(
         )
     }
 
-    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     androidx.compose.runtime.LaunchedEffect(listState, personalizedContinuation, isLoggedIn) {
         androidx.compose.runtime.snapshotFlow {
             val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
@@ -623,7 +665,15 @@ fun MusicScreen(
         onRefresh = {
             scope.launch {
                 val ck = cookie
-                if (!isLoggedIn || ck.isNullOrBlank()) return@launch
+                if (!isLoggedIn || ck.isNullOrBlank()) {
+                    isPullRefreshing = true
+                    try {
+                        MusicRefreshBus.trigger()
+                    } catch (_: Exception) {} finally {
+                        isPullRefreshing = false
+                    }
+                    return@launch
+                }
                 isPullRefreshing = true
                 isPersonalizedLoading = true
                 try {
@@ -677,7 +727,11 @@ fun MusicScreen(
                             color = MaterialTheme.colorScheme.onBackground
                         )
                     }
-                    if (isLoggedIn && accountInfo != null) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        if (wrappedPending) {
+                            com.example.tsuki.ui.components.WrappedBadgeButton(onClick = { showWrappedOverlay = true })
+                        }
+                        if (isLoggedIn && accountInfo != null) {
                         Box(
                             modifier = Modifier
                                 .size(42.dp)
@@ -716,6 +770,7 @@ fun MusicScreen(
                             shape = CircleShape
                         )
                     }
+                    }
                 }
                 Surface(
                     shape = RoundedCornerShape(28.dp),
@@ -745,6 +800,10 @@ fun MusicScreen(
                     }
                 }
             }
+        }
+
+        item(key = "offline_banner") {
+            OfflineBanner(visible = !isOnline)
         }
 
         val showSkeleton = isLoggedIn && isPersonalizedLoading &&
@@ -831,9 +890,17 @@ fun MusicScreen(
                         })
                         LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             itemsIndexed(keepListeningTracks, key = { i, track -> "keep_${track.id}_$i" }) { idx, track ->
-                                TrackCard(track = track, onClick = {
-                                    if (playerController != null) { playerController.playQueue(keepListeningTracks, idx, false); onExpandPlayer() } else onTrackClick(track)
-                                })
+                                TrackCard(
+                                    track = track,
+                                    onClick = {
+                                        if (playerController != null) { playerController.playQueue(keepListeningTracks, idx, false); onExpandPlayer() } else onTrackClick(track)
+                                    },
+                                    onPlayRadio = {
+                                        if (!isOnline) {
+                                            android.widget.Toast.makeText(context, "Sin conexión", android.widget.Toast.LENGTH_SHORT).show()
+                                        } else if (playerController != null) { playerController.playWithRadio(track, false); onExpandPlayer() }
+                                    }
+                                )
                             }
                         }
                     }
@@ -848,9 +915,17 @@ fun MusicScreen(
                         })
                         LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             itemsIndexed(forgottenTracks, key = { i, track -> "forg_${track.id}_$i" }) { idx, track ->
-                                TrackCard(track = track, onClick = {
-                                    if (playerController != null) { playerController.playQueue(forgottenTracks, idx, false); onExpandPlayer() } else onTrackClick(track)
-                                })
+                                TrackCard(
+                                    track = track,
+                                    onClick = {
+                                        if (playerController != null) { playerController.playQueue(forgottenTracks, idx, false); onExpandPlayer() } else onTrackClick(track)
+                                    },
+                                    onPlayRadio = {
+                                        if (!isOnline) {
+                                            android.widget.Toast.makeText(context, "Sin conexión", android.widget.Toast.LENGTH_SHORT).show()
+                                        } else if (playerController != null) { playerController.playWithRadio(track, false); onExpandPlayer() }
+                                    }
+                                )
                             }
                         }
                     }
@@ -866,9 +941,17 @@ fun MusicScreen(
                             })
                             LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 itemsIndexed(section.tracks, key = { tIdx, track -> "sim_${section.title}_${track.id}_${sIdx}_$tIdx" }) { idx, track ->
-                                    TrackCard(track = track, onClick = {
-                                        if (playerController != null) { playerController.playQueue(section.tracks, idx, false); onExpandPlayer() } else onTrackClick(track)
-                                    })
+                                    TrackCard(
+                                        track = track,
+                                        onClick = {
+                                            if (playerController != null) { playerController.playQueue(section.tracks, idx, false); onExpandPlayer() } else onTrackClick(track)
+                                        },
+                                        onPlayRadio = {
+                                            if (!isOnline) {
+                                                android.widget.Toast.makeText(context, "Sin conexión", android.widget.Toast.LENGTH_SHORT).show()
+                                            } else if (playerController != null) { playerController.playWithRadio(track, false); onExpandPlayer() }
+                                        }
+                                    )
                                 }
                             }
                         }
@@ -949,7 +1032,7 @@ fun MusicScreen(
                             contentPadding = PaddingValues(horizontal = 16.dp),
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            items(guestHeroTracks.take(12), key = { "ghero_${it.id}" }) { track ->
+                            itemsIndexed(guestHeroTracks.take(12), key = { i, track -> "ghero_${track.id}_$i" }) { _, track ->
                                 MusicHeroCard(track = track, onClick = {
                                     val idx = guestHeroTracks.indexOfFirst { t -> t.id == track.id }.coerceAtLeast(0)
                                     if (playerController != null) { playerController.playQueue(guestHeroTracks, idx, false); onExpandPlayer() } else onTrackClick(track)
@@ -991,7 +1074,7 @@ fun MusicScreen(
                         contentPadding = PaddingValues(horizontal = 16.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        items(trendingMusic.take(20), key = { "trend_${it.id}" }) { track ->
+                        itemsIndexed(trendingMusic.take(20), key = { i, track -> "trend_${track.id}_$i" }) { _, track ->
                             TrackCard(track = track, onClick = {
                                 val idx = trendingMusic.indexOfFirst { t -> t.id == track.id }.coerceAtLeast(0)
                                 if (playerController != null) { playerController.playQueue(trendingMusic, idx, false); onExpandPlayer() } else onTrackClick(track)

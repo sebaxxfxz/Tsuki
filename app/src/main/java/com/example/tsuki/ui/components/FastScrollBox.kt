@@ -8,7 +8,9 @@ import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -122,9 +124,10 @@ fun FastScrollBox(
         ) {
             Box(
                 modifier = Modifier
-                    .align(Alignment.CenterEnd)
+                    .align(Alignment.TopEnd)
+                    .graphicsLayer { translationY = dragOffsetPx }
                     .width(with(density) { 5.dp })
-                    .fillMaxHeight(fraction = if (containerHeightPx == 0) 1f else (thumbHeightPx / containerHeightPx).coerceIn(0.05f, 1f))
+                    .height(with(density) { thumbHeightPx.toDp() })
                     .alpha(if (hasScrollableContent) 1f else 0f)
                     .background(
                         color = thumbColor.copy(alpha = 0.55f),

@@ -91,13 +91,19 @@ private fun TSukiPillTab(
     val interactionSource = remember { MutableInteractionSource() }
     val isSelected = item.selected
 
+    val tabWidth by androidx.compose.animation.core.animateDpAsState(
+        targetValue = if (isSelected) 64.dp else 44.dp,
+        animationSpec = M3MotionTokens.expressiveBouncy(),
+        label = "TabWidth"
+    )
+
     val containerColor by animateColorAsState(
         targetValue = if (isSelected) {
             MaterialTheme.colorScheme.secondaryContainer
         } else {
             Color.Transparent
         },
-        animationSpec = tween(durationMillis = 200),
+        animationSpec = tween(durationMillis = 220, easing = androidx.compose.animation.core.FastOutSlowInEasing),
         label = "TabContainerColor"
     )
 
@@ -107,13 +113,14 @@ private fun TSukiPillTab(
         } else {
             MaterialTheme.colorScheme.onSurfaceVariant
         },
-        animationSpec = tween(durationMillis = 200),
+        animationSpec = tween(durationMillis = 220, easing = androidx.compose.animation.core.FastOutSlowInEasing),
         label = "TabContentColor"
     )
 
     Box(
         modifier = modifier
             .height(44.dp)
+            .width(tabWidth)
             .clip(CircleShape)
             .background(containerColor)
             .clickable(
@@ -125,41 +132,29 @@ private fun TSukiPillTab(
                 this.selected = isSelected
                 this.role = Role.Tab
                 this.contentDescription = item.label
-            }
-            .width(48.dp),
+            },
         contentAlignment = Alignment.Center
     ) {
-        val iconRotation = androidx.compose.runtime.remember { androidx.compose.animation.core.Animatable(0f) }
         val iconScale = androidx.compose.runtime.remember { androidx.compose.animation.core.Animatable(1f) }
         androidx.compose.runtime.LaunchedEffect(isSelected) {
             if (isSelected) {
-                launch { iconRotation.animateTo(360f, spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMediumLow)) }
-                iconRotation.snapTo(0f)
-                launch {
-                    iconScale.animateTo(0.75f, spring(stiffness = Spring.StiffnessMedium))
-                    iconScale.animateTo(1f, spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow))
-                }
+                iconScale.animateTo(0.72f, M3MotionTokens.spatialFast())
+                iconScale.animateTo(1.15f, M3MotionTokens.expressiveBouncy())
+                iconScale.animateTo(1.0f, M3MotionTokens.spatialDefault())
             } else {
-                iconRotation.snapTo(0f)
                 iconScale.snapTo(1f)
             }
         }
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center
-        ) {
-            Icon(
-                imageVector = item.icon,
-                contentDescription = null,
-                tint = contentColor,
-                modifier = Modifier
-                    .size(24.dp)
-                    .graphicsLayer {
-                        rotationZ = iconRotation.value
-                        scaleX = iconScale.value
-                        scaleY = iconScale.value
-                    }
-            )
-        }
+        Icon(
+            imageVector = item.icon,
+            contentDescription = null,
+            tint = contentColor,
+            modifier = Modifier
+                .size(24.dp)
+                .graphicsLayer {
+                    scaleX = iconScale.value
+                    scaleY = iconScale.value
+                }
+        )
     }
 }

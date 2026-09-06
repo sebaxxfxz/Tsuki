@@ -31,7 +31,7 @@ object LyricsUtils {
                 } else {
                     code.toIntOrNull()
                 }
-                codePoint?.takeIf { it > 0 }?.toChar()?.toString() ?: m.value
+                codePoint?.takeIf { it > 0 }?.let { String(Character.toChars(it)) } ?: m.value
             } else {
                 when (m.groupValues[2]) {
                     "amp" -> "&"
@@ -148,8 +148,12 @@ object LyricsUtils {
     }
 
     private fun parseTtmlTimeMs(raw: String?): Long? {
-        val cleaned = raw?.trim()?.removeSuffix("s") ?: return null
-        if (cleaned.isEmpty() || cleaned.startsWith("-")) return null
+        val trimmed = raw?.trim() ?: return null
+        if (trimmed.isEmpty() || trimmed.startsWith("-")) return null
+        if (trimmed.endsWith("ms")) {
+            return trimmed.removeSuffix("ms").toLongOrNull()
+        }
+        val cleaned = trimmed.removeSuffix("s")
         val parts = cleaned.split(':')
         if (parts.size !in 1..3) return null
         var seconds = 0.0
@@ -177,6 +181,14 @@ object LyricsUtils {
             if (parsed != null) {
                 result.addAll(parsed)
             }
+        }
+
+        if (result.isEmpty() && normalized.isNotEmpty() && normalized != LYRICS_NOT_FOUND) {
+            val metadataTagRegex = Regex("^\\[([a-zA-Z]+|\\d{2}:).*?\\]$")
+            val plainLines = lines.map { it.trim() }.filter { line ->
+                line.isNotEmpty() && !metadataTagRegex.matches(line)
+            }
+            return plainLines.map { LyricsEntry(time = -1L, text = it) }
         }
 
         return result.sorted()
@@ -252,7 +264,7 @@ object LyricsUtils {
             if (wordText.isEmpty()) continue
 
             val hadTrailingSpace = rawWordText.isNotEmpty() && rawWordText.last().isWhitespace()
-            val wordEndSec = nextStart ?: (wordStartSec + 1.0)
+            val wordEndSec = nextStart ?: (wordStartSec + (wordText.length * 0.08).coerceIn(0.2, 0.45))
             val unescaped = unescapeHtml(wordText)
             val spacedText = if (hadTrailingSpace) "$unescaped " else unescaped
 

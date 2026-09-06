@@ -109,8 +109,15 @@ fun SyncedLyricsView(
                     val currentTime = System.currentTimeMillis()
                     if (currentTime - lastScrollTime > MANUAL_SCROLL_DEBOUNCE_MS) {
                         isManualScrolling = true
-                        lastScrollTime = currentTime
                     }
+                    lastScrollTime = currentTime
+                }
+                return Offset.Zero
+            }
+
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                if (source == NestedScrollSource.UserInput) {
+                    lastScrollTime = System.currentTimeMillis()
                 }
                 return Offset.Zero
             }
@@ -131,11 +138,9 @@ fun SyncedLyricsView(
             val jump = abs(listState.firstVisibleItemIndex - activeIndex)
             if (jump > 15) {
                 listState.scrollToItem(activeIndex)
+            } else {
+                listState.animateScrollToItem(activeIndex, 0)
             }
-            
-            val viewportHeight = listState.layoutInfo.viewportSize.height
-            val targetOffset = if (viewportHeight > 0) (viewportHeight * 0.1f).toInt().coerceAtLeast(0) else 0
-            listState.animateScrollToItem(activeIndex, targetOffset)
         }
     }
 
@@ -159,7 +164,6 @@ fun SyncedLyricsView(
                 entry = entry,
                 isActive = activeIndex >= 0 && index == activeIndex,
                 distance = distance,
-                currentPositionMs = currentPositionMs + lyricsSyncOffset,
                 isManualScrolling = isManualScrolling,
                 accentColor = accentColor,
                 onSeekTo = onSeekTo,

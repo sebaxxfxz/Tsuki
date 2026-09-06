@@ -45,11 +45,8 @@ fun VideoCardShort(
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.94f else 1f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium
-        ),
+        targetValue = if (isPressed) 0.93f else 1f,
+        animationSpec = M3MotionTokens.expressiveBouncy(),
         label = "ShortCardScale"
     )
 

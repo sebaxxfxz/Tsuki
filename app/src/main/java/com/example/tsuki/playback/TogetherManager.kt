@@ -64,17 +64,17 @@ class TogetherManager(private val context: Context, private val controller: Play
     private var clientEventsJob: Job? = null
     private var heartbeatJob: Job? = null
     private var clock: TogetherClock? = null
-    private var selfParticipantId: String? = null
-    private var authorityParticipantId: String? = null
+    @Volatile private var selfParticipantId: String? = null
+    @Volatile private var authorityParticipantId: String? = null
     @Volatile private var isOnlineSession: Boolean = false
     @Volatile private var applyingRemote: Boolean = false
     @Volatile private var suppressEchoUntilElapsedMs: Long = 0L
-    private var lastAppliedRoomStateSentAtElapsedMs: Long = 0L
+    @Volatile private var lastAppliedRoomStateSentAtElapsedMs: Long = 0L
     private var lastRemoteAppliedPlayWhenReady: Boolean? = null
     private var lastRemoteAppliedIndex: Int = -1
     private var lastSentControlAtElapsedMs: Long = 0L
     private var lastSentControlAction: ControlAction? = null
-    private var pendingGuestControl: PendingGuestControl? = null
+    @Volatile private var pendingGuestControl: PendingGuestControl? = null
     private val participantNames = ConcurrentHashMap<String, String>()
     private var lastNoticeAtElapsedMs: Long = 0L
     private var lastNoticeKey: String? = null
@@ -936,8 +936,9 @@ class TogetherManager(private val context: Context, private val controller: Play
                 lastRemoteAppliedPlayWhenReady = state.isPlaying
                 lastAppliedRoomStateSentAtElapsedMs = sentAt
 
+                val currentRole = (sessionState.value as? TogetherSessionState.Joined)?.role ?: TogetherRole.Guest
                 sessionState.value = TogetherSessionState.Joined(
-                    role = TogetherRole.Guest,
+                    role = currentRole,
                     sessionId = state.sessionId,
                     selfParticipantId = pid,
                     roomState = state,
@@ -1002,6 +1003,8 @@ class TogetherManager(private val context: Context, private val controller: Play
 
         try { server?.stop() } catch (_: Exception) {}
         server = null
+
+        sessionState.value = TogetherSessionState.Idle
     }
 
     private fun TogetherTrack.toMediaTrack(): MediaTrack =

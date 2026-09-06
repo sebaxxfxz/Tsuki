@@ -27,20 +27,24 @@ class LyricsDatabase private constructor(context: Context) : SQLiteOpenHelper(co
         onCreate(db)
     }
 
-    fun getLyrics(videoId: String): String? {
+    data class CachedLyrics(val raw: String, val source: String)
+
+    fun getCachedLyrics(videoId: String): CachedLyrics? {
         val db = readableDatabase
         return db.query(
             "lyrics",
-            arrayOf("lyrics_raw"),
+            arrayOf("lyrics_raw", "source"),
             "video_id = ?",
             arrayOf(videoId),
             null,
             null,
             null
         ).use { cursor ->
-            if (cursor.moveToFirst()) cursor.getString(0) else null
+            if (cursor.moveToFirst()) CachedLyrics(cursor.getString(0), cursor.getString(1)) else null
         }
     }
+
+    fun getLyrics(videoId: String): String? = getCachedLyrics(videoId)?.raw
 
     fun saveLyrics(videoId: String, title: String, artist: String, raw: String, source: String) {
         if (videoId.isBlank() || raw.isBlank() || raw == "LYRICS_NOT_FOUND") return
@@ -54,6 +58,13 @@ class LyricsDatabase private constructor(context: Context) : SQLiteOpenHelper(co
             put("cached_timestamp", System.currentTimeMillis())
         }
         db.insertWithOnConflict("lyrics", null, values, SQLiteDatabase.CONFLICT_REPLACE)
+        runCatching {
+            db.delete(
+                "lyrics",
+                "video_id NOT IN (SELECT video_id FROM lyrics ORDER BY cached_timestamp DESC LIMIT 1500)",
+                null
+            )
+        }
     }
 
     companion object {

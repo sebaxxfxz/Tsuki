@@ -69,7 +69,7 @@ fun KaraokeWordByWordView(
         val focusOffset = maxHeight * 0.35f
 
         KaraokeLyricsView(
-            listState = rememberLazyListState(),
+            listState = remember(syncedLyrics) { androidx.compose.foundation.lazy.LazyListState() },
             lyrics = syncedLyrics,
             currentPosition = {
                 (smoothPositionState.value + syncOffsetMs)
