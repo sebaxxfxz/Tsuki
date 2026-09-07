@@ -34,3 +34,15 @@
 -keep class kotlinx.serialization.** { *; }
 -keep class * implements androidx.glance.action.ActionCallback { *; }
 -keep class com.example.tsuki.ui.widget.glance.** { *; }
+-keep class androidx.work.** { *; }
+-keep class androidx.room.** { *; }
+-keep class * extends androidx.room.RoomDatabase {
+    <init>();
+    *;
+}
+-keepclassmembers class * extends androidx.room.RoomDatabase {
+    <init>();
+    *;
+}
+-keep class io.ktor.** { *; }
+-keep class com.mocharealm.** { *; }
