@@ -29,7 +29,7 @@ enum class TSukiTimeBucket {
 
 data class TSukiBrain(val timeVectors: Map<TSukiTimeBucket, TSukiContentVector> = TSukiTimeBucket.entries.associateWith { TSukiContentVector() }, val globalVector: TSukiContentVector = TSukiContentVector(), val channelScores: Map<String, Double> = mapOf(), val topicAffinities: Map<String, Double> = mapOf(), val totalInteractions: Int = 0, val consecutiveSkips: Int = 0, val blockedTopics: Set<String> = setOf(), val blockedChannels: Set<String> = setOf(), val preferredTopics: Set<String> = setOf(), val hasCompletedOnboarding: Boolean = false, val lastPersona: String? = null, val personaStability: Int = 0, val idfWordFrequency: Map<String, Int> = mapOf(), val idfTotalDocuments: Int = 0, val watchHistoryMap: Map<String, Float> = mapOf(), val channelTopicProfiles: Map<String, Map<String, Double>> = mapOf(), val suppressedVideoIds: Map<String, Long> = mapOf(), val suppressedChannels: Map<String, Long> = mapOf(), val rejectionPatterns: Map<String, TSukiRejectionSignal> = mapOf(), val feedHistory: Map<String, TSukiFeedEntry> = mapOf(), val recentQueryTokens: List<Set<String>> = listOf(), val topicEvidence: Map<String, TSukiTopicEvidence> = mapOf(), val schemaVersion: Int = 1)
 
-enum class TSukiInteractionType { CLICK, DISLIKED, LIKED, NOT_INTERESTED, SKIPPED, WATCHED }
+enum class TSukiInteractionType { CLICK, DISLIKED, LIKED, MOOD_TAGGED, NOT_INTERESTED, SKIPPED, WATCHED }
 
 enum class TSukiPersona(val label: String, val icon: String, val description: String) {
     AUDIOPHILE("Audiófilo", "🎧", "Vives para la música. El Feed prioriza calidad sonora."),

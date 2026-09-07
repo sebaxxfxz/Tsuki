@@ -99,6 +99,7 @@ import kotlinx.serialization.json.Json
 
 import androidx.compose.material3.ExperimentalMaterial3Api
 import com.example.tsuki.ui.components.AddToPlaylistSheet
+import com.example.tsuki.ui.components.TagSongSheet
 import com.example.tsuki.data.local.WatchHistoryManager
 
 @Serializable
@@ -238,6 +239,7 @@ fun MusicScreen(
     val favManager = remember { com.example.tsuki.data.local.FavoritesManager.getInstance(context) }
 
     var playlistTrackTarget by remember { mutableStateOf<MediaTrack?>(null) }
+    var tagTrackTarget by remember { mutableStateOf<MediaTrack?>(null) }
     var openPlaylist by remember { mutableStateOf<TSukiPlaylist?>(null) }
     val personalCacheFile = remember { java.io.File(context.cacheDir, "tsuki_music_personalized.json") }
     val personalCacheJson = remember { Json { ignoreUnknownKeys = true } }
@@ -593,8 +595,15 @@ fun MusicScreen(
         playlistTrackTarget?.let { track ->
             AddToPlaylistSheet(
                 track = track,
-                onDismiss = { playlistTrackTarget = null }
+                onDismiss = { playlistTrackTarget = null },
+                onTag = {
+                    tagTrackTarget = playlistTrackTarget
+                    playlistTrackTarget = null
+                }
             )
+        }
+        tagTrackTarget?.let { track ->
+            TagSongSheet(track = track, onDismiss = { tagTrackTarget = null })
         }
         return
     }
@@ -1104,7 +1113,14 @@ fun MusicScreen(
     playlistTrackTarget?.let { track ->
         AddToPlaylistSheet(
             track = track,
-            onDismiss = { playlistTrackTarget = null }
+            onDismiss = { playlistTrackTarget = null },
+            onTag = {
+                tagTrackTarget = playlistTrackTarget
+                playlistTrackTarget = null
+            }
         )
+    }
+    tagTrackTarget?.let { track ->
+        TagSongSheet(track = track, onDismiss = { tagTrackTarget = null })
     }
 }

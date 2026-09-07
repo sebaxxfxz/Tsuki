@@ -5,7 +5,13 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -24,15 +30,16 @@ import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Movie
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.rounded.Movie
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -40,11 +47,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
@@ -52,6 +61,7 @@ import com.example.tsuki.domain.model.MediaTrack
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun MiniPlayer(
     track: MediaTrack?,
@@ -82,6 +92,10 @@ fun MiniPlayer(
         if (track != null) {
             val interactionSource = androidx.compose.runtime.remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
             val isPressed by interactionSource.collectIsPressedAsState()
+            val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+            fun triggerHaptic() {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            }
             val scale by androidx.compose.animation.core.animateFloatAsState(
                 targetValue = if (isPressed) 0.98f else 1f,
                 animationSpec = M3MotionTokens.CardPressSpring,
@@ -107,12 +121,7 @@ fun MiniPlayer(
             androidx.compose.material3.Surface(
                 shape = RoundedCornerShape(26.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                tonalElevation = 6.dp,
-                shadowElevation = 8.dp,
-                border = androidx.compose.foundation.BorderStroke(
-                    1.dp,
-                    MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
-                ),
+                shadowElevation = 6.dp,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(68.dp)
@@ -141,14 +150,14 @@ fun MiniPlayer(
                             onDragEnd = {
                                 if (isHorizontal == true) {
                                     when {
-                                        totalX < -70.dp.toPx() -> { resetDrag(); onNextClick() }
-                                        totalX > 70.dp.toPx() -> { resetDrag(); onPreviousClick() }
+                                        totalX < -70.dp.toPx() -> { resetDrag(); triggerHaptic(); onNextClick() }
+                                        totalX > 70.dp.toPx() -> { resetDrag(); triggerHaptic(); onPreviousClick() }
                                         else -> resetDrag()
                                     }
                                 } else if (isHorizontal == false) {
                                     when {
-                                        totalY < -60.dp.toPx() -> { resetDrag(); onClick() }
-                                        totalY > 80.dp.toPx() -> { resetDrag(); onDismiss() }
+                                        totalY < -60.dp.toPx() -> { resetDrag(); triggerHaptic(); onClick() }
+                                        totalY > 80.dp.toPx() -> { resetDrag(); triggerHaptic(); onDismiss() }
                                         else -> resetDrag()
                                     }
                                 } else {
@@ -198,39 +207,19 @@ fun MiniPlayer(
                 ) {
                     val defaultProgress = if (duration > 0) (currentPosition.toFloat() / duration.toFloat()).coerceIn(0f, 1f) else 0f
 
-                    val infiniteTransition = androidx.compose.animation.core.rememberInfiniteTransition(label = "MiniVinylSpin")
-                    val spinAngle by infiniteTransition.animateFloat(
-                        initialValue = 0f,
-                        targetValue = 360f,
-                        animationSpec = androidx.compose.animation.core.infiniteRepeatable(
-                            animation = androidx.compose.animation.core.tween(durationMillis = 8000, easing = androidx.compose.animation.core.LinearEasing),
-                            repeatMode = androidx.compose.animation.core.RepeatMode.Restart
-                        ),
-                        label = "MiniVinylAngle"
-                    )
-
                     Box(
-                        modifier = Modifier.size(46.dp),
+                        modifier = Modifier.size(50.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        androidx.compose.material3.CircularProgressIndicator(
-                            progress = { progressProvider?.invoke() ?: defaultProgress },
-                            modifier = Modifier.fillMaxSize(),
-                            strokeWidth = 2.5.dp,
-                            color = MaterialTheme.colorScheme.primary,
-                            trackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                            strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
+                        WavyCircularProgressIndicator(
+                            progressProvider = { progressProvider?.invoke() ?: defaultProgress },
+                            isPlaying = isPlaying,
+                            modifier = Modifier.fillMaxSize()
                         )
                         Box(
                             modifier = Modifier
-                                .size(36.dp)
-                                .clip(CircleShape)
-                                .graphicsLayer {
-                                    if (isPlaying) {
-                                        rotationZ = spinAngle
-                                    }
-                                }
-                                .background(MaterialTheme.colorScheme.surfaceContainerHighest),
+                                .size(38.dp)
+                                .clip(CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
                             AsyncImage(
@@ -251,48 +240,53 @@ fun MiniPlayer(
                         Text(
                             text = track.title,
                             style = MaterialTheme.typography.titleSmall.copy(
-                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                                fontSize = androidx.compose.ui.unit.TextUnit(14f, androidx.compose.ui.unit.TextUnitType.Sp)
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
                             ),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.basicMarquee(iterations = 3)
                         )
                         Text(
                             text = track.artist,
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                fontSize = androidx.compose.ui.unit.TextUnit(12f, androidx.compose.ui.unit.TextUnitType.Sp)
-                            ),
+                            style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                     }
 
-                    if (isVideoMode || track.isVideoItem == true) {
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = isVideoMode || track.isVideoItem == true,
+                        enter = expandHorizontally(animationSpec = M3MotionTokens.spatialDefault()) + fadeIn(),
+                        exit = shrinkHorizontally(animationSpec = M3MotionTokens.spatialDefault()) + fadeOut()
+                    ) {
                         IconButton(
                             onClick = onVideoToggleClick,
                             modifier = Modifier.size(36.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Movie,
+                                imageVector = Icons.Rounded.Movie,
                                 contentDescription = "Cambiar a video",
                                 modifier = Modifier.size(22.dp),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        Spacer(modifier = Modifier.width(2.dp))
                     }
 
-                    IconButton(
+                    FilledIconButton(
                         onClick = onPlayPauseClick,
-                        modifier = Modifier.size(38.dp)
+                        modifier = Modifier.size(40.dp),
+                        colors = IconButtonDefaults.filledIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
                     ) {
                         if (isBuffering) {
                             CircularProgressIndicator(
                                 modifier = Modifier.size(20.dp),
                                 strokeWidth = 2.2.dp,
-                                color = MaterialTheme.colorScheme.primary
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
                         } else {
                             androidx.compose.animation.AnimatedContent(
@@ -304,10 +298,9 @@ fun MiniPlayer(
                                 label = "MiniPlayPauseAnim"
                             ) { playing ->
                                 Icon(
-                                    imageVector = if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                    imageVector = if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                                     contentDescription = if (playing) "Pausar" else "Reproducir",
-                                    modifier = Modifier.size(24.dp),
-                                    tint = MaterialTheme.colorScheme.onSurface
+                                    modifier = Modifier.size(22.dp)
                                 )
                             }
                         }
@@ -318,7 +311,7 @@ fun MiniPlayer(
                         modifier = Modifier.size(38.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.SkipNext,
+                            imageVector = Icons.Rounded.SkipNext,
                             contentDescription = "Siguiente",
                             modifier = Modifier.size(24.dp),
                             tint = MaterialTheme.colorScheme.onSurface
@@ -326,6 +319,85 @@ fun MiniPlayer(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun WavyCircularProgressIndicator(
+    progressProvider: () -> Float,
+    isPlaying: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val density = androidx.compose.ui.platform.LocalDensity.current
+
+    val phase: Float = if (isPlaying) {
+        val infiniteTransition = androidx.compose.animation.core.rememberInfiniteTransition(label = "MiniWavePhase")
+        val animPhase by infiniteTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = (2 * Math.PI).toFloat(),
+            animationSpec = androidx.compose.animation.core.infiniteRepeatable(
+                animation = androidx.compose.animation.core.tween(durationMillis = 1400, easing = androidx.compose.animation.core.LinearEasing),
+                repeatMode = androidx.compose.animation.core.RepeatMode.Restart
+            ),
+            label = "MiniWaveAngle"
+        )
+        animPhase
+    } else 0f
+
+    val amplitude by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (isPlaying) with(density) { 2.dp.toPx() } else with(density) { 0.7.dp.toPx() },
+        animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.75f, stiffness = 300f),
+        label = "MiniWaveAmplitude"
+    )
+
+    val activeColor = MaterialTheme.colorScheme.primary
+    val trackColor = MaterialTheme.colorScheme.surfaceVariant
+
+    androidx.compose.foundation.Canvas(modifier = modifier) {
+        val effectiveProgress = progressProvider().coerceIn(0f, 1f)
+        val strokeWidth = 2.8.dp.toPx()
+        val ringRadius = (size.minDimension - strokeWidth) / 2f
+        val center = androidx.compose.ui.geometry.Offset(size.width / 2f, size.height / 2f)
+        val startAngle = -Math.PI.toFloat() / 2f
+        val sweep = effectiveProgress * 2f * Math.PI.toFloat()
+        val waveCount = 22f
+
+        drawCircle(
+            color = trackColor.copy(alpha = 0.55f),
+            radius = ringRadius,
+            center = center,
+            style = androidx.compose.ui.graphics.drawscope.Stroke(
+                width = strokeWidth,
+                cap = androidx.compose.ui.graphics.StrokeCap.Round
+            )
+        )
+
+        if (sweep > 0.05f) {
+            val wavePath = androidx.compose.ui.graphics.Path()
+            val steps = 90
+            var i = 0
+            while (i <= steps) {
+                val t = i.toFloat() / steps
+                val angle = startAngle + sweep * t
+                val offset = amplitude * kotlin.math.sin(waveCount * (angle - startAngle) - phase)
+                val r = ringRadius + offset
+                val point = androidx.compose.ui.geometry.Offset(
+                    x = center.x + r * kotlin.math.cos(angle),
+                    y = center.y + r * kotlin.math.sin(angle)
+                )
+                if (i == 0) wavePath.moveTo(point.x, point.y) else wavePath.lineTo(point.x, point.y)
+                i++
+            }
+            drawPath(
+                path = wavePath,
+                color = activeColor,
+                style = androidx.compose.ui.graphics.drawscope.Stroke(
+                    width = strokeWidth,
+                    cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                    join = androidx.compose.ui.graphics.StrokeJoin.Round
+                )
+            )
         }
     }
 }

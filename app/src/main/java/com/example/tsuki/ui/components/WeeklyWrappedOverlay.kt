@@ -93,7 +93,10 @@ fun WrappedBadgeButton(size: Dp = 42.dp, onClick: () -> Unit) {
 fun WeeklyWrappedOverlay(
     week: WatchHistoryManager.WeeklyWrapped,
     isCurrentWeek: Boolean,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    titleText: String = "TU WRAPPED",
+    periodLabel: String? = null,
+    badgeText: String = "Esta semana"
 ) {
     Dialog(
         onDismissRequest = onDismiss,
@@ -172,13 +175,13 @@ fun WeeklyWrappedOverlay(
                                 .graphicsLayer { alpha = heroAlpha; scaleX = heroScale; scaleY = heroScale }
                         ) {
                             Text(
-                                "TU WRAPPED",
+                                titleText,
                                 style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Black, letterSpacing = 4.sp),
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
                             )
                             Spacer(Modifier.height(6.dp))
                             Text(
-                                "Semana ${rangeFormatter.format(Date(week.weekStartMs))} – ${rangeFormatter.format(Date(week.weekStartMs + 6L * 86400000L))}",
+                                periodLabel ?: "Semana ${rangeFormatter.format(Date(week.weekStartMs))} – ${rangeFormatter.format(Date(week.weekStartMs + 6L * 86400000L))}",
                                 style = MaterialTheme.typography.titleMedium,
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f)
                             )
@@ -197,7 +200,7 @@ fun WeeklyWrappedOverlay(
                                 Spacer(Modifier.height(10.dp))
                                 Surface(shape = CircleShape, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f)) {
                                     Text(
-                                        "Esta semana",
+                                        badgeText,
                                         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
                                     )

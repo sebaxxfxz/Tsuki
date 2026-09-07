@@ -97,6 +97,7 @@ import com.example.tsuki.playback.PlayerController
 import com.example.tsuki.shazam.MusicRecognizer
 import com.example.tsuki.shazam.RecognitionOutcome
 import com.example.tsuki.ui.components.AddToPlaylistSheet
+import com.example.tsuki.ui.components.TagSongSheet
 import com.example.tsuki.ui.components.M3MotionTokens
 import com.example.tsuki.ui.components.M3WavyLinearProgressIndicator
 import com.example.tsuki.ui.components.PermissionRationaleSheet
@@ -159,6 +160,7 @@ fun RecognitionScreen(
     var errorText by remember { mutableStateOf<String?>(null) }
     var listenJob by remember { mutableStateOf<Job?>(null) }
     var playlistTrack by remember { mutableStateOf<MediaTrack?>(null) }
+    var tagTrackTarget by remember { mutableStateOf<MediaTrack?>(null) }
     var autoStarted by remember { mutableStateOf(false) }
     var pendingPermission by remember { mutableStateOf(false) }
 
@@ -813,8 +815,15 @@ fun RecognitionScreen(
         if (sheetTrack != null) {
             AddToPlaylistSheet(
                 track = sheetTrack,
-                onDismiss = { playlistTrack = null }
+                onDismiss = { playlistTrack = null },
+                onTag = {
+                    tagTrackTarget = playlistTrack
+                    playlistTrack = null
+                }
             )
+        }
+        tagTrackTarget?.let { track ->
+            TagSongSheet(track = track, onDismiss = { tagTrackTarget = null })
         }
 
         if (showMicRationale) {

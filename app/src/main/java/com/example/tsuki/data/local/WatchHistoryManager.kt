@@ -7,6 +7,7 @@ import android.database.sqlite.SQLiteOpenHelper
 import com.example.tsuki.domain.model.MediaTrack
 import com.example.tsuki.domain.model.MediaType
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 import java.util.Calendar
@@ -79,6 +80,23 @@ class WatchHistoryManager private constructor(context: Context) {
     private val _historyVersion = MutableStateFlow(System.currentTimeMillis())
     val historyVersion: StateFlow<Long> = _historyVersion.asStateFlow()
 
+    @Volatile
+    var privateMode: Boolean = false
+        private set
+
+    private val privacyScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.SupervisorJob())
+
+    init {
+        val prefs = PlayerPreferences(context.applicationContext)
+        privacyScope.launch {
+            prefs.privateMode.collect { privateMode = it }
+        }
+    }
+
+    fun setPrivateMode(enabled: Boolean) {
+        privateMode = enabled
+    }
+
     fun recentTracksFlow(limit: Int = 20, audioOnly: Boolean = false): Flow<List<MediaTrack>> {
         return historyVersion.map {
             val tracks = getRecentTracks(limit)
@@ -145,6 +163,7 @@ class WatchHistoryManager private constructor(context: Context) {
     }
 
     suspend fun recordPlayback(track: MediaTrack, watchDurationMs: Long = 0L) = withContext(Dispatchers.IO) {
+        if (privateMode) return@withContext
         try {
             val db = dbHelper.writableDatabase
             val videoId = track.videoId ?: track.id
@@ -343,6 +362,7 @@ class WatchHistoryManager private constructor(context: Context) {
         timestamp: Long = System.currentTimeMillis()
     ) = withContext(Dispatchers.IO) {
         if (playTimeMs <= 0) return@withContext
+        if (privateMode) return@withContext
         try {
             val db = dbHelper.writableDatabase
             val values = ContentValues().apply {
@@ -379,7 +399,7 @@ class WatchHistoryManager private constructor(context: Context) {
             val db = dbHelper.readableDatabase
             db.rawQuery(
                 """
-                SELECT COUNT(1),
+                SELECT COUNT(DISTINCT video_id || '_' || (timestamp / 300000)),
                        COALESCE(SUM(play_time_ms),0),
                        COUNT(DISTINCT video_id),
                        COUNT(DISTINCT artist)
@@ -523,13 +543,14 @@ class WatchHistoryManager private constructor(context: Context) {
         val fromTs = currentWeekStart - (weeksCount - 1) * 7L * 24L * 3600L * 1000L
         val weekMs = HashMap<Long, Long>()
         val weekPlays = HashMap<Long, Int>()
+        val weekSessions = HashMap<Long, HashSet<String>>()
         val songAgg = HashMap<Long, HashMap<String, WeekAgg>>()
         val artistAgg = HashMap<Long, HashMap<String, WeekAgg>>()
         try {
             val db = dbHelper.readableDatabase
             db.query(
                 WatchHistoryDbHelper.TABLE_PLAY_EVENTS,
-                arrayOf("timestamp", "play_time_ms", "title", "artist", "artwork_url"),
+                arrayOf("timestamp", "play_time_ms", "title", "artist", "artwork_url", "video_id"),
                 "timestamp >= ?",
                 arrayOf(fromTs.toString()),
                 null, null, null
@@ -540,9 +561,12 @@ class WatchHistoryManager private constructor(context: Context) {
                     val title = cursor.getString(2) ?: ""
                     val artist = cursor.getString(3) ?: ""
                     val artwork = cursor.getString(4)
+                    val videoId = cursor.getString(5) ?: ""
                     val ws = startOfWeekLocal(ts)
                     weekMs[ws] = (weekMs[ws] ?: 0L) + ms
-                    weekPlays[ws] = (weekPlays[ws] ?: 0) + 1
+                    if (weekSessions.getOrPut(ws) { HashSet() }.add("${videoId}|${ts / 300000L}")) {
+                        weekPlays[ws] = (weekPlays[ws] ?: 0) + 1
+                    }
                     songAgg.getOrPut(ws) { HashMap() }.getOrPut("$title|$artist") { WeekAgg(title, artist, artwork) }.let {
                         it.plays += 1
                         it.ms += ms
@@ -568,6 +592,63 @@ class WatchHistoryManager private constructor(context: Context) {
             result.add(WeeklyWrapped(ws, weekMs[ws] ?: 0L, weekPlays[ws] ?: 0, songs, artists))
         }
         result.sortedByDescending { it.weekStartMs }
+    }
+
+    suspend fun getMonthlyWrapped(topLimit: Int = 5): WeeklyWrapped? = withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis()
+        val cal = Calendar.getInstance().apply {
+            timeInMillis = now
+            set(Calendar.DAY_OF_MONTH, 1)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val monthStart = cal.timeInMillis
+        var totalMs = 0L
+        var plays = 0
+        val sessions = HashSet<String>()
+        val songAgg = HashMap<String, WeekAgg>()
+        val artistAgg = HashMap<String, WeekAgg>()
+        try {
+            val db = dbHelper.readableDatabase
+            db.query(
+                WatchHistoryDbHelper.TABLE_PLAY_EVENTS,
+                arrayOf("timestamp", "play_time_ms", "title", "artist", "artwork_url", "video_id"),
+                "timestamp >= ?",
+                arrayOf(monthStart.toString()),
+                null, null, null
+            ).use { cursor ->
+                while (cursor.moveToNext()) {
+                    val ts = cursor.getLong(0)
+                    val ms = cursor.getLong(1)
+                    val title = cursor.getString(2) ?: ""
+                    val artist = cursor.getString(3) ?: ""
+                    val artwork = cursor.getString(4)
+                    val videoId = cursor.getString(5) ?: ""
+                    totalMs += ms
+                    if (sessions.add("${videoId}|${ts / 300000L}")) plays += 1
+                    songAgg.getOrPut("$title|$artist") { WeekAgg(title, artist, artwork) }.let {
+                        it.plays += 1
+                        it.ms += ms
+                    }
+                    artistAgg.getOrPut(artist) { WeekAgg(artist, artist, artwork) }.let {
+                        it.plays += 1
+                        it.ms += ms
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+        if (plays == 0) return@withContext null
+        val songs = songAgg.values
+            .sortedWith(compareByDescending<WeekAgg> { it.plays }.thenByDescending { it.ms })
+            .take(topLimit)
+            .map { TopEntry(it.title, it.artist, it.artworkUrl, it.plays, it.ms) }
+        val artists = artistAgg.values
+            .sortedWith(compareByDescending<WeekAgg> { it.ms }.thenByDescending { it.plays })
+            .take(topLimit)
+            .map { TopEntry(it.title, "", it.artworkUrl, it.plays, it.ms) }
+        WeeklyWrapped(monthStart, totalMs, plays, songs, artists)
     }
 
     private fun startOfDayLocal(timestamp: Long): Long {

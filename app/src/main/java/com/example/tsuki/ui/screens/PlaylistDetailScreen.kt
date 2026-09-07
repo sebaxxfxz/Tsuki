@@ -58,7 +58,11 @@ import androidx.compose.material.icons.rounded.Radio
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Shuffle
+import androidx.compose.material.icons.rounded.TableChart
 import androidx.compose.material.icons.rounded.Videocam
+import com.example.tsuki.playlistimport.PlaylistExporters
+import com.example.tsuki.ui.player.SoundSheetCard
+import com.example.tsuki.ui.player.SoundSheetRow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -148,7 +152,8 @@ fun PlaylistDetailScreen(
     onTrackClick: (MediaTrack) -> Unit,
     onExpandPlayer: () -> Unit,
     onBack: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    initialTracks: List<MediaTrack>? = null
 ) {
     var tracks by remember { mutableStateOf<List<MediaTrack>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
@@ -181,6 +186,34 @@ fun PlaylistDetailScreen(
     var showCoverPreview by remember { mutableStateOf(false) }
     var longPressedTrack by remember { mutableStateOf<MediaTrack?>(null) }
     var pendingDeleteTrack by remember { mutableStateOf<MediaTrack?>(null) }
+    val exportM3uLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("audio/x-mpegurl")) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val ok = withContext(Dispatchers.IO) {
+                    runCatching {
+                        context.contentResolver.openOutputStream(uri)?.use {
+                            it.write(PlaylistExporters.exportToM3u(tracks).toByteArray(Charsets.UTF_8))
+                        } != null
+                    }.getOrDefault(false)
+                }
+                android.widget.Toast.makeText(context, if (ok) "Playlist exportada (M3U)" else "No se pudo exportar", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+    val exportCsvLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val ok = withContext(Dispatchers.IO) {
+                    runCatching {
+                        context.contentResolver.openOutputStream(uri)?.use {
+                            it.write(PlaylistExporters.exportToCsv(tracks).toByteArray(Charsets.UTF_8))
+                        } != null
+                    }.getOrDefault(false)
+                }
+                android.widget.Toast.makeText(context, if (ok) "Playlist exportada (CSV)" else "No se pudo exportar", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
     LaunchedEffect(playlist.id) {
         coverFile = withContext(Dispatchers.IO) {
             playlistCoverFile(context, playlist.id).takeIf { it.exists() }
@@ -227,6 +260,12 @@ fun PlaylistDetailScreen(
     LaunchedEffect(playlist.id, retryKey) {
         isLoading = true
         loadFailed = false
+        if (initialTracks != null) {
+            isLocalPlaylist = false
+            tracks = initialTracks
+            isLoading = false
+            return@LaunchedEffect
+        }
         val cookieVal = cookie ?: ""
         val loaded = withContext(Dispatchers.IO) {
             if (playlist.id == "LM") {
@@ -543,99 +582,134 @@ fun PlaylistDetailScreen(
                                         ) {
                                             Icon(Icons.Rounded.MoreVert, contentDescription = "Más opciones")
                                         }
-                                        DropdownMenu(
-                                            expanded = showDockMenu,
-                                            onDismissRequest = { showDockMenu = false },
-                                            shape = RoundedCornerShape(24.dp),
-                                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                            tonalElevation = 3.dp
-                                        ) {
-                                            DropdownMenuItem(
-                                                text = { Text("Iniciar radio de la playlist") },
-                                                leadingIcon = { Icon(Icons.Rounded.Radio, contentDescription = null) },
-                                                onClick = {
-                                                    showDockMenu = false
-                                                    val first = tracks.firstOrNull()
-                                                    if (first != null) {
-                                                        if (!isOnline) {
-                                                            android.widget.Toast.makeText(context, "Sin conexión", android.widget.Toast.LENGTH_SHORT).show()
-                                                        } else {
-                                                            playerController?.playWithRadio(first, false)
-                                                            onExpandPlayer()
-                                                            android.widget.Toast.makeText(context, "Iniciando radio...", android.widget.Toast.LENGTH_SHORT).show()
-                                                        }
-                                                    }
-                                                }
-                                            )
-                                            DropdownMenuItem(
-                                                text = { Text("Añadir todo a la cola") },
-                                                leadingIcon = { Icon(Icons.AutoMirrored.Rounded.QueueMusic, contentDescription = null) },
-                                                onClick = {
-                                                    showDockMenu = false
-                                                    tracks.forEach { playerController?.addToQueue(it) }
-                                                    android.widget.Toast.makeText(context, "${tracks.size} canciones añadidas a la cola", android.widget.Toast.LENGTH_SHORT).show()
-                                                }
-                                            )
-                                            DropdownMenuItem(
-                                                text = { Text("Compartir") },
-                                                leadingIcon = { Icon(Icons.Rounded.Share, contentDescription = null) },
-                                                onClick = {
-                                                    showDockMenu = false
-                                                    sharePlaylist()
-                                                }
-                                            )
-                                            DropdownMenuItem(
-                                                text = { Text("Cambiar portada") },
-                                                leadingIcon = { Icon(Icons.Rounded.AddPhotoAlternate, contentDescription = null) },
-                                                onClick = {
-                                                    showDockMenu = false
-                                                    pickCover.launch("image/*")
-                                                }
-                                            )
-                                            if (coverFile != null) {
-                                                DropdownMenuItem(
-                                                    text = { Text("Quitar foto personalizada") },
-                                                    leadingIcon = { Icon(Icons.Rounded.Close, contentDescription = null) },
-                                                    onClick = {
-                                                        showDockMenu = false
-                                                        scope.launch {
-                                                            withContext(Dispatchers.IO) {
-                                                                runCatching { coverFile?.delete() }
+                                        if (showDockMenu) {
+                                            val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+                                            ModalBottomSheet(
+                                                onDismissRequest = { showDockMenu = false },
+                                                sheetState = sheetState,
+                                                containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+                                            ) {
+                                                Column(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .padding(horizontal = 16.dp)
+                                                        .padding(bottom = 24.dp),
+                                                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                                                ) {
+                                                    Text(
+                                                        text = displayTitle,
+                                                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                                                        color = MaterialTheme.colorScheme.onSurface,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis,
+                                                        modifier = Modifier.padding(start = 4.dp, bottom = 2.dp)
+                                                    )
+                                                    SoundSheetCard {
+                                                        SoundSheetRow(
+                                                            icon = Icons.Rounded.Radio,
+                                                            title = "Iniciar radio de la playlist",
+                                                            onClick = {
+                                                                showDockMenu = false
+                                                                val first = tracks.firstOrNull()
+                                                                if (first != null) {
+                                                                    if (!isOnline) {
+                                                                        android.widget.Toast.makeText(context, "Sin conexión", android.widget.Toast.LENGTH_SHORT).show()
+                                                                    } else {
+                                                                        playerController?.playWithRadio(first, false)
+                                                                        onExpandPlayer()
+                                                                        android.widget.Toast.makeText(context, "Iniciando radio...", android.widget.Toast.LENGTH_SHORT).show()
+                                                                    }
+                                                                }
                                                             }
-                                                            coverFile = null
-                                                            android.widget.Toast.makeText(context, "Portada restablecida", android.widget.Toast.LENGTH_SHORT).show()
+                                                        )
+                                                        SoundSheetRow(
+                                                            icon = Icons.AutoMirrored.Rounded.QueueMusic,
+                                                            title = "Añadir todo a la cola",
+                                                            onClick = {
+                                                                showDockMenu = false
+                                                                tracks.forEach { playerController?.addToQueue(it) }
+                                                                android.widget.Toast.makeText(context, "${tracks.size} canciones añadidas a la cola", android.widget.Toast.LENGTH_SHORT).show()
+                                                            }
+                                                        )
+                                                        SoundSheetRow(
+                                                            icon = Icons.Rounded.Share,
+                                                            title = "Compartir",
+                                                            onClick = {
+                                                                showDockMenu = false
+                                                                sharePlaylist()
+                                                            }
+                                                        )
+                                                        SoundSheetRow(
+                                                            icon = Icons.AutoMirrored.Rounded.PlaylistAdd,
+                                                            title = "Exportar M3U",
+                                                            onClick = {
+                                                                showDockMenu = false
+                                                                exportM3uLauncher.launch("${displayTitle}.m3u")
+                                                            }
+                                                        )
+                                                        SoundSheetRow(
+                                                            icon = Icons.Rounded.TableChart,
+                                                            title = "Exportar CSV",
+                                                            onClick = {
+                                                                showDockMenu = false
+                                                                exportCsvLauncher.launch("${displayTitle}.csv")
+                                                            }
+                                                        )
+                                                        SoundSheetRow(
+                                                            icon = Icons.Rounded.AddPhotoAlternate,
+                                                            title = "Cambiar portada",
+                                                            onClick = {
+                                                                showDockMenu = false
+                                                                pickCover.launch("image/*")
+                                                            }
+                                                        )
+                                                        if (coverFile != null) {
+                                                            SoundSheetRow(
+                                                                icon = Icons.Rounded.Close,
+                                                                title = "Quitar foto personalizada",
+                                                                onClick = {
+                                                                    showDockMenu = false
+                                                                    scope.launch {
+                                                                        withContext(Dispatchers.IO) {
+                                                                            runCatching { coverFile?.delete() }
+                                                                        }
+                                                                        coverFile = null
+                                                                        android.widget.Toast.makeText(context, "Portada restablecida", android.widget.Toast.LENGTH_SHORT).show()
+                                                                    }
+                                                                }
+                                                            )
+                                                        }
+                                                        if (!isLocalPlaylist && playlist.id != "LM" && !playlist.id.startsWith("mood:")) {
+                                                            SoundSheetRow(
+                                                                icon = Icons.AutoMirrored.Rounded.OpenInNew,
+                                                                title = "Abrir en YouTube Music",
+                                                                onClick = {
+                                                                    showDockMenu = false
+                                                                    openInYtm()
+                                                                }
+                                                            )
+                                                        }
+                                                        if (isLocalPlaylist) {
+                                                            SoundSheetRow(
+                                                                icon = Icons.Rounded.Edit,
+                                                                title = "Renombrar",
+                                                                onClick = {
+                                                                    showDockMenu = false
+                                                                    renameText = displayTitle
+                                                                    showRename = true
+                                                                }
+                                                            )
+                                                            SoundSheetRow(
+                                                                icon = Icons.Rounded.Delete,
+                                                                title = "Eliminar playlist",
+                                                                onClick = {
+                                                                    showDockMenu = false
+                                                                    showDeleteConfirm = true
+                                                                }
+                                                            )
                                                         }
                                                     }
-                                                )
-                                            }
-                                            if (!isLocalPlaylist && playlist.id != "LM") {
-                                                DropdownMenuItem(
-                                                    text = { Text("Abrir en YouTube Music") },
-                                                    leadingIcon = { Icon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = null) },
-                                                    onClick = {
-                                                        showDockMenu = false
-                                                        openInYtm()
-                                                    }
-                                                )
-                                            }
-                                            if (isLocalPlaylist) {
-                                                DropdownMenuItem(
-                                                    text = { Text("Renombrar") },
-                                                    leadingIcon = { Icon(Icons.Rounded.Edit, contentDescription = null) },
-                                                    onClick = {
-                                                        showDockMenu = false
-                                                        renameText = displayTitle
-                                                        showRename = true
-                                                    }
-                                                )
-                                                DropdownMenuItem(
-                                                    text = { Text("Eliminar playlist") },
-                                                    leadingIcon = { Icon(Icons.Rounded.Delete, contentDescription = null) },
-                                                    onClick = {
-                                                        showDockMenu = false
-                                                        showDeleteConfirm = true
-                                                    }
-                                                )
+                                                }
                                             }
                                         }
                                     }

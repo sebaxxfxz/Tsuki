@@ -77,6 +77,8 @@ class TSukiNeuroEngine private constructor(private val appContext: Context) {
             requireInstance().rank(candidates, userSubs)
         suspend fun onTrackInteraction(track: MediaTrack, type: TSukiInteractionType, percentWatched: Float = 0f) =
             requireInstance().onTrackInteraction(track, type, percentWatched)
+        suspend fun onArtistRejected(artist: String) =
+            requireInstance().onArtistRejected(artist)
         suspend fun completeOnboarding(selectedTopics: Set<String>) =
             requireInstance().completeOnboarding(selectedTopics)
         suspend fun bootstrapFromSubscriptions(context: Context, channelNames: List<String>) =
@@ -420,8 +422,9 @@ class TSukiNeuroEngine private constructor(private val appContext: Context) {
             val vec = cachedVectors.getOrPut(vid) {
                 textTokenizer.extractFeatures(track, idfSnap, activeBrain.channelTopicProfiles[chan])
             }
-            if (type == TSukiInteractionType.WATCHED || type == TSukiInteractionType.CLICK || type == TSukiInteractionType.LIKED) {
+            if (type == TSukiInteractionType.WATCHED || type == TSukiInteractionType.CLICK || type == TSukiInteractionType.LIKED || type == TSukiInteractionType.MOOD_TAGGED) {
                 val lr = if (type == TSukiInteractionType.LIKED) 0.20
+                else if (type == TSukiInteractionType.MOOD_TAGGED) 0.10
                 else if (type == TSukiInteractionType.WATCHED) (0.05 + percentWatched * 0.10).coerceAtMost(0.15)
                 else 0.05
                 val bucket = TSukiTimeBucket.current()
@@ -533,6 +536,20 @@ class TSukiNeuroEngine private constructor(private val appContext: Context) {
                     consecutiveSkips = 0
                 )
             }
+            triggerDebouncedPersist()
+        }
+    }
+
+    suspend fun onArtistRejected(artist: String) {
+        if (artist.isBlank()) return
+        stateMutex.withLock {
+            val scores = activeBrain.channelScores.toMutableMap()
+            val prev = scores[artist] ?: 0.0
+            scores[artist] = (prev * CHANNEL_EMA_DECAY - 0.15).coerceIn(-1.0, 1.0)
+            activeBrain = activeBrain.copy(
+                channelScores = scores,
+                totalInteractions = activeBrain.totalInteractions + 1
+            )
             triggerDebouncedPersist()
         }
     }

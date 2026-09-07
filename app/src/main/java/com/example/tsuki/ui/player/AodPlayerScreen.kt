@@ -16,6 +16,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -39,6 +40,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.BatteryFull
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.LockOpen
 import androidx.compose.material.icons.rounded.Pause
@@ -71,8 +73,11 @@ import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -308,7 +313,7 @@ fun AodPlayerScreen(
                 .graphicsLayer { alpha = contentAlpha }
                 .statusBarsPadding()
                 .navigationBarsPadding()
-                .padding(horizontal = 40.dp, vertical = 32.dp),
+                .padding(horizontal = 32.dp, vertical = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             AodClockWidget(
@@ -318,44 +323,71 @@ fun AodPlayerScreen(
                 onClick = { clockStyle = (clockStyle + 1) % 4; resetInteraction() }
             )
 
-            Spacer(modifier = Modifier.height(24.dp))
-
-            AsyncImage(
-                model = track.artworkUrl,
-                contentDescription = null,
-                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                modifier = Modifier
-                    .size(220.dp)
-                    .background(Color(0xFF141418), RoundedCornerShape(28.dp))
-            )
-
             Spacer(modifier = Modifier.height(20.dp))
+
+            Box(contentAlignment = Alignment.Center) {
+                Box(
+                    modifier = Modifier
+                        .size(300.dp)
+                        .background(
+                            androidx.compose.ui.graphics.Brush.radialGradient(
+                                listOf(
+                                    accentColor.copy(alpha = if (isPlaying) 0.30f else 0.16f),
+                                    Color.Transparent
+                                )
+                            ),
+                            CircleShape
+                        )
+                )
+                AsyncImage(
+                    model = track.artworkUrl,
+                    contentDescription = null,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier
+                        .size(236.dp)
+                        .background(Color(0xFF141418), RoundedCornerShape(32.dp))
+                )
+            }
+
+            Spacer(modifier = Modifier.height(22.dp))
 
             Text(
                 text = track.title,
+                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                 color = Color.White,
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Bold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
                 text = track.artist,
-                color = Color.White.copy(alpha = 0.65f),
-                fontSize = 15.sp,
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.White.copy(alpha = 0.6f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
 
             val lyricLine = rememberAodLyricLine(lyrics, positionMs)
-            if (!lyricLine.isNullOrBlank()) {
+            androidx.compose.animation.AnimatedContent(
+                targetState = lyricLine,
+                transitionSpec = {
+                    (androidx.compose.animation.slideInVertically(
+                        animationSpec = tween(280)
+                    ) { it / 2 } + fadeIn(tween(280)))
+                        .togetherWith(
+                            androidx.compose.animation.slideOutVertically(
+                                animationSpec = tween(280)
+                            ) { -it / 2 } + fadeOut(tween(200))
+                        )
+                },
+                label = "AodLyricLine",
+                modifier = Modifier.height(22.dp)
+            ) { line ->
                 Text(
-                    text = lyricLine,
-                    color = accentColor.copy(alpha = 0.85f),
-                    fontSize = 13.sp,
+                    text = line ?: "",
+                    color = accentColor.copy(alpha = 0.9f),
+                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 6.dp)
+                    overflow = TextOverflow.Ellipsis
                 )
             }
 
@@ -365,10 +397,11 @@ fun AodPlayerScreen(
                 positionMs = positionMs,
                 durationMs = durationMs,
                 accentColor = accentColor,
+                isPlaying = isPlaying,
                 onSeek = onSeek
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -376,18 +409,25 @@ fun AodPlayerScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = { resetInteraction(); onPrevious() }, modifier = Modifier.size(56.dp)) {
-                    Icon(Icons.Rounded.SkipPrevious, contentDescription = "Anterior", tint = Color.White, modifier = Modifier.size(36.dp))
+                    Icon(Icons.Rounded.SkipPrevious, contentDescription = "Anterior", tint = Color.White, modifier = Modifier.size(38.dp))
                 }
-                IconButton(onClick = { resetInteraction(); onPlayPause() }, modifier = Modifier.size(72.dp)) {
+                androidx.compose.material3.FilledIconButton(
+                    onClick = { resetInteraction(); onPlayPause() },
+                    shape = CircleShape,
+                    colors = androidx.compose.material3.IconButtonDefaults.filledIconButtonColors(
+                        containerColor = accentColor,
+                        contentColor = Color(0xFF101014)
+                    ),
+                    modifier = Modifier.size(74.dp)
+                ) {
                     Icon(
                         imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                         contentDescription = if (isPlaying) "Pausar" else "Reproducir",
-                        tint = accentColor,
-                        modifier = Modifier.size(52.dp)
+                        modifier = Modifier.size(40.dp)
                     )
                 }
                 IconButton(onClick = { resetInteraction(); onNext() }, modifier = Modifier.size(56.dp)) {
-                    Icon(Icons.Rounded.SkipNext, contentDescription = "Siguiente", tint = Color.White, modifier = Modifier.size(36.dp))
+                    Icon(Icons.Rounded.SkipNext, contentDescription = "Siguiente", tint = Color.White, modifier = Modifier.size(38.dp))
                 }
             }
 
@@ -469,31 +509,79 @@ private fun AodClockWidget(styleIndex: Int, batteryLevel: Int, accentColor: Colo
     val context = LocalContext.current
     var timeText by remember { mutableStateOf("") }
     var dateText by remember { mutableStateOf("") }
+    var is24h by remember { mutableStateOf(true) }
 
     LaunchedEffect(Unit) {
         while (true) {
             val calendar = java.util.Calendar.getInstance()
-            val hourFormat = if (android.text.format.DateFormat.is24HourFormat(context)) "HH:mm" else "h:mm a"
+            is24h = android.text.format.DateFormat.is24HourFormat(context)
+            val hourFormat = if (is24h) "HH:mm" else "h:mm a"
             timeText = android.text.format.DateFormat.format(hourFormat, calendar).toString()
             dateText = android.text.format.DateFormat.format("EEE, MMM d", calendar).toString()
             delay(1000L)
         }
     }
 
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.pointerInput(Unit) { detectTapGestures(onTap = { onClick() }) }) {
-        when (styleIndex) {
-            0 -> Text(timeText, color = Color.White, fontSize = 44.sp, fontWeight = FontWeight.Black, fontFamily = FontFamily.Monospace)
-            1 -> Text(timeText, color = Color.White, fontSize = 38.sp, fontWeight = FontWeight.Medium)
-            2 -> Text(timeText, color = Color.White, fontSize = 48.sp, fontWeight = FontWeight.ExtraLight)
-            else -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                val parts = timeText.split(":")
-                Text(parts.getOrElse(0) { "" }, color = Color.White, fontSize = 64.sp, fontWeight = FontWeight.Bold, lineHeight = 60.sp)
-                Text(parts.getOrElse(1) { "" }, color = Color.White.copy(alpha = 0.80f), fontSize = 64.sp, fontWeight = FontWeight.Bold, lineHeight = 60.sp)
+    val parts = timeText.split(" ")
+    val mainPart = parts.getOrElse(0) { timeText }
+    val amPm = if (is24h) "" else parts.getOrElse(1) { "" }
+    val timeSegments = mainPart.split(":")
+    val hourPart = timeSegments.getOrElse(0) { "" }
+    val minutePart = timeSegments.getOrElse(1) { "" }
+
+    fun styledTime(hourSize: androidx.compose.ui.unit.TextUnit, minuteSize: androidx.compose.ui.unit.TextUnit = hourSize, weight: FontWeight = FontWeight.Bold) =
+        buildAnnotatedString {
+            withStyle(SpanStyle(color = Color.White, fontSize = hourSize, fontWeight = weight)) {
+                append(hourPart)
+            }
+            withStyle(SpanStyle(color = accentColor, fontSize = hourSize * 0.9f, fontWeight = weight)) {
+                append(":")
+            }
+            withStyle(SpanStyle(color = Color.White, fontSize = minuteSize, fontWeight = weight)) {
+                append(minutePart)
             }
         }
-        Text(dateText, color = Color.White.copy(alpha = 0.65f), fontSize = 14.sp)
+
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.pointerInput(Unit) { detectTapGestures(onTap = { onClick() }) }) {
+        when (styleIndex) {
+            0 -> Row(verticalAlignment = Alignment.Bottom) {
+                Text(styledTime(54.sp, 54.sp, FontWeight.Light), lineHeight = 54.sp)
+                if (amPm.isNotBlank()) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(amPm, color = accentColor.copy(alpha = 0.9f), fontSize = 16.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(bottom = 6.dp))
+                }
+            }
+            1 -> Text(styledTime(40.sp, 40.sp, FontWeight.Medium), lineHeight = 40.sp)
+            2 -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(hourPart, color = Color.White.copy(alpha = 0.55f), fontSize = 20.sp, fontWeight = FontWeight.Light)
+                    Text("·", color = accentColor, fontSize = 20.sp)
+                    if (amPm.isNotBlank()) Text(amPm, color = Color.White.copy(alpha = 0.55f), fontSize = 20.sp, fontWeight = FontWeight.Light)
+                }
+                Text(minutePart, color = Color.White, fontSize = 76.sp, fontWeight = FontWeight.Black, lineHeight = 70.sp)
+            }
+            else -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(hourPart, color = Color.White, fontSize = 58.sp, fontWeight = FontWeight.Bold, lineHeight = 56.sp)
+                Text(minutePart, color = accentColor, fontSize = 58.sp, fontWeight = FontWeight.Bold, lineHeight = 56.sp)
+            }
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(dateText, color = Color.White.copy(alpha = 0.55f), style = MaterialTheme.typography.labelMedium)
         if (batteryLevel >= 0) {
-            Text("Batería $batteryLevel%", color = accentColor.copy(alpha = 0.85f), fontSize = 12.sp)
+            Spacer(modifier = Modifier.height(2.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Icon(
+                    Icons.Rounded.BatteryFull,
+                    contentDescription = null,
+                    tint = accentColor.copy(alpha = 0.85f),
+                    modifier = Modifier.size(14.dp)
+                )
+                Text(
+                    "$batteryLevel%",
+                    color = accentColor.copy(alpha = 0.85f),
+                    style = MaterialTheme.typography.labelMedium
+                )
+            }
         }
     }
 }
@@ -519,25 +607,28 @@ private fun rememberAodLyricLine(lyrics: List<LyricsEntry>, positionMs: Long): S
 }
 
 @Composable
-private fun AodSliderSection(positionMs: Long, durationMs: Long, accentColor: Color, onSeek: (Long) -> Unit) {
-    var localValue by remember(durationMs) { mutableFloatStateOf(-1f) }
-    val shown = if (localValue >= 0f) localValue.toLong() else positionMs.coerceIn(0L, durationMs.coerceAtLeast(1L))
+private fun AodSliderSection(positionMs: Long, durationMs: Long, accentColor: Color, isPlaying: Boolean, onSeek: (Long) -> Unit) {
+    var localFraction by remember(durationMs) { mutableFloatStateOf(-1f) }
+    val fraction = if (localFraction >= 0f) localFraction.coerceIn(0f, 1f) else {
+        if (durationMs > 0) positionMs.coerceIn(0L, durationMs).toFloat() / durationMs else 0f
+    }
+    val shown = (fraction * durationMs.coerceAtLeast(1L)).toLong()
 
     Column(modifier = Modifier.fillMaxWidth()) {
-        Slider(
-            value = shown.toFloat(),
-            onValueChange = { localValue = it },
+        com.example.tsuki.ui.components.M3WavySlider(
+            value = fraction,
+            onValueChange = { localFraction = it },
             onValueChangeFinished = {
-                onSeek(localValue.toLong())
-                localValue = -1f
+                onSeek((localFraction.coerceIn(0f, 1f) * durationMs).toLong())
+                localFraction = -1f
             },
-            valueRange = 0f..durationMs.coerceAtLeast(1L).toFloat(),
-            colors = SliderDefaults.colors(
-                thumbColor = accentColor,
-                activeTrackColor = accentColor,
-                inactiveTrackColor = Color.White.copy(alpha = 0.30f)
-            ),
-            enabled = durationMs > 0
+            isPlaying = isPlaying && durationMs > 0,
+            activeTrackColor = accentColor,
+            inactiveTrackColor = Color.White.copy(alpha = 0.28f),
+            thumbColor = Color.White,
+            waveAmplitude = 3.dp,
+            waveLength = 30.dp,
+            trackHeight = 4.dp
         )
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(formatAodTime(shown), color = Color.White.copy(alpha = 0.60f), fontSize = 12.sp)

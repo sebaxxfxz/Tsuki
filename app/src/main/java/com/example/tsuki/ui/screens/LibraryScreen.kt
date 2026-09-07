@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Label
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.Shuffle
@@ -70,6 +71,7 @@ import com.example.tsuki.auth.YouTubeAuthManager
 import com.example.tsuki.domain.model.MediaTrack
 import com.example.tsuki.network.TSukiInnerTubeClient
 import com.example.tsuki.ui.components.AddToPlaylistSheet
+import com.example.tsuki.ui.components.TagSongSheet
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -89,6 +91,7 @@ fun LibraryScreen(
     modifier: Modifier = Modifier
 ) {
     var selectedTrackForPlaylist by remember { mutableStateOf<MediaTrack?>(null) }
+    var tagTrackTarget by remember { mutableStateOf<MediaTrack?>(null) }
     val context = LocalContext.current
     val connectivity = remember { ConnectivityObserver.getInstance(context) }
     val isOnline by connectivity.networkStatus.collectAsStateWithLifecycle(initialValue = connectivity.isCurrentlyOnline())
@@ -100,6 +103,28 @@ fun LibraryScreen(
     var newPlaylistName by remember { mutableStateOf("") }
     var playlistToDelete by remember { mutableStateOf<LocalPlaylistManager.PlaylistSummary?>(null) }
     var selectedPlaylistForDetail by remember { mutableStateOf<TSukiPlaylist?>(null) }
+    var selectedMoodTracks by remember { mutableStateOf<List<MediaTrack>>(emptyList()) }
+    var moodGroups by remember { mutableStateOf<List<Pair<String, List<MediaTrack>>>>(emptyList()) }
+    val tagsManager = remember { com.example.tsuki.data.local.TrackTagsManager.getInstance(context) }
+    LaunchedEffect(Unit) {
+        tagsManager.tagsVersion.collect {
+            moodGroups = tagsManager.getAllTags()
+                .groupBy { it.mood.replaceFirstChar { c -> c.uppercase() } }
+                .map { (mood, entries) ->
+                    mood to entries.map { e ->
+                        MediaTrack(
+                            id = e.videoId,
+                            title = e.title,
+                            artist = e.artist,
+                            artworkUrl = "https://i.ytimg.com/vi/${e.videoId}/hqdefault.jpg",
+                            isLocal = false,
+                            mediaType = com.example.tsuki.domain.model.MediaType.STREAM_AUDIO,
+                            videoId = e.videoId
+                        )
+                    }
+                }
+        }
+    }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
 
     val authManager = remember { YouTubeAuthManager(context) }
@@ -244,6 +269,41 @@ fun LibraryScreen(
                             Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(6.dp))
                             Text("Crear Playlist")
+                        }
+                    }
+
+                    if (moodGroups.isNotEmpty()) {
+                        Column(modifier = Modifier.padding(bottom = 4.dp)) {
+                            Text(
+                                text = "Por tu mood",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onBackground,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                            )
+                            androidx.compose.foundation.lazy.LazyRow(
+                                contentPadding = PaddingValues(horizontal = 16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                items(moodGroups.size, key = { moodGroups[it].first }) { index ->
+                                    val (mood, tracks) = moodGroups[index]
+                                    LibraryFilterChip(
+                                        title = mood,
+                                        count = tracks.size,
+                                        icon = androidx.compose.material.icons.Icons.Rounded.Label,
+                                        selected = false,
+                                        onClick = {
+                                            selectedMoodTracks = tracks
+                                            selectedPlaylistForDetail = TSukiPlaylist(
+                                                id = "mood:${mood.lowercase()}",
+                                                title = mood,
+                                                subtitle = "Tus etiquetas • ${tracks.size} canciones",
+                                                thumbnailUrl = tracks.firstOrNull()?.artworkUrl
+                                            )
+                                        }
+                                    )
+                                }
+                            }
                         }
                     }
 
@@ -562,15 +622,23 @@ fun LibraryScreen(
             playerController = playerController,
             onTrackClick = { track -> onTrackClick(track, listOf(track)) },
             onExpandPlayer = onExpandPlayer,
-            onBack = { selectedPlaylistForDetail = null }
+            onBack = { selectedPlaylistForDetail = null },
+            initialTracks = if (pl.id.startsWith("mood:")) selectedMoodTracks else null
         )
     }
 
         selectedTrackForPlaylist?.let { track ->
             AddToPlaylistSheet(
                 track = track,
-                onDismiss = { selectedTrackForPlaylist = null }
+                onDismiss = { selectedTrackForPlaylist = null },
+                onTag = {
+                    tagTrackTarget = selectedTrackForPlaylist
+                    selectedTrackForPlaylist = null
+                }
             )
+        }
+        tagTrackTarget?.let { track ->
+            TagSongSheet(track = track, onDismiss = { tagTrackTarget = null })
         }
     }
 }

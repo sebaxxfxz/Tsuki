@@ -93,6 +93,7 @@ class PlayerController private constructor(private val context: Context) {
     private val meteredNetworkMonitor = com.example.tsuki.network.MeteredNetworkMonitor(context)
 
     @Volatile private var preferredLyricsProvider: String = com.example.tsuki.data.local.PlayerPreferences.LYRICS_PROVIDER_AUTO
+    @Volatile private var precacheLyricsEnabled: Boolean = true
     @Volatile private var autoQueueEnabled: Boolean = true
     @Volatile private var dataSaverActive: Boolean = false
     private var autoQueueAttemptedForIndex: Int = -1
@@ -218,6 +219,11 @@ class PlayerController private constructor(private val context: Context) {
             playerPreferences.preferredLyricsProvider.collect { provider ->
                 preferredLyricsProvider = provider
                 _uiState.update { it.copy(lyricsProvider = provider) }
+            }
+        }
+        scope.launch {
+            playerPreferences.precacheLyrics.collect { enabled ->
+                precacheLyricsEnabled = enabled
             }
         }
         scope.launch {
@@ -1686,7 +1692,7 @@ class PlayerController private constructor(private val context: Context) {
 
         val state = _uiState.value
         val currentIndex = state.queue.indexOfFirst { it.id == track.id }
-        if (currentIndex >= 0 && currentIndex + 1 < state.queue.size) {
+        if (precacheLyricsEnabled && currentIndex >= 0 && currentIndex + 1 < state.queue.size) {
             val upcoming = state.queue.subList(currentIndex + 1, state.queue.size)
             lyricsPreloadManager.preloadNext(
                 tracks = upcoming,

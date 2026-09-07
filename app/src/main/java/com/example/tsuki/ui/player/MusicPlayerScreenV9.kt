@@ -27,6 +27,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.FormatListBulleted
 import androidx.compose.material.icons.rounded.Bedtime
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.BlurOn
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.DownloadDone
@@ -53,6 +54,10 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -69,7 +74,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.rememberGraphicsLayer
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.unit.roundToIntSize
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -78,13 +89,19 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.material3.windowsizeclass.WindowSizeClass
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import coil3.compose.AsyncImage
 import com.example.tsuki.ui.components.AddToPlaylistSheet
+import com.example.tsuki.ui.components.TagSongSheet
 import com.example.tsuki.domain.model.MediaTrack
 import com.example.tsuki.playback.PlayerController
 import com.example.tsuki.ui.theme.extractPlayerColors
@@ -116,6 +133,9 @@ fun MusicPlayerScreenV9(
     var showEqualizerDialog by remember { mutableStateOf(false) }
     var showSoundSheet by remember { mutableStateOf(false) }
     var showAddToPlaylist by remember { mutableStateOf(false) }
+    var showTagSheet by remember { mutableStateOf(false) }
+    var showShareCard by remember { mutableStateOf(false) }
+    val shareGraphicsLayer = rememberGraphicsLayer()
     var showAodMode by remember { mutableStateOf(false) }
     var isFavorite by remember { mutableStateOf(false) }
     val favoritesManager = remember { com.example.tsuki.data.local.FavoritesManager.getInstance(context) }
@@ -166,7 +186,7 @@ fun MusicPlayerScreenV9(
         }
     }
 
-    val shareTrack: () -> Unit = {
+    val shareTrackText: () -> Unit = {
         val sendIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
             type = "text/plain"
             putExtra(
@@ -175,6 +195,70 @@ fun MusicPlayerScreenV9(
             )
         }
         context.startActivity(android.content.Intent.createChooser(sendIntent, "Compartir"))
+    }
+    val shareTrack: () -> Unit = { showShareCard = true }
+    var shareCardBounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+    var shareDialogWindow by remember { mutableStateOf<android.view.Window?>(null) }
+    val shareScrollState = rememberScrollState()
+    val saveAndShareBitmap: (android.graphics.Bitmap) -> Unit = { bitmap ->
+        scope.launch {
+            val ok = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching {
+                    val dir = java.io.File(context.cacheDir, "shared").apply { mkdirs() }
+                    val file = java.io.File(dir, "tsuki_share.png")
+                    file.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+                    val uri = androidx.core.content.FileProvider.getUriForFile(
+                        context, "${context.packageName}.fileprovider", file
+                    )
+                    val sendIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                        type = "image/png"
+                        putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    context.startActivity(android.content.Intent.createChooser(sendIntent, "Compartir"))
+                    true
+                }.getOrDefault(false)
+            }
+            if (!ok) android.widget.Toast.makeText(context, "No se pudo generar la imagen", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+    val shareCardImage: () -> Unit = {
+        val bounds = shareCardBounds
+        val window = shareDialogWindow
+        if (window != null && bounds != null && android.os.Build.VERSION.SDK_INT >= 26) {
+            scope.launch {
+                shareScrollState.scrollTo(0)
+                kotlinx.coroutines.delay(120)
+                val fresh = shareCardBounds
+                if (fresh == null) return@launch
+                val width = fresh.width.toInt().coerceAtLeast(1)
+                val height = fresh.height.toInt().coerceAtLeast(1)
+                val bitmap = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888)
+                val copyRect = android.graphics.Rect(
+                    fresh.left.toInt(), fresh.top.toInt(), fresh.right.toInt(), fresh.bottom.toInt()
+                )
+                android.view.PixelCopy.request(
+                    window,
+                    copyRect,
+                    bitmap,
+                    { result ->
+                        if (result == android.view.PixelCopy.SUCCESS) {
+                            showShareCard = false
+                            saveAndShareBitmap(bitmap)
+                        } else {
+                            android.widget.Toast.makeText(context, "No se pudo generar la imagen", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    android.os.Handler(android.os.Looper.getMainLooper())
+                )
+            }
+        } else {
+            scope.launch {
+                val bitmap = shareGraphicsLayer.toImageBitmap().asAndroidBitmap()
+                showShareCard = false
+                saveAndShareBitmap(bitmap)
+            }
+        }
     }
 
     val downloadTrack: () -> Unit = {
@@ -489,7 +573,171 @@ fun MusicPlayerScreenV9(
             QueueSheetV9Content(playerController = playerController, onDismiss = { showQueueSheet = false })
         }
         if (showAddToPlaylist) {
-            AddToPlaylistSheet(track = track, onDismiss = { showAddToPlaylist = false })
+            AddToPlaylistSheet(
+                track = track,
+                onDismiss = { showAddToPlaylist = false },
+                onTag = {
+                    showAddToPlaylist = false
+                    showTagSheet = true
+                }
+            )
+        }
+        if (showTagSheet) {
+            TagSongSheet(track = track, onDismiss = { showTagSheet = false })
+        }
+        if (showShareCard) {
+            androidx.compose.ui.window.Dialog(onDismissRequest = { showShareCard = false }) {
+                shareDialogWindow = (LocalView.current.parent as? androidx.compose.ui.window.DialogWindowProvider)?.window
+                val shareLyrics = remember(track.id) { controllerState.lyrics.filter { it.text.isNotBlank() } }
+                var selectedLyricLines by remember(track.id) { mutableStateOf<Set<Int>>(emptySet()) }
+                var shareBgIndex by remember(track.id) { mutableStateOf(0) }
+                val shareBgOptions = listOf(null, Color.Black, Color.White, Color(0xFF181320), accentColor)
+                val chosenLyricLines = selectedLyricLines.sorted().mapNotNull { shareLyrics.getOrNull(it)?.text }
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier
+                        .padding(horizontal = 8.dp)
+                        .verticalScroll(shareScrollState)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .width(240.dp)
+                            .onGloballyPositioned { shareCardBounds = it.boundsInWindow() }
+                            .drawWithContent {
+                                shareGraphicsLayer.record(size.roundToIntSize()) { this@drawWithContent.drawContent() }
+                                drawLayer(shareGraphicsLayer)
+                            }
+                    ) {
+                        ShareCard(
+                            track = track,
+                            lyricLines = chosenLyricLines,
+                            dominantColor = dominantColor,
+                            accentColor = accentColor,
+                            background = shareBgOptions[shareBgIndex]
+                        )
+                    }
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        shareBgOptions.forEachIndexed { i, option ->
+                            val selected = i == shareBgIndex
+                            Box(
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .clip(androidx.compose.foundation.shape.CircleShape)
+                                    .background(
+                                        when (option) {
+                                            null -> dominantColor
+                                            else -> option
+                                        }
+                                    )
+                                    .clickable { shareBgIndex = i }
+                                    .then(
+                                        if (selected) Modifier.border(
+                                            width = 2.dp,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            shape = androidx.compose.foundation.shape.CircleShape
+                                        ) else Modifier
+                                    )
+                            )
+                        }
+                    }
+                    if (shareLyrics.isNotEmpty()) {
+                        Column {
+                            Text(
+                                text = "Letra (hasta 5 líneas)",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(bottom = 6.dp)
+                            )
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                LazyColumn(
+                                    modifier = Modifier.heightIn(max = 150.dp),
+                                    contentPadding = PaddingValues(vertical = 4.dp)
+                                ) {
+                                    itemsIndexed(shareLyrics, key = { i, _ -> i }) { i, entry ->
+                                        val selected = i in selectedLyricLines
+                                        val canToggle = selected || selectedLyricLines.size < 5
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable(enabled = canToggle) {
+                                                    selectedLyricLines = if (selected) {
+                                                        selectedLyricLines - i
+                                                    } else {
+                                                        selectedLyricLines + i
+                                                    }
+                                                }
+                                                .padding(horizontal = 14.dp, vertical = 9.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            if (selected) {
+                                                Icon(
+                                                    imageVector = Icons.Rounded.Check,
+                                                    contentDescription = null,
+                                                    tint = accentColor,
+                                                    modifier = Modifier
+                                                        .size(16.dp)
+                                                        .padding(end = 0.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                            }
+                                            Text(
+                                                text = entry.text,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = if (selected) accentColor else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedButton(
+                                onClick = { showShareCard = false },
+                                shape = RoundedCornerShape(20.dp),
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("Cancelar", maxLines = 1)
+                            }
+                            FilledTonalButton(
+                                onClick = shareTrackText,
+                                shape = RoundedCornerShape(20.dp),
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("Solo enlace", maxLines = 1)
+                            }
+                        }
+                        Button(
+                            onClick = { shareCardImage() },
+                            shape = RoundedCornerShape(20.dp),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Compartir imagen", maxLines = 1)
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -744,11 +992,11 @@ private fun V9UtilityRowV9(
             exit = androidx.compose.animation.shrinkHorizontally() + androidx.compose.animation.fadeOut()
         ) {
             Surface(
-                shape = RoundedCornerShape(18.dp),
-                color = accentColor.copy(alpha = 0.16f),
+                shape = RoundedCornerShape(100.dp),
+                color = MaterialTheme.colorScheme.secondaryContainer,
                 modifier = Modifier.height(32.dp)
             ) {
-                Box(modifier = Modifier.padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
+                Box(modifier = Modifier.padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
                     Text(
                         text = when {
                             sleepActive -> "Timer activo"
@@ -756,38 +1004,35 @@ private fun V9UtilityRowV9(
                             else -> " "
                         },
                         style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = accentColor
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer
                     )
                 }
             }
         }
 
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-            Surface(
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilledTonalButton(
                 onClick = onSound,
-                shape = RoundedCornerShape(20.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.8f),
+                shape = RoundedCornerShape(100.dp),
+                contentPadding = PaddingValues(horizontal = 18.dp, vertical = 6.dp),
+                colors = ButtonDefaults.filledTonalButtonColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                ),
                 modifier = Modifier.height(36.dp)
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier.padding(horizontal = 12.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.GraphicEq,
-                        contentDescription = null,
-                        tint = accentColor,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Text(
-                        text = "Sonido",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
+                Icon(
+                    imageVector = Icons.Rounded.GraphicEq,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Sonido",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
             }
             IconButton(onClick = onShare) {
                 Icon(
@@ -858,296 +1103,239 @@ private fun V9SoundSheetV9(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 4.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text(
-                "Sonido y reproducción",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
+                text = "Sonido y reproducción",
+                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(start = 4.dp, bottom = 2.dp)
             )
             val context = androidx.compose.ui.platform.LocalContext.current
             val connectivity = remember { com.example.tsuki.util.ConnectivityObserver.getInstance(context) }
             val isOnline by connectivity.networkStatus.collectAsStateWithLifecycle(initialValue = connectivity.isCurrentlyOnline())
-            playerController.uiState.value.currentTrack?.let { currentTrack ->
-                androidx.compose.material3.Card(
-                    onClick = {
-                        onDismiss()
-                        if (!isOnline) {
-                            android.widget.Toast.makeText(context, "Sin conexión", android.widget.Toast.LENGTH_SHORT).show()
-                        } else {
-                            playerController.startRadio(currentTrack)
-                            android.widget.Toast.makeText(context, "Iniciando radio de ${currentTrack.artist}...", android.widget.Toast.LENGTH_SHORT).show()
-                        }
-                    },
-                    shape = RoundedCornerShape(18.dp),
-                    colors = androidx.compose.material3.CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-                    )
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(14.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Radio,
-                            contentDescription = null,
-                            tint = accentColor,
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Column(Modifier.weight(1f)) {
-                            Text("Iniciar Radio", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
-                            Text(
-                                "Música similar infinita a partir de este tema",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-            }
 
-            androidx.compose.material3.Card(
-                onClick = {
-                    onDismiss()
-                    onOpenEqualizer()
-                },
-                shape = RoundedCornerShape(18.dp),
-                colors = androidx.compose.material3.CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
-                )
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Equalizer,
-                        contentDescription = null,
-                        tint = accentColor,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Column(Modifier.weight(1f)) {
-                        Text("Ecualizador", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
-                        Text(
-                            "Graves, medios y agudos",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-
-            Surface(
-                shape = RoundedCornerShape(18.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh
-            ) {
-                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(14.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Speed,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Column(Modifier.weight(1f)) {
-                            Text("Velocidad", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
-                            Text(
-                                if (playbackSpeed != 1f) "${playbackSpeed}x" else "Normal",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-                    androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f)) { speed ->
-                            androidx.compose.material3.FilterChip(
-                                selected = kotlin.math.abs(playbackSpeed - speed) < 0.01f,
-                                onClick = { playerController.setPlaybackSpeed(speed) },
-                                label = { Text("${speed}x") }
-                            )
-                        }
-                    }
-                }
-            }
-
-            Surface(
-                shape = RoundedCornerShape(18.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh
-            ) {
-                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(14.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Bedtime,
-                            contentDescription = null,
-                            tint = if (sleepActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Column(Modifier.weight(1f)) {
-                            Text("Timer de sueño", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
-                            Text(
-                                when {
-                                    sleepActive && sleepRemainingMs < 0 -> "Se pausará al terminar esta canción"
-                                    sleepActive -> "Se pausa en ${sleepRemainingMs / 60000}:${String.format("%02d", (sleepRemainingMs % 60000) / 1000)}"
-                                    else -> "Apaga la música automáticamente"
-                                },
-                                style = MaterialTheme.typography.bodySmall,
-                                color = if (sleepActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        if (sleepActive) {
-                            androidx.compose.material3.TextButton(onClick = { playerController.setSleepTimer(null) }) {
-                                Text("Detener")
+            SoundSheetCard {
+                playerController.uiState.value.currentTrack?.let { currentTrack ->
+                    SoundSheetRow(
+                        icon = Icons.Rounded.Radio,
+                        title = "Iniciar Radio",
+                        support = "Música similar infinita a partir de este tema",
+                        onClick = {
+                            onDismiss()
+                            if (!isOnline) {
+                                android.widget.Toast.makeText(context, "Sin conexión", android.widget.Toast.LENGTH_SHORT).show()
+                            } else {
+                                playerController.startRadio(currentTrack)
+                                android.widget.Toast.makeText(context, "Iniciando radio de ${currentTrack.artist}...", android.widget.Toast.LENGTH_SHORT).show()
                             }
                         }
+                    )
+                }
+            }
+
+            SoundSheetCard {
+                SoundSheetRow(
+                    icon = Icons.Rounded.Equalizer,
+                    title = "Ecualizador",
+                    support = "Graves, medios y agudos",
+                    onClick = {
+                        onDismiss()
+                        onOpenEqualizer()
                     }
-                    androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        item {
-                            androidx.compose.material3.FilterChip(
-                                selected = sleepTimerInfo.stopAtSongEnd,
-                                onClick = {
-                                    if (sleepTimerInfo.stopAtSongEnd) {
-                                        playerController.cancelSleepTimer()
-                                    } else {
-                                        playerController.setSleepTimerEndOfSong()
-                                    }
-                                },
-                                label = { Text("Al terminar canción") }
-                            )
-                        }
-                        items(listOf(5, 15, 30, 45, 60)) { minutes ->
-                            androidx.compose.material3.FilterChip(
-                                selected = sleepTimerInfo.selectedMinutes == minutes,
-                                onClick = {
-                                    if (sleepTimerInfo.selectedMinutes == minutes) {
-                                        playerController.setSleepTimer(null)
-                                    } else {
-                                        playerController.setSleepTimer(minutes)
-                                    }
-                                },
-                                label = { Text("$minutes min") }
-                            )
-                        }
+                )
+            }
+
+            SoundSheetCard {
+                SoundSheetRow(
+                    icon = Icons.Rounded.Speed,
+                    title = "Velocidad",
+                    support = if (playbackSpeed != 1f) "${playbackSpeed}x" else "Normal",
+                    supportActive = playbackSpeed != 1f
+                )
+                androidx.compose.foundation.lazy.LazyRow(
+                    modifier = Modifier.padding(start = 10.dp, end = 10.dp, bottom = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f)) { speed ->
+                        androidx.compose.material3.FilterChip(
+                            selected = kotlin.math.abs(playbackSpeed - speed) < 0.01f,
+                            onClick = { playerController.setPlaybackSpeed(speed) },
+                            label = { Text("${speed}x") }
+                        )
                     }
                 }
             }
 
-            Surface(
-                shape = RoundedCornerShape(18.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh
-            ) {
-                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(14.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.BlurOn,
-                            contentDescription = null,
-                            tint = if (crossfadeEnabled) accentColor else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Column(Modifier.weight(1f)) {
-                            Text("Crossfade", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
-                            val formattedDuration = if ((kotlin.math.round(crossfadeDurationSeconds * 2f) / 2f) % 1f == 0f) "${(kotlin.math.round(crossfadeDurationSeconds * 2f) / 2f).toInt()}s" else "${kotlin.math.round(crossfadeDurationSeconds * 2f) / 2f}s"
-                            Text(
-                                if (crossfadeEnabled) "Transición suave entre pistas ($formattedDuration)" else "Transición suave entre pistas",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = if (crossfadeEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+            SoundSheetCard {
+                SoundSheetRow(
+                    icon = Icons.Rounded.Bedtime,
+                    title = "Timer de sueño",
+                    support = when {
+                        sleepActive && sleepRemainingMs < 0 -> "Se pausará al terminar esta canción"
+                        sleepActive -> "Se pausa en ${sleepRemainingMs / 60000}:${String.format("%02d", (sleepRemainingMs % 60000) / 1000)}"
+                        else -> "Apaga la música automáticamente"
+                    },
+                    supportActive = sleepActive,
+                    trailing = if (sleepActive) ({
+                        androidx.compose.material3.TextButton(onClick = { playerController.setSleepTimer(null) }) {
+                            Text("Detener")
                         }
+                    }) else null
+                )
+                androidx.compose.foundation.lazy.LazyRow(
+                    modifier = Modifier.padding(start = 10.dp, end = 10.dp, bottom = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    item {
+                        androidx.compose.material3.FilterChip(
+                            selected = sleepTimerInfo.stopAtSongEnd,
+                            onClick = {
+                                if (sleepTimerInfo.stopAtSongEnd) {
+                                    playerController.cancelSleepTimer()
+                                } else {
+                                    playerController.setSleepTimerEndOfSong()
+                                }
+                            },
+                            label = { Text("Al terminar canción") }
+                        )
+                    }
+                    items(listOf(5, 15, 30, 45, 60)) { minutes ->
+                        androidx.compose.material3.FilterChip(
+                            selected = sleepTimerInfo.selectedMinutes == minutes,
+                            onClick = {
+                                if (sleepTimerInfo.selectedMinutes == minutes) {
+                                    playerController.setSleepTimer(null)
+                                } else {
+                                    playerController.setSleepTimer(minutes)
+                                }
+                            },
+                            label = { Text("$minutes min") }
+                        )
+                    }
+                }
+            }
+
+            SoundSheetCard {
+                SoundSheetRow(
+                    icon = Icons.Rounded.BlurOn,
+                    title = "Crossfade",
+                    support = "Transición suave entre pistas",
+                    supportActive = crossfadeEnabled,
+                    trailing = {
                         androidx.compose.material3.Switch(
                             checked = crossfadeEnabled,
                             onCheckedChange = { playerController.setCrossfadeEnabled(it) }
                         )
                     }
-                    if (crossfadeEnabled) {
-                        val formattedDuration = if ((kotlin.math.round(crossfadeDurationSeconds * 2f) / 2f) % 1f == 0f) "${(kotlin.math.round(crossfadeDurationSeconds * 2f) / 2f).toInt()}s" else "${kotlin.math.round(crossfadeDurationSeconds * 2f) / 2f}s"
-                        Text(
-                            "Duración: $formattedDuration",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            items(listOf(1f, 2f, 3f, 5f, 8f, 10f, 12f)) { seconds ->
-                                androidx.compose.material3.FilterChip(
-                                    selected = kotlin.math.abs(crossfadeDurationSeconds - seconds) < 0.05f,
-                                    onClick = { playerController.setCrossfadeDuration(seconds) },
-                                    label = { Text("${seconds.toInt()}s") }
-                                )
-                            }
+                )
+                if (crossfadeEnabled) {
+                    androidx.compose.foundation.lazy.LazyRow(
+                        modifier = Modifier.padding(start = 10.dp, end = 10.dp, bottom = 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(listOf(1f, 2f, 3f, 5f, 8f, 10f, 12f)) { seconds ->
+                            androidx.compose.material3.FilterChip(
+                                selected = kotlin.math.abs(crossfadeDurationSeconds - seconds) < 0.05f,
+                                onClick = { playerController.setCrossfadeDuration(seconds) },
+                                label = { Text("${seconds.toInt()}s") }
+                            )
                         }
                     }
                 }
             }
 
             val volumeNorm by playerController.volumeNormalization.collectAsStateWithLifecycle(initialValue = true)
-            Surface(
-                shape = RoundedCornerShape(18.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.GraphicEq,
-                        contentDescription = null,
-                        tint = if (volumeNorm) accentColor else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Column(Modifier.weight(1f)) {
-                        Text("Normalizar volumen", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
-                        Text(
-                            if (volumeNorm) "Nivel sonoro uniforme (ReplayGain activo)" else "Desactivado (volumen original)",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (volumeNorm) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+            SoundSheetCard {
+                SoundSheetRow(
+                    icon = Icons.Rounded.GraphicEq,
+                    title = "Normalizar volumen",
+                    support = if (volumeNorm) "Uniforma el volumen entre canciones" else "Desactivado",
+                    supportActive = volumeNorm,
+                    trailing = {
+                        androidx.compose.material3.Switch(
+                            checked = volumeNorm,
+                            onCheckedChange = { playerController.setVolumeNormalization(it) }
                         )
                     }
-                    androidx.compose.material3.Switch(
-                        checked = volumeNorm,
-                        onCheckedChange = { playerController.setVolumeNormalization(it) }
-                    )
-                }
+                )
             }
 
-            Surface(
-                shape = RoundedCornerShape(18.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Tune,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Column {
-                        Text("Calidad de audio", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
-                        Text(
-                            qualityLabel ?: "Automática (la mejor disponible)",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
+            SoundSheetCard {
+                SoundSheetRow(
+                    icon = Icons.Rounded.Tune,
+                    title = "Calidad de audio",
+                    support = qualityLabel ?: "Automática"
+                )
             }
-
-            Spacer(modifier = Modifier.height(16.dp))
         }
+    }
+}
+
+@Composable
+fun SoundSheetCard(content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 6.dp),
+            content = content
+        )
+    }
+}
+
+@Composable
+fun SoundSheetRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    support: String? = null,
+    supportActive: Boolean = false,
+    onClick: (() -> Unit)? = null,
+    trailing: (@Composable androidx.compose.foundation.layout.RowScope.() -> Unit)? = null
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(androidx.compose.foundation.shape.CircleShape)
+                .background(MaterialTheme.colorScheme.secondaryContainer),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            if (support != null) {
+                Text(
+                    text = support,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (supportActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        trailing?.invoke(this)
     }
 }
 
@@ -1230,13 +1418,13 @@ private fun QueueSheetV9Content(playerController: PlayerController, onDismiss: (
                                 modifier = Modifier
                                     .size(64.dp)
                                     .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                                    .background(MaterialTheme.colorScheme.secondaryContainer),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     imageVector = Icons.Rounded.MusicNote,
                                     contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
                                     modifier = Modifier.size(28.dp)
                                 )
                             }
