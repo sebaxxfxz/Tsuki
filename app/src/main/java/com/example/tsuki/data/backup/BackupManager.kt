@@ -6,6 +6,7 @@ import com.example.tsuki.data.local.FavoritesManager
 import com.example.tsuki.data.local.LocalPlaylistManager
 import com.example.tsuki.data.local.RecognitionEntry
 import com.example.tsuki.data.local.RecognitionHistoryManager
+import com.example.tsuki.data.local.TrackTagsManager
 import com.example.tsuki.data.local.WatchHistoryEntry
 import com.example.tsuki.data.local.WatchHistoryManager
 import com.example.tsuki.domain.model.MediaTrack
@@ -31,7 +32,8 @@ data class ImportSummary(
     val tracksImported: Int,
     val favoritesImported: Int,
     val watchHistoryImported: Int,
-    val recognitionsImported: Int
+    val recognitionsImported: Int,
+    val tagsImported: Int = 0
 )
 
 object BackupManager {
@@ -44,11 +46,13 @@ object BackupManager {
             val favoritesManager = FavoritesManager.getInstance(context)
             val watchManager = WatchHistoryManager.getInstance(context)
             val recognitionManager = RecognitionHistoryManager.getInstance(context)
+            val tagsManager = TrackTagsManager.getInstance(context)
 
             val playlists = playlistManager.getAllPlaylists()
             val favorites = favoritesManager.getFavoriteTracks()
             val history = watchManager.getAllHistory()
             val recognitions = recognitionManager.getAllEntries()
+            val trackTags = tagsManager.getAllTags()
 
             val root = buildJsonObject {
                 put("version", 1)
@@ -92,6 +96,17 @@ object BackupManager {
                         })
                     }
                 })
+                put("trackTags", buildJsonArray {
+                    trackTags.forEach { entry ->
+                        add(buildJsonObject {
+                            put("videoId", entry.videoId)
+                            put("title", entry.title)
+                            put("artist", entry.artist)
+                            put("mood", entry.mood)
+                            put("updatedAt", entry.updated)
+                        })
+                    }
+                })
             }
 
             val output = context.contentResolver.openOutputStream(uri, "wt")
@@ -122,6 +137,7 @@ object BackupManager {
             val favoritesManager = FavoritesManager.getInstance(context)
             val watchManager = WatchHistoryManager.getInstance(context)
             val recognitionManager = RecognitionHistoryManager.getInstance(context)
+            val tagsManager = TrackTagsManager.getInstance(context)
 
             var playlistsImported = 0
             var tracksImported = 0
@@ -194,8 +210,24 @@ object BackupManager {
                 recognitionsImported++
             }
 
+            var tagsImported = 0
+            val existingTags = tagsManager.getAllTags().associate { it.videoId to it.mood }
+            root.jsonArray("trackTags").forEach { element ->
+                val obj = element as? JsonObject ?: return@forEach
+                val videoId = obj.optString("videoId")?.takeIf { it.isNotBlank() } ?: return@forEach
+                val mood = obj.optString("mood")?.takeIf { it.isNotBlank() } ?: return@forEach
+                if (existingTags[videoId] == mood) return@forEach
+                tagsManager.setMood(
+                    videoId = videoId,
+                    title = obj.optString("title") ?: "",
+                    artist = obj.optString("artist") ?: "",
+                    mood = mood
+                )
+                tagsImported++
+            }
+
             if (playlistsImported == 0 && tracksImported == 0 && favoritesImported == 0 &&
-                watchImported == 0 && recognitionsImported == 0
+                watchImported == 0 && recognitionsImported == 0 && tagsImported == 0
             ) {
                 error("El backup no contenía datos reconocibles")
             }
@@ -205,7 +237,8 @@ object BackupManager {
                 tracksImported = tracksImported,
                 favoritesImported = favoritesImported,
                 watchHistoryImported = watchImported,
-                recognitionsImported = recognitionsImported
+                recognitionsImported = recognitionsImported,
+                tagsImported = tagsImported
             )
         }
     }

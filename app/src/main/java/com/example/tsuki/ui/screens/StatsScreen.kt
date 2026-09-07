@@ -61,6 +61,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.example.tsuki.data.local.WatchHistoryManager
+import androidx.compose.material.icons.rounded.CalendarMonth
+import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import kotlinx.coroutines.launch
 import com.example.tsuki.ui.components.M3MotionTokens
 import com.example.tsuki.ui.components.m3StaggeredEntrance
 import kotlinx.coroutines.flow.filter
@@ -80,6 +86,7 @@ private data class StatsUiData(
 
 private const val DAY_MS = 24L * 3600L * 1000L
 
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StatsScreen(
@@ -93,6 +100,57 @@ fun StatsScreen(
     var isLoading by remember { mutableStateOf(true) }
     var daily by remember { mutableStateOf<List<WatchHistoryManager.DailyListen>>(emptyList()) }
     var weekly by remember { mutableStateOf<List<WatchHistoryManager.WeeklyWrapped>>(emptyList()) }
+    var monthlyWrapped by remember { mutableStateOf<WatchHistoryManager.WeeklyWrapped?>(null) }
+    var showMonthlyWrapped by remember { mutableStateOf(false) }
+    var showShareCard by remember { mutableStateOf(false) }
+    var statsCardBounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+    var statsDialogWindow by remember { mutableStateOf<android.view.Window?>(null) }
+    val statsScope = androidx.compose.runtime.rememberCoroutineScope()
+    val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
+
+    fun shareStatsCard() {
+        val bounds = statsCardBounds
+        val window = statsDialogWindow
+        if (window == null || bounds == null || android.os.Build.VERSION.SDK_INT < 26) {
+            android.widget.Toast.makeText(context, "No se pudo generar la imagen", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        val width = bounds.width.toInt().coerceAtLeast(1)
+        val height = bounds.height.toInt().coerceAtLeast(1)
+        val bitmap = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888)
+        val copyRect = android.graphics.Rect(bounds.left.toInt(), bounds.top.toInt(), bounds.right.toInt(), bounds.bottom.toInt())
+        android.view.PixelCopy.request(
+            window,
+            copyRect,
+            bitmap,
+            { result ->
+                if (result == android.view.PixelCopy.SUCCESS) {
+                    showShareCard = false
+                    statsScope.launch {
+                        val ok = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            runCatching {
+                                val dir = java.io.File(context.cacheDir, "shared").apply { mkdirs() }
+                                val file = java.io.File(dir, "tsuki_stats.png")
+                                file.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+                                val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+                                val sendIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                    type = "image/png"
+                                    putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                context.startActivity(android.content.Intent.createChooser(sendIntent, "Compartir"))
+                                true
+                            }.getOrDefault(false)
+                        }
+                        if (!ok) android.widget.Toast.makeText(context, "No se pudo generar la imagen", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    android.widget.Toast.makeText(context, "No se pudo generar la imagen", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            },
+            android.os.Handler(android.os.Looper.getMainLooper())
+        )
+    }
 
     val periods = listOf("7 días" to 7L, "30 días" to 30L, "90 días" to 90L, "Todo" to 0L)
 
@@ -113,6 +171,7 @@ fun StatsScreen(
     LaunchedEffect(Unit) {
         daily = historyManager.getDailyListenTime(365)
         weekly = historyManager.getWeeklyWrapped(weeksCount = 12, topLimit = 5)
+        monthlyWrapped = historyManager.getMonthlyWrapped(5)
     }
 
     Scaffold(
@@ -132,7 +191,8 @@ fun StatsScreen(
                 modifier = Modifier.statusBarsPadding()
             )
         },
-        containerColor = MaterialTheme.colorScheme.background
+        containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = { androidx.compose.material3.SnackbarHost(hostState = snackbarHostState) }
     ) { innerPadding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(innerPadding),
@@ -150,6 +210,70 @@ fun StatsScreen(
                             onClick = { periodIndex = index },
                             label = { Text(label) }
                         )
+                    }
+                }
+            }
+
+            item(key = "monthly_wrapped") {
+                monthlyWrapped?.let { month ->
+                    if (month.plays > 0) {
+                        val monthFormatter = remember { SimpleDateFormat("MMMM 'de' yyyy", Locale("es")) }
+                        Surface(
+                            shape = RoundedCornerShape(20.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp)
+                                .m3StaggeredEntrance(0)
+                                .clickable { showMonthlyWrapped = true }
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(14.dp)
+                            ) {
+                                Icon(
+                                    Icons.Rounded.CalendarMonth,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.size(26.dp)
+                                )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        "Wrapped del mes",
+                                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                    Text(
+                                        "Tu resumen de ${monthFormatter.format(Date(month.weekStartMs))}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                                    )
+                                }
+                                Icon(
+                                    Icons.Rounded.ChevronRight,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            item(key = "share_summary") {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    androidx.compose.material3.FilledTonalButton(
+                        onClick = { showShareCard = true },
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
+                        enabled = stats.totals.totalPlays > 0
+                    ) {
+                        Icon(Icons.Rounded.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Compartir resumen")
                     }
                 }
             }
@@ -246,6 +370,53 @@ fun StatsScreen(
             }
         }
     }
+
+    if (showMonthlyWrapped) {
+        monthlyWrapped?.let { month ->
+            val monthFormatter = remember { SimpleDateFormat("MMMM 'de' yyyy", Locale("es")) }
+            com.example.tsuki.ui.components.WeeklyWrappedOverlay(
+                week = month,
+                isCurrentWeek = true,
+                onDismiss = { showMonthlyWrapped = false },
+                titleText = "TU MES",
+                periodLabel = monthFormatter.format(Date(month.weekStartMs)).replaceFirstChar { it.uppercase() },
+                badgeText = "Este mes"
+            )
+        }
+    }
+
+    if (showShareCard) {
+        androidx.compose.ui.window.Dialog(onDismissRequest = { showShareCard = false }) {
+            statsDialogWindow = (androidx.compose.ui.platform.LocalView.current.parent as? androidx.compose.ui.window.DialogWindowProvider)?.window
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+                modifier = Modifier.padding(horizontal = 8.dp)
+            ) {
+                com.example.tsuki.ui.player.StatsShareCard(
+                    periodLabel = periods[periodIndex].first,
+                    totalTimeMs = stats.totals.totalTimeListenedMs,
+                    plays = stats.totals.totalPlays,
+                    uniqueSongs = stats.totals.uniqueSongs,
+                    uniqueArtists = stats.totals.uniqueArtists,
+                    topSongs = stats.topSongs,
+                    modifier = Modifier
+                        .width(300.dp)
+                        .onGloballyPositioned { statsCardBounds = it.boundsInWindow() }
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    androidx.compose.material3.OutlinedButton(
+                        onClick = { showShareCard = false },
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp)
+                    ) { Text("Cancelar") }
+                    androidx.compose.material3.Button(
+                        onClick = { shareStatsCard() },
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp)
+                    ) { Text("Compartir imagen") }
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -302,13 +473,23 @@ private fun StatsHero(totalMs: Long, plays: Int, uniqueSongs: Int, uniqueArtists
 @Composable
 private fun StatPill(value: String, label: String, modifier: Modifier = Modifier) {
     Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = modifier) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally)
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text(value, style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.primary)
-            Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+            Text(
+                value,
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 1
+            )
+            Text(
+                label,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }

@@ -16,14 +16,21 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.SurroundSound
+import androidx.compose.material.icons.rounded.VolumeUp
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -46,6 +53,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -152,6 +160,20 @@ fun EqualizerDialog(
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(androidx.compose.foundation.shape.CircleShape)
+                            .background(MaterialTheme.colorScheme.secondaryContainer),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "月",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(14.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = "Ecualizador",
@@ -172,63 +194,66 @@ fun EqualizerDialog(
                 }
 
                 if (capabilities.bandCount > 0) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        EQ_PRESETS.keys.forEach { presetName ->
-                            FilterChip(
-                                selected = selectedPreset == presetName,
-                                onClick = {
-                                    selectedPreset = presetName
-                                    applyPreset(presetName)
-                                    scope.launch { prefs.setEqPreset(presetName) }
-                                },
-                                label = { Text(presetName, style = MaterialTheme.typography.labelSmall) },
-                                enabled = eqEnabled
-                            )
-                        }
-                    }
-
-                    val minLevel = capabilities.minLevelMb.coerceAtMost(-500)
-                    val maxLevel = capabilities.maxLevelMb.coerceAtLeast(500)
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth().height(190.dp).horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(14.dp)
-                    ) {
-                        bandLevels.forEachIndexed { index, level ->
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.SpaceBetween,
-                                modifier = Modifier.width(52.dp).fillMaxHeight()
-                            ) {
-                                Text(
-                                    text = formatDb(level / 100f),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    maxLines = 1
-                                )
-                                VerticalEqSlider(
-                                    value = level.toFloat(),
-                                    onValueChange = { value ->
-                                        bandLevels[index] = value.toInt()
-                                        AudioEqualizerHelper.setBandLevel(index, value.toInt())
-                                        if (selectedPreset != "custom") selectedPreset = "custom"
+                    EqSection {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState())
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            EQ_PRESETS.keys.forEach { presetName ->
+                                FilterChip(
+                                    selected = selectedPreset == presetName,
+                                    onClick = {
+                                        selectedPreset = presetName
+                                        applyPreset(presetName)
+                                        scope.launch { prefs.setEqPreset(presetName) }
                                     },
-                                    onValueChangeFinished = { persistBands() },
-                                    valueRange = minLevel.toFloat()..maxLevel.toFloat(),
-                                    enabled = eqEnabled,
-                                    modifier = Modifier.weight(1f).padding(vertical = 4.dp)
+                                    label = { Text(presetName, style = MaterialTheme.typography.labelSmall) },
+                                    enabled = eqEnabled
                                 )
-                                Text(
-                                    text = formatFreq(capabilities.centerFreqMiliHz.getOrNull(index) ?: 0),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1
-                                )
+                            }
+                        }
+
+                        val minLevel = capabilities.minLevelMb.coerceAtMost(-500)
+                        val maxLevel = capabilities.maxLevelMb.coerceAtLeast(500)
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth().height(190.dp).horizontalScroll(rememberScrollState()).padding(bottom = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(14.dp)
+                        ) {
+                            bandLevels.forEachIndexed { index, level ->
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.SpaceBetween,
+                                    modifier = Modifier.width(52.dp).fillMaxHeight()
+                                ) {
+                                    Text(
+                                        text = formatDb(level / 100f),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        maxLines = 1
+                                    )
+                                    VerticalEqSlider(
+                                        value = level.toFloat(),
+                                        onValueChange = { value ->
+                                            bandLevels[index] = value.toInt()
+                                            AudioEqualizerHelper.setBandLevel(index, value.toInt())
+                                            if (selectedPreset != "custom") selectedPreset = "custom"
+                                        },
+                                        onValueChangeFinished = { persistBands() },
+                                        valueRange = minLevel.toFloat()..maxLevel.toFloat(),
+                                        enabled = eqEnabled,
+                                        modifier = Modifier.weight(1f).padding(vertical = 4.dp)
+                                    )
+                                    Text(
+                                        text = formatFreq(capabilities.centerFreqMiliHz.getOrNull(index) ?: 0),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1
+                                    )
+                                }
                             }
                         }
                     }
@@ -244,56 +269,67 @@ fun EqualizerDialog(
                     }
                 }
 
-                EqEffectSlider(
-                    title = "Refuerzo de graves",
-                    value = bassBoost,
-                    onValueChange = {
-                        bassBoost = it
-                        AudioEqualizerHelper.setBassBoostStrength(it)
-                    },
-                    onFinished = { scope.launch { prefs.setEqBassBoost(bassBoost) } },
-                    enabled = eqEnabled
-                )
-
-                EqEffectSlider(
-                    title = "Virtualizador surround",
-                    value = virtualizer,
-                    onValueChange = {
-                        virtualizer = it
-                        AudioEqualizerHelper.setVirtualizerStrength(it)
-                    },
-                    onFinished = { scope.launch { prefs.setEqVirtualizer(virtualizer) } },
-                    enabled = eqEnabled
-                )
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = "Ganancia de salida",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.weight(1f)
+                EqSection {
+                    EqEffectRow(
+                        icon = Icons.Rounded.GraphicEq,
+                        title = "Refuerzo de graves",
+                        value = "${bassBoost / 10}%",
+                        enabled = eqEnabled
                     )
-                    Text(
-                        text = formatDb(outputGain / 100f),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary
+                    EqEffectSlider(
+                        value = bassBoost,
+                        onValueChange = {
+                            bassBoost = it
+                            AudioEqualizerHelper.setBassBoostStrength(it)
+                        },
+                        onFinished = { scope.launch { prefs.setEqBassBoost(bassBoost) } },
+                        enabled = eqEnabled
+                    )
+
+                    androidx.compose.material3.HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    )
+
+                    EqEffectRow(
+                        icon = Icons.Rounded.SurroundSound,
+                        title = "Virtualizador surround",
+                        value = "${virtualizer / 10}%",
+                        enabled = eqEnabled
+                    )
+                    EqEffectSlider(
+                        value = virtualizer,
+                        onValueChange = {
+                            virtualizer = it
+                            AudioEqualizerHelper.setVirtualizerStrength(it)
+                        },
+                        onFinished = { scope.launch { prefs.setEqVirtualizer(virtualizer) } },
+                        enabled = eqEnabled
+                    )
+
+                    androidx.compose.material3.HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                    )
+
+                    EqEffectRow(
+                        icon = Icons.Rounded.VolumeUp,
+                        title = "Ganancia de salida",
+                        value = formatDb(outputGain / 100f),
+                        enabled = eqEnabled
+                    )
+                    EqEffectSlider(
+                        value = outputGain,
+                        onValueChange = {
+                            val clamped = it.toInt().coerceIn(0, 1500)
+                            outputGain = clamped
+                            AudioEqualizerHelper.setOutputGainMb(clamped)
+                        },
+                        onFinished = { scope.launch { prefs.setEqOutputGainMb(outputGain) } },
+                        enabled = eqEnabled,
+                        valueRange = 0f..1500f
                     )
                 }
-                Slider(
-                    value = outputGain.toFloat().coerceIn(0f, 1500f),
-                    onValueChange = {
-                        val clamped = it.toInt().coerceIn(0, 1500)
-                        outputGain = clamped
-                        AudioEqualizerHelper.setOutputGainMb(clamped)
-                    },
-                    onValueChangeFinished = { scope.launch { prefs.setEqOutputGainMb(outputGain) } },
-                    valueRange = 0f..1500f,
-                    enabled = eqEnabled,
-                    colors = SliderDefaults.colors(
-                        thumbColor = MaterialTheme.colorScheme.primary,
-                        activeTrackColor = MaterialTheme.colorScheme.primary
-                    )
-                )
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     TextButton(onClick = {
@@ -313,7 +349,7 @@ fun EqualizerDialog(
                         }
                     }) { Text("Restablecer") }
                     Spacer(Modifier.width(8.dp))
-                    TextButton(onClick = onDismiss) { Text("Cerrar") }
+                    Button(onClick = onDismiss) { Text("Cerrar") }
                 }
             }
         }
@@ -321,39 +357,79 @@ fun EqualizerDialog(
 }
 
 @Composable
-private fun EqEffectSlider(
+private fun EqSection(content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 6.dp),
+            content = content
+        )
+    }
+}
+
+@Composable
+private fun EqEffectRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
     title: String,
+    value: String,
+    enabled: Boolean
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(androidx.compose.foundation.shape.CircleShape)
+                .background(MaterialTheme.colorScheme.secondaryContainer),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = if (enabled) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+        Text(
+            text = title,
+            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.labelLarge,
+            color = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun EqEffectSlider(
     value: Int,
     onValueChange: (Int) -> Unit,
     onFinished: () -> Unit,
-    enabled: Boolean
+    enabled: Boolean,
+    valueRange: ClosedFloatingPointRange<Float> = 0f..1000f
 ) {
-    Column {
-        Row(modifier = Modifier.fillMaxWidth()) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.weight(1f)
-            )
-            Text(
-                text = "${value / 10}%",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
-        }
-        Slider(
-            value = value.toFloat(),
-            onValueChange = { onValueChange(it.toInt()) },
-            onValueChangeFinished = onFinished,
-            valueRange = 0f..1000f,
-            enabled = enabled,
-            colors = SliderDefaults.colors(
-                thumbColor = MaterialTheme.colorScheme.primary,
-                activeTrackColor = MaterialTheme.colorScheme.primary
-            )
-        )
-    }
+    Slider(
+        value = value.toFloat().coerceIn(valueRange.start, valueRange.endInclusive),
+        onValueChange = { onValueChange(it.toInt()) },
+        onValueChangeFinished = onFinished,
+        valueRange = valueRange,
+        enabled = enabled,
+        modifier = Modifier.padding(horizontal = 16.dp)
+    )
 }
 
 private fun formatFreq(miliHz: Int): String {

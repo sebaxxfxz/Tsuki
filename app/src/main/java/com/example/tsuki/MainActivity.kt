@@ -143,6 +143,7 @@ class MainActivity : ComponentActivity() {
                 else -> isSystemDark
             }
             CompositionLocalProvider(LocalThumbCornerDp provides thumbCornerDp) {
+                val accentColor by appearancePreferences.accentColor.collectAsState(initial = com.example.tsuki.data.local.AppearancePreferences.ACCENT_AUTO)
                 val playerState by playerController.uiState.collectAsState()
                 val artworkUrl = playerState.currentTrack?.artworkUrl
                 var artworkColors by remember { mutableStateOf<Pair<Color, Color>?>(null) }
@@ -156,10 +157,15 @@ class MainActivity : ComponentActivity() {
                         artworkColors = null
                     }
                 }
+                val fixedAccentColors = if (accentColor != com.example.tsuki.data.local.AppearancePreferences.ACCENT_AUTO) {
+                    val seed = Color(android.graphics.Color.parseColor("#$accentColor".replace("0x", "")))
+                    Pair(seed, seed)
+                } else null
                 TSukiTheme(
                     darkTheme = darkTheme,
                     pureBlack = pureBlack,
-                    artworkColors = if (themeMode == AppThemeMode.ARTWORK) artworkColors else null
+                    artworkColors = fixedAccentColors
+                        ?: if (themeMode == AppThemeMode.ARTWORK) artworkColors else null
                 ) {
                     TSukiMainScreen(playerController = playerController)
                 }

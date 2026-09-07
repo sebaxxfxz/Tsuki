@@ -31,7 +31,11 @@ import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Contrast
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.DataSaverOn
+import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.DeleteSweep
+import androidx.compose.material.icons.rounded.ColorLens
+import androidx.compose.material.icons.rounded.VisibilityOff
+import androidx.compose.material.icons.rounded.MergeType
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.FolderOff
 import androidx.compose.material.icons.rounded.GraphicEq
@@ -136,7 +140,13 @@ fun SettingsScreen(
     val audioCacheUsedMb = audioCacheUsedBytes / (1024L * 1024L)
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
+    fun showSnack(message: String) {
+        scope.launch { snackbarHostState.showSnackbar(message) }
+    }
     var showBatteryDialog by remember { mutableStateOf(false) }
+    var showClearCacheConfirm by remember { mutableStateOf(false) }
+    var showClearHistoryConfirm by remember { mutableStateOf(false) }
     val powerManager = remember(context) { context.getSystemService(android.content.Context.POWER_SERVICE) as? android.os.PowerManager }
     var isIgnoringBattery by remember(context) {
         mutableStateOf(powerManager?.isIgnoringBatteryOptimizations(context.packageName) == true)
@@ -160,11 +170,7 @@ fun SettingsScreen(
         if (uri != null) {
             scope.launch {
                 val success = BackupManager.exportAll(context, uri).isSuccess
-                android.widget.Toast.makeText(
-                    context,
-                    if (success) "Backup exportado" else "No pude exportar el backup",
-                    android.widget.Toast.LENGTH_LONG
-                ).show()
+                snackbarHostState.showSnackbar(if (success) "Backup exportado" else "No pude exportar el backup")
             }
         }
     }
@@ -176,20 +182,15 @@ fun SettingsScreen(
             scope.launch {
                 BackupManager.importAll(context, uri, MergeMode.MERGE).fold(
                     onSuccess = { summary ->
-                        android.widget.Toast.makeText(
-                            context,
+                        snackbarHostState.showSnackbar(
                             "Importadas ${summary.playlistsImported} playlists " +
                                 "(${summary.tracksImported} canciones), ${summary.favoritesImported} favoritos, " +
-                                "${summary.watchHistoryImported} de historial y ${summary.recognitionsImported} reconocimientos",
-                            android.widget.Toast.LENGTH_LONG
-                        ).show()
+                                "${summary.watchHistoryImported} de historial, ${summary.recognitionsImported} reconocimientos " +
+                                "y ${summary.tagsImported} etiquetas"
+                        )
                     },
                     onFailure = {
-                        android.widget.Toast.makeText(
-                            context,
-                            "No pude importar el backup",
-                            android.widget.Toast.LENGTH_LONG
-                        ).show()
+                        snackbarHostState.showSnackbar("No pude importar el backup")
                     }
                 )
             }
@@ -208,14 +209,13 @@ fun SettingsScreen(
 
     val p1 = itemMatches("Calidad de audio", "Códec preferido Opus")
     val p2 = itemMatches("Ahorro de datos", "Audio en baja calidad")
-    val p3 = itemMatches("Crossfade", "Mezclar gradualmente")
-    val p4 = state.crossfadeEnabled && itemMatches("Duración de mezcla", "Tiempo de transición")
-    val p5 = state.crossfadeEnabled && itemMatches("Ignorar en pistas gapless", "continua")
+    val p5 = itemMatches("Ignorar en pistas gapless", "continua")
     val p6 = itemMatches("Saltar silencios", "Eliminar pausas mudas")
+    val p10 = itemMatches("Modo privado", "historial")
     val p7 = itemMatches("Auto-Queue / Radio infinita", "pistas similares")
     val p8 = itemMatches("Seek extra con doble tap", "Doble tap")
     val p9 = itemMatches("Segundo plano y batería", "Optimización de batería Xiaomi MIUI HyperOS pantalla apagada")
-    val showPlayback = categoryMatches(SettingsCategory.PLAYBACK) && (searchQuery.isBlank() || p1 || p2 || p3 || p4 || p5 || p6 || p7 || p8 || p9)
+    val showPlayback = categoryMatches(SettingsCategory.PLAYBACK) && (searchQuery.isBlank() || p1 || p2 || p5 || p6 || p7 || p8 || p9 || p10)
 
     val a1 = itemMatches("Modo oscuro", "Tema claro u oscuro")
     val a2 = itemMatches("Negro puro (AMOLED)", "Fondo negro absoluto")
@@ -223,13 +223,15 @@ fun SettingsScreen(
     val a4 = itemMatches("Esquinas de miniaturas", "Redondeo de portadas")
     val a5 = itemMatches("Barra de progreso", "Estilo de la barra")
     val a6 = itemMatches("Personalización del Feed", "Temas, categorías")
-    val showAppearance = categoryMatches(SettingsCategory.APPEARANCE) && (searchQuery.isBlank() || a1 || a2 || a3 || a4 || a5 || a6)
+    val a7 = itemMatches("Color de acento", "Color fijo")
+    val showAppearance = categoryMatches(SettingsCategory.APPEARANCE) && (searchQuery.isBlank() || a1 || a2 || a3 || a4 || a5 || a6 || a7)
 
     val l1 = itemMatches("Proveedor de letras", "Proveedor seleccionado")
     val l2 = itemMatches("Tamaño de letra karaoke", "sincronizadas")
     val l3 = itemMatches("Sincronización de letras", "seguimiento")
     val l4 = itemMatches("Desenfoque de líneas inactivas", "cantando")
-    val showLyrics = categoryMatches(SettingsCategory.LYRICS) && (searchQuery.isBlank() || l1 || l2 || l3 || l4)
+    val l5 = itemMatches("Precachear letras", "cola, sin conexión, datos")
+    val showLyrics = categoryMatches(SettingsCategory.LYRICS) && (searchQuery.isBlank() || l1 || l2 || l3 || l4 || l5)
 
     val b1 = itemMatches("Sincronizar biblioteca YouTube", "Me Gusta")
     val b2 = itemMatches("Sincronizar playlists de YT Music", "playlists")
@@ -251,9 +253,10 @@ fun SettingsScreen(
     val s2 = itemMatches("Vaciar caché de audio", "Libera el espacio")
     val showStorage = categoryMatches(SettingsCategory.STORAGE) && (searchQuery.isBlank() || s1 || s2)
 
+    val bkp3 = itemMatches("Borrar historial", "historial de reproducción")
     val bkp1 = itemMatches("Exportar datos", "Playlists, favoritos, historial, reconocimientos")
     val bkp2 = itemMatches("Importar datos", "Restaura, merge")
-    val showBackup = categoryMatches(SettingsCategory.STORAGE) && (searchQuery.isBlank() || bkp1 || bkp2)
+    val showBackup = categoryMatches(SettingsCategory.STORAGE) && (searchQuery.isBlank() || bkp1 || bkp2 || bkp3)
 
     val anyVisible = showPlayback || showAppearance || showLyrics || showLibrary || showRegion || showTools || showStorage || showBackup
 
@@ -282,7 +285,8 @@ fun SettingsScreen(
                 )
             )
         },
-        containerColor = MaterialTheme.colorScheme.background
+        containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = { androidx.compose.material3.SnackbarHost(hostState = snackbarHostState) }
     ) { innerPadding ->
         Column(
             modifier = Modifier
@@ -407,48 +411,15 @@ fun SettingsScreen(
                                 )
                             }
 
-                            if (p3) {
+                            if (p5) {
                                 TogglePreference(
-                                    title = "Crossfade",
-                                    subtitle = "Mezclar gradualmente las canciones",
-                                    icon = Icons.Rounded.GraphicEq,
-                                    checked = state.crossfadeEnabled,
-                                    onCheckedChange = { viewModel.setCrossfadeEnabled(it) }
+                                    title = "Crossfade en pistas gapless",
+                                    subtitle = "Se configura desde el player, en Sonido y reproducción",
+                                    icon = Icons.Rounded.MergeType,
+                                    checked = state.crossfadeGapless,
+                                    onCheckedChange = { viewModel.setCrossfadeGapless(it) },
+                                    enabled = state.crossfadeEnabled
                                 )
-                            }
-
-                            AnimatedVisibility(
-                                visible = state.crossfadeEnabled,
-                                enter = expandVertically() + fadeIn(),
-                                exit = shrinkVertically() + fadeOut()
-                            ) {
-                                Column {
-                                    if (p4) {
-                                        SliderPreference(
-                                            title = "Duración de mezcla",
-                                            subtitle = "Tiempo de transición entre pistas",
-                                            value = state.crossfadeDuration,
-                                            onValueChange = { viewModel.setCrossfadeDuration(kotlin.math.round(it * 2f) / 2f) },
-                                            valueRange = PlayerPreferences.CROSSFADE_MIN_DURATION..PlayerPreferences.CROSSFADE_MAX_DURATION,
-                                            steps = 22,
-                                            valueFormatter = {
-                                                val rounded = kotlin.math.round(it * 2f) / 2f
-                                                if (rounded % 1f == 0f) "${rounded.toInt()} s" else "${rounded} s"
-                                            },
-                                            enabled = state.crossfadeEnabled
-                                        )
-                                    }
-
-                                    if (p5) {
-                                        TogglePreference(
-                                            title = "Ignorar en pistas gapless",
-                                            subtitle = "Desactivar crossfade si la pista es continua",
-                                            checked = state.crossfadeGapless,
-                                            onCheckedChange = { viewModel.setCrossfadeGapless(it) },
-                                            enabled = state.crossfadeEnabled
-                                        )
-                                    }
-                                }
                             }
 
                             if (p6) {
@@ -477,6 +448,16 @@ fun SettingsScreen(
                                     subtitle = "Doble tap en portada: ±15s/20s en vez de 5s/10s",
                                     checked = state.seekExtraSeconds,
                                     onCheckedChange = { viewModel.setSeekExtraSeconds(it) }
+                                )
+                            }
+
+                            if (p10) {
+                                TogglePreference(
+                                    title = "Modo privado",
+                                    subtitle = "No registrar lo que escuchas en el historial ni en estadísticas",
+                                    icon = Icons.Rounded.VisibilityOff,
+                                    checked = state.privateMode,
+                                    onCheckedChange = { viewModel.setPrivateMode(it) }
                                 )
                             }
 
@@ -539,6 +520,21 @@ fun SettingsScreen(
                                         "Portada de la canción" to "ARTWORK"
                                     ),
                                     onValueChange = { viewModel.setAppThemeMode(if (it == "ARTWORK") AppThemeMode.ARTWORK else AppThemeMode.SYSTEM) }
+                                )
+                            }
+
+                            if (a7) {
+                                ListPreference(
+                                    title = "Color de acento",
+                                    subtitle = if (state.accentColor == AppearancePreferences.ACCENT_AUTO) {
+                                        "Sigue la portada o el sistema"
+                                    } else {
+                                        "Color fijo para toda la app"
+                                    },
+                                    icon = Icons.Rounded.ColorLens,
+                                    selectedValue = state.accentColor,
+                                    entries = AppearancePreferences.ACCENT_CHOICES,
+                                    onValueChange = { viewModel.setAccentColor(it) }
                                 )
                             }
 
@@ -627,6 +623,16 @@ fun SettingsScreen(
                                     icon = Icons.Rounded.BlurOn,
                                     checked = state.lyricsLineBlur,
                                     onCheckedChange = { viewModel.setLyricsLineBlur(it) }
+                                )
+                            }
+
+                            if (l5) {
+                                TogglePreference(
+                                    title = "Precachear letras de la cola",
+                                    subtitle = "Descarga por adelantado la letra de las siguientes canciones (usa datos)",
+                                    icon = Icons.Rounded.CloudDownload,
+                                    checked = state.precacheLyrics,
+                                    onCheckedChange = { viewModel.setPrecacheLyrics(it) }
                                 )
                             }
                         }
@@ -809,7 +815,7 @@ fun SettingsScreen(
                                     title = "Vaciar caché de audio",
                                     subtitle = "Libera el espacio ocupado por canciones temporales",
                                     icon = Icons.Rounded.DeleteSweep,
-                                    onClick = { viewModel.clearAudioCache() }
+                                    onClick = { showClearCacheConfirm = true }
                                 )
                             }
                         }
@@ -826,12 +832,21 @@ fun SettingsScreen(
                             if (bkp1) {
                                 ActionPreference(
                                     title = "Exportar datos",
-                                    subtitle = "Playlists, favoritos, historial y reconocimientos en un JSON",
+                                    subtitle = "Playlists, favoritos, historial, reconocimientos y etiquetas en un JSON",
                                     icon = Icons.Rounded.Upload,
                                     onClick = {
                                         val stamp = java.text.SimpleDateFormat("yyyyMMdd", Locale.US).format(java.util.Date())
                                         exportLauncher.launch("tsuki-backup-$stamp.json")
                                     }
+                                )
+                            }
+
+                            if (bkp3) {
+                                ActionPreference(
+                                    title = "Borrar historial de reproducción",
+                                    subtitle = "Elimina todo el historial y el tiempo de escucha registrado",
+                                    icon = Icons.Rounded.DeleteSweep,
+                                    onClick = { showClearHistoryConfirm = true }
                                 )
                             }
 
@@ -847,6 +862,43 @@ fun SettingsScreen(
                     }
                 }
             }
+        }
+
+        if (showClearCacheConfirm) {
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { showClearCacheConfirm = false },
+                title = { Text("Vaciar caché de audio") },
+                text = { Text("Se eliminarán las canciones temporales descargadas en caché. Tus descargas permanentes no se tocan.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showClearCacheConfirm = false
+                        viewModel.clearAudioCache()
+                        showSnack("Caché de audio vaciada")
+                    }) { Text("Vaciar", color = MaterialTheme.colorScheme.error) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showClearCacheConfirm = false }) { Text("Cancelar") }
+                }
+            )
+        }
+
+        if (showClearHistoryConfirm) {
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { showClearHistoryConfirm = false },
+                title = { Text("Borrar historial") },
+                text = { Text("Se eliminará todo el historial de reproducción y el tiempo de escucha. Esta acción no se puede deshacer.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showClearHistoryConfirm = false
+                        viewModel.clearWatchHistory { count ->
+                            showSnack("Historial borrado ($count canciones)")
+                        }
+                    }) { Text("Borrar", color = MaterialTheme.colorScheme.error) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showClearHistoryConfirm = false }) { Text("Cancelar") }
+                }
+            )
         }
 
         if (showFolderDialog) {
@@ -962,7 +1014,9 @@ fun SettingsScreen(
                                                 data = android.net.Uri.parse("package:${context.packageName}")
                                                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
                                             }
-                                            try { context.startActivity(intent) } catch (_: Exception) {}
+                                            try { context.startActivity(intent) } catch (_: Exception) {
+                                                showSnack("No se pudo abrir los ajustes de la app")
+                                            }
                                         }
                                         .padding(8.dp),
                                     verticalAlignment = Alignment.CenterVertically
@@ -1008,7 +1062,11 @@ fun SettingsScreen(
                                                         data = android.net.Uri.parse("package:${context.packageName}")
                                                         flags = Intent.FLAG_ACTIVITY_NEW_TASK
                                                     }
-                                                    try { context.startActivity(fallback) } catch (_: Exception) {}
+                                                    try {
+                                                        context.startActivity(fallback)
+                                                    } catch (_: Exception) {
+                                                        showSnack("No se pudo abrir el inicio automático de MIUI")
+                                                    }
                                                 }
                                             }
                                             .padding(8.dp),
@@ -1051,7 +1109,11 @@ fun SettingsScreen(
                                                 val fallback = Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).apply {
                                                     flags = Intent.FLAG_ACTIVITY_NEW_TASK
                                                 }
-                                                try { context.startActivity(fallback) } catch (_: Exception) {}
+                                                try {
+                                                    context.startActivity(fallback)
+                                                } catch (_: Exception) {
+                                                    showSnack("No se pudo abrir la optimización de batería")
+                                                }
                                             }
                                         }
                                         .padding(8.dp),

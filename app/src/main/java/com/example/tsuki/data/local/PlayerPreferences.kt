@@ -51,6 +51,9 @@ class PlayerPreferences(private val context: Context) {
         private val KEY_SYNC_PLAYLISTS = booleanPreferencesKey("sync_playlists_enabled")
         private val KEY_SYNC_HISTORY = booleanPreferencesKey("sync_history_enabled")
         private val KEY_VOLUME_NORMALIZATION = booleanPreferencesKey("volume_normalization")
+        private val KEY_PRIVATE_MODE = booleanPreferencesKey("private_mode")
+        private val KEY_PRECACHE_LYRICS = booleanPreferencesKey("precache_lyrics")
+        private val KEY_DOWNLOAD_TREE_URI = stringPreferencesKey("download_tree_uri")
 
         const val LYRICS_SYNC_OFFSET_MIN = -2000
         const val LYRICS_SYNC_OFFSET_MAX = 2000
@@ -148,9 +151,26 @@ class PlayerPreferences(private val context: Context) {
     val syncPlaylistsEnabled: Flow<Boolean> = context.playerDataStore.data.map { it[KEY_SYNC_PLAYLISTS] ?: true }
     val syncHistoryEnabled: Flow<Boolean> = context.playerDataStore.data.map { it[KEY_SYNC_HISTORY] ?: true }
     val volumeNormalization: Flow<Boolean> = context.playerDataStore.data.map { it[KEY_VOLUME_NORMALIZATION] ?: true }
+    val privateMode: Flow<Boolean> = context.playerDataStore.data.map { it[KEY_PRIVATE_MODE] ?: false }
+    val precacheLyrics: Flow<Boolean> = context.playerDataStore.data.map { it[KEY_PRECACHE_LYRICS] ?: true }
+    val downloadTreeUri: Flow<String?> = context.playerDataStore.data.map { it[KEY_DOWNLOAD_TREE_URI] }
 
     suspend fun setVolumeNormalization(enabled: Boolean) {
         context.playerDataStore.edit { it[KEY_VOLUME_NORMALIZATION] = enabled }
+    }
+
+    suspend fun setPrivateMode(enabled: Boolean) {
+        context.playerDataStore.edit { it[KEY_PRIVATE_MODE] = enabled }
+    }
+
+    suspend fun setPrecacheLyrics(enabled: Boolean) {
+        context.playerDataStore.edit { it[KEY_PRECACHE_LYRICS] = enabled }
+    }
+
+    suspend fun setDownloadTreeUri(uri: String?) {
+        context.playerDataStore.edit {
+            if (uri == null) it.remove(KEY_DOWNLOAD_TREE_URI) else it[KEY_DOWNLOAD_TREE_URI] = uri
+        }
     }
 
     suspend fun setCrossfadeEnabled(enabled: Boolean) {

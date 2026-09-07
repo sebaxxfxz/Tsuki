@@ -44,7 +44,10 @@ data class SettingsUiState(
     val syncLikedEnabled: Boolean = true,
     val syncPlaylistsEnabled: Boolean = true,
     val syncHistoryEnabled: Boolean = true,
-    val skipSilenceEnabled: Boolean = false
+    val skipSilenceEnabled: Boolean = false,
+    val accentColor: String = AppearancePreferences.ACCENT_AUTO,
+    val privateMode: Boolean = false,
+    val precacheLyrics: Boolean = true
 )
 
 private data class PlayerSettingsData(
@@ -53,7 +56,9 @@ private data class PlayerSettingsData(
     val crossfadeGapless: Boolean,
     val autoQueueEnabled: Boolean,
     val preferredLyricsProvider: String,
-    val skipSilenceEnabled: Boolean
+    val skipSilenceEnabled: Boolean,
+    val privateMode: Boolean,
+    val precacheLyrics: Boolean
 )
 
 private data class AudioDataSettingsData(
@@ -107,15 +112,21 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             playerPrefs.autoQueueEnabled,
             playerPrefs.preferredLyricsProvider,
             playerPrefs.skipSilenceEnabled
-        ) { autoQueue, lyrics, skipSilence -> Triple(autoQueue, lyrics, skipSilence) }
-    ) { (crossfadeEnabled, crossfadeDuration, crossfadeGapless), (autoQueueEnabled, preferredLyricsProvider, skipSilenceEnabled) ->
+        ) { autoQueue, lyrics, skipSilence -> Triple(autoQueue, lyrics, skipSilence) },
+        combine(
+            playerPrefs.privateMode,
+            playerPrefs.precacheLyrics
+        ) { privateMode, precache -> privateMode to precache }
+    ) { (crossfadeEnabled, crossfadeDuration, crossfadeGapless), (autoQueueEnabled, preferredLyricsProvider, skipSilenceEnabled), (privateMode, precacheLyrics) ->
         PlayerSettingsData(
             crossfadeEnabled = crossfadeEnabled,
             crossfadeDuration = crossfadeDuration,
             crossfadeGapless = crossfadeGapless,
             autoQueueEnabled = autoQueueEnabled,
             preferredLyricsProvider = preferredLyricsProvider,
-            skipSilenceEnabled = skipSilenceEnabled
+            skipSilenceEnabled = skipSilenceEnabled,
+            privateMode = privateMode,
+            precacheLyrics = precacheLyrics
         )
     }
 
@@ -147,7 +158,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         val themeMode: AppThemeMode,
         val darkMode: DarkModeSetting,
         val pureBlack: Boolean,
-        val thumbCornerDp: Float
+        val thumbCornerDp: Float,
+        val accentColor: String
     )
 
     private data class LyricsDisplayData(
@@ -170,7 +182,15 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         appearancePrefs.pureBlack,
         appearancePrefs.thumbCornerDp
     ) { themeMode, darkMode, pureBlack, thumbCornerDp ->
-        AppearanceSettingsData(themeMode, darkMode, pureBlack, thumbCornerDp)
+        listOf(themeMode, darkMode, pureBlack, thumbCornerDp)
+    }.combine(appearancePrefs.accentColor) { values, accent ->
+        AppearanceSettingsData(
+            themeMode = values[0] as AppThemeMode,
+            darkMode = values[1] as DarkModeSetting,
+            pureBlack = values[2] as Boolean,
+            thumbCornerDp = values[3] as Float,
+            accentColor = accent
+        )
     }
 
     private val lyricsDisplay = combine(
@@ -218,7 +238,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             progressBarStyle = l.progressBarStyle,
             seekExtraSeconds = l.seekExtra,
             lyricsSyncOffsetMs = l.syncOffset,
-            skipSilenceEnabled = p.skipSilenceEnabled
+            skipSilenceEnabled = p.skipSilenceEnabled,
+            accentColor = ap.accentColor,
+            privateMode = p.privateMode,
+            precacheLyrics = p.precacheLyrics
         )
     }
 
@@ -239,6 +262,34 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun setSkipSilenceEnabled(enabled: Boolean) {
         viewModelScope.launch {
             playerPrefs.setSkipSilenceEnabled(enabled)
+        }
+    }
+
+    fun setAccentColor(value: String) {
+        viewModelScope.launch {
+            appearancePrefs.setAccentColor(value)
+        }
+    }
+
+    fun setPrivateMode(enabled: Boolean) {
+        viewModelScope.launch {
+            playerPrefs.setPrivateMode(enabled)
+            com.example.tsuki.data.local.WatchHistoryManager.getInstance(getApplication()).setPrivateMode(enabled)
+        }
+    }
+
+    fun setPrecacheLyrics(enabled: Boolean) {
+        viewModelScope.launch {
+            playerPrefs.setPrecacheLyrics(enabled)
+        }
+    }
+
+    fun clearWatchHistory(onDone: (Int) -> Unit = {}) {
+        viewModelScope.launch {
+            val manager = com.example.tsuki.data.local.WatchHistoryManager.getInstance(getApplication())
+            val count = manager.getAllHistory().size
+            manager.clearHistory()
+            onDone(count)
         }
     }
 
