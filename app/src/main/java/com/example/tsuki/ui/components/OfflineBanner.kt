@@ -20,8 +20,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.tsuki.R
 
 @Composable
 fun OfflineBanner(
@@ -55,7 +57,7 @@ fun OfflineBanner(
                     modifier = Modifier.size(20.dp)
                 )
                 Text(
-                    text = "Sin conexión — mostrando solo tu contenido local",
+                    text = stringResource(R.string.offline_banner),
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant

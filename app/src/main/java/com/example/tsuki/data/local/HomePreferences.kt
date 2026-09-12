@@ -38,6 +38,7 @@ class HomePreferences(private val context: Context) {
         private val KEY_SPEED_DIAL_PINS = stringSetPreferencesKey("speed_dial_pins")
         private val KEY_CONTENT_LANGUAGE = stringPreferencesKey("content_language_tag")
         private val KEY_CONTENT_COUNTRY = stringPreferencesKey("content_country")
+        private val KEY_APP_LOCALE = stringPreferencesKey("app_locale_tag")
         private val KEY_SEEN_SUB_VIDEOS = stringSetPreferencesKey("seen_sub_videos")
         private val KEY_NOTIFIED_SUB_VIDEOS = stringSetPreferencesKey("notified_sub_videos")
         private val KEY_SUB_NOTIFY = booleanPreferencesKey("sub_notify_enabled")
@@ -75,11 +76,27 @@ class HomePreferences(private val context: Context) {
     val selectedTopics: Flow<Set<String>> = context.homeDataStore.data.map { it[KEY_SELECTED_TOPICS] ?: emptySet() }
 
     val contentLanguageTag: Flow<String> = context.homeDataStore.data.map { prefs ->
-        prefs[KEY_CONTENT_LANGUAGE]?.takeIf { it.isNotBlank() } ?: DEFAULT_CONTENT_LANGUAGE
+        prefs[KEY_CONTENT_LANGUAGE]?.takeIf { it.isNotBlank() } ?: (if (com.example.tsuki.util.AppLocale.resolveTag(com.example.tsuki.util.AppLocale.readStored(context)) == com.example.tsuki.util.AppLocale.ENGLISH) "en" else DEFAULT_CONTENT_LANGUAGE)
     }
 
     val contentCountry: Flow<String> = context.homeDataStore.data.map { prefs ->
-        prefs[KEY_CONTENT_COUNTRY]?.takeIf { it.isNotBlank() } ?: DEFAULT_CONTENT_COUNTRY
+        prefs[KEY_CONTENT_COUNTRY]?.takeIf { it.isNotBlank() } ?: (if (com.example.tsuki.util.AppLocale.resolveTag(com.example.tsuki.util.AppLocale.readStored(context)) == com.example.tsuki.util.AppLocale.ENGLISH) "US" else DEFAULT_CONTENT_COUNTRY)
+    }
+
+    val appLocaleTag: Flow<String> = context.homeDataStore.data.map { prefs ->
+        prefs[KEY_APP_LOCALE] ?: ""
+    }
+
+    suspend fun setAppLocale(tag: String) {
+        context.getSharedPreferences("tsuki_prefs", Context.MODE_PRIVATE).edit().putString("app_locale_tag", tag).commit()
+        val resolved = com.example.tsuki.util.AppLocale.resolveTag(tag)
+        val nextLang = if (resolved == com.example.tsuki.util.AppLocale.ENGLISH) "en" else "es"
+        val nextCountry = if (resolved == com.example.tsuki.util.AppLocale.ENGLISH) "US" else "ES"
+        context.homeDataStore.edit {
+            it[KEY_APP_LOCALE] = tag
+            it[KEY_CONTENT_LANGUAGE] = nextLang
+            it[KEY_CONTENT_COUNTRY] = nextCountry
+        }
     }
 
     suspend fun setContentLanguage(tag: String) {

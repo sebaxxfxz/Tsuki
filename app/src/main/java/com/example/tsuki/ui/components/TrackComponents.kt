@@ -18,10 +18,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.example.tsuki.R
 import com.example.tsuki.domain.model.MediaTrack
 
 @Composable
@@ -68,7 +70,7 @@ fun TrackListItem(
                     if (isDownloaded) {
                         Icon(
                             imageVector = Icons.Rounded.DownloadDone,
-                            contentDescription = "Descargado",
+                            contentDescription = stringResource(R.string.common_downloaded),
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(15.dp)
                         )
@@ -151,7 +153,7 @@ fun TrackCard(
                         Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                             Icon(
                                 imageVector = Icons.Rounded.Radio,
-                                contentDescription = "Iniciar radio",
+                                contentDescription = stringResource(R.string.pld_start_radio),
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(16.dp)
                             )
@@ -181,7 +183,7 @@ fun TrackCard(
                 onDismissRequest = { showMenu = false }
             ) {
                 DropdownMenuItem(
-                    text = { Text("Iniciar radio") },
+                    text = { Text(stringResource(R.string.pld_start_radio)) },
                     leadingIcon = {
                         Icon(Icons.Rounded.Radio, contentDescription = null)
                     },

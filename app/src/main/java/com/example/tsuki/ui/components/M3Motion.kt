@@ -57,6 +57,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.res.stringResource
+import com.example.tsuki.R
 
 
 
@@ -811,7 +813,7 @@ fun M3MorphingPlayPauseButton(
             } else {
                 androidx.compose.material3.Icon(
                     imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                    contentDescription = if (isPlaying) "Pausar" else "Reproducir",
+                    contentDescription = if (isPlaying) stringResource(R.string.player_pause) else stringResource(R.string.common_play),
                     tint = contentColor,
                     modifier = Modifier
                         .size(iconSize)

@@ -8,6 +8,7 @@ import com.example.tsuki.data.local.WatchHistoryManager
 import com.example.tsuki.data.recommendation.TSukiNeuroEngine
 import com.example.tsuki.data.recommendation.TSukiSeedSelector
 import com.example.tsuki.data.recommendation.TSukiTokenizer
+import com.example.tsuki.data.recommendation.TSukiTopicCatalog
 import com.example.tsuki.domain.model.MediaTrack
 import com.example.tsuki.network.ChannelRssClient
 import com.example.tsuki.network.TSukiContentLocale
@@ -42,7 +43,7 @@ class TSukiFeedRepository(private val context: Context) {
 
     @Volatile var lastForYouContinuation: String? = null
 
-    private val discoveryQueries = listOf(
+    private val discoveryQueriesEs = listOf(
         "música nueva esta semana", "lofi para estudiar", "rock en español", "reggaeton 2026",
         "música electrónica", "gameplay gaming", "minecraft", "fortnite momentos",
         "tecnología e IA", "comedia stand up", "anime openings", "deportes resumen",
@@ -50,14 +51,24 @@ class TSukiFeedRepository(private val context: Context) {
         "jazz café", "clásicos rock", "playlist para viajar"
     )
 
-    private var discoveryCursor = java.util.Random().nextInt(discoveryQueries.size)
+    private val discoveryQueriesEn = listOf(
+        "new music this week", "lofi study beats", "rock classics", "hip hop 2026",
+        "electronic music", "gameplay gaming", "minecraft moments", "fortnite highlights",
+        "tech & AI", "stand up comedy", "anime openings", "sports highlights",
+        "hip hop hits", "indie folk", "pop hits", "chill vibes", "k-pop",
+        "jazz cafe", "classic rock", "travel vlog playlist"
+    )
+
+    private var discoveryCursor = java.util.Random().nextInt(discoveryQueriesEs.size)
 
     suspend fun loadDiscoveryBatch(excludeIds: Set<String>, batchSize: Int = 12): List<MediaTrack> =
         withContext(Dispatchers.IO) {
             try {
+                val isEn = TSukiContentLocale.hl().startsWith("en")
+                val list = if (isEn) discoveryQueriesEn else discoveryQueriesEs
                 val picks = LinkedHashSet<String>().apply {
                     repeat(3) {
-                        add(discoveryQueries[(discoveryCursor + it * 7) % discoveryQueries.size])
+                        add(list[(discoveryCursor + it * 7) % list.size])
                     }
                 }
                 discoveryCursor += 11
@@ -192,14 +203,17 @@ class TSukiFeedRepository(private val context: Context) {
         val history = try { historyManager.getRecentHistory(30) } catch (_: Exception) { emptyList() }
         val favIds = favoriteChannels.map { it.substringBefore("|") }.filter { it.isNotBlank() }.toSet()
 
+        val isEnglish = com.example.tsuki.util.AppLocale.resolveTag(com.example.tsuki.util.AppLocale.readStored(context)) == com.example.tsuki.util.AppLocale.ENGLISH || TSukiContentLocale.hl().startsWith("en")
         val topicsToQuery = selectedTopics.ifEmpty {
-            setOf("Tecnología", "Gaming", "Música", "Entretenimiento")
+            if (isEnglish) setOf("Technology", "Gaming", "Music", "Entertainment")
+            else setOf("Tecnología", "Gaming", "Música", "Entretenimiento")
         }.shuffled(java.util.Random()).take(6)
 
         val result = supervisorScope {
             val topicDeferredList = topicsToQuery.map { topic ->
                 async {
-                    val tracks = try { ytExtractor.searchVideos(topic) } catch (_: Exception) { emptyList() }
+                    val query = TSukiTopicCatalog.getSearchQueryForTopic(topic, isEnglish)
+                    val tracks = try { ytExtractor.searchVideos(query) } catch (_: Exception) { emptyList() }
                     topic to tracks
                 }
             }
@@ -285,7 +299,8 @@ class TSukiFeedRepository(private val context: Context) {
                 topicResults.forEach { (topic, tracks) ->
                     if (tracks.isNotEmpty()) {
                         val rankedTopic = try { TSukiNeuroEngine.rank(tracks, userSubs) } catch (_: Exception) { tracks }
-                        sections.add(TSukiFeedSection(topic, rankedTopic.take(15)))
+                        val localizedTopic = TSukiTopicCatalog.getLocalizedTopic(topic, isEnglish)
+                        sections.add(TSukiFeedSection(localizedTopic, rankedTopic.take(15)))
                     }
                 }
                 if (trendingTracks.isNotEmpty()) {

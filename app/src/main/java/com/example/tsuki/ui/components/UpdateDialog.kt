@@ -36,12 +36,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.net.toUri
+import com.example.tsuki.R
 import com.example.tsuki.util.UpdateInfo
 
 @Composable
@@ -68,12 +70,12 @@ fun UpdateDialog(
                         }
                         Spacer(Modifier.width(12.dp))
                         Column {
-                            Text("NUEVA VERSIÓN", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Black, letterSpacing = 1.2.sp, color = MaterialTheme.colorScheme.primary)
-                            Text("TSuki v${updateInfo.latestVersion}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onSurface)
+                            Text(stringResource(R.string.upd_badge), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Black, letterSpacing = 1.2.sp, color = MaterialTheme.colorScheme.primary)
+                            Text(stringResource(R.string.upd_title, updateInfo.latestVersion), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onSurface)
                         }
                     }
                     IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceContainerHighest)) {
-                        Icon(Icons.Filled.Close, "Cerrar", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Filled.Close, stringResource(R.string.common_close), tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
                     }
                 }
                 Spacer(Modifier.height(14.dp))
@@ -90,7 +92,7 @@ fun UpdateDialog(
                     }
                 }
                 Spacer(Modifier.height(14.dp))
-                Text("Novedades", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.align(Alignment.Start))
+                Text(stringResource(R.string.upd_changes), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.align(Alignment.Start))
                 Spacer(Modifier.height(8.dp))
                 Surface(
                     modifier = Modifier.fillMaxWidth().heightIn(max = 180.dp),
@@ -114,10 +116,10 @@ fun UpdateDialog(
                 ) {
                     Icon(Icons.Filled.Download, null, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(10.dp))
-                    Text("DESCARGAR E INSTALAR", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
+                    Text(stringResource(R.string.upd_download), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, letterSpacing = 0.5.sp)
                 }
                 Spacer(Modifier.height(4.dp))
-                TextButton(onClick = onDismiss) { Text("Más tarde", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.upd_later), color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
         }
     }

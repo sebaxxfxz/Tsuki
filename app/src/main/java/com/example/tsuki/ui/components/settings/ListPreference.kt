@@ -27,8 +27,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.tsuki.R
 import com.example.tsuki.ui.components.m3PressBounce
 
 @Composable
@@ -123,7 +125,7 @@ fun ListPreference(
             },
             confirmButton = {
                 TextButton(onClick = { showDialog = false }) {
-                    Text("Cerrar")
+                    Text(stringResource(R.string.common_close))
                 }
             }
         )

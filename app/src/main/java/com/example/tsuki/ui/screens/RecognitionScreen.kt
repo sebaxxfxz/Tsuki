@@ -83,12 +83,14 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
+import com.example.tsuki.R
 import com.example.tsuki.data.local.FavoritesManager
 import com.example.tsuki.data.local.RecognitionEntry
 import com.example.tsuki.data.local.RecognitionHistoryManager
@@ -114,25 +116,25 @@ private enum class RecPhase {
     IDLE, LISTENING, PROCESSING, RESULT, NOMATCH, ERROR
 }
 
-private fun friendlyError(e: Throwable): String {
+private fun friendlyError(context: android.content.Context, e: Throwable): String {
     val msg = e.message.orEmpty()
     return when {
-        msg == "FORMAT" || msg == "MIC" -> "Micrófono no disponible en este dispositivo"
-        msg.startsWith("READ") -> "No pude leer del micrófono"
-        msg == "SILENCE" -> "Apenas capté sonido, acércate más a la música"
-        e is java.io.IOException || msg.contains("Unable to resolve host", true) || msg.contains("Failed to connect", true) -> "Sin conexión, revisa tu red e inténtalo de nuevo"
-        msg.contains("timeout", true) || msg.contains("timed out", true) -> "Tardó demasiado, inténtalo de nuevo"
-        else -> "Algo falló al reconocer, inténtalo de nuevo"
+        msg == "FORMAT" || msg == "MIC" -> context.getString(R.string.rec_mic_missing)
+        msg.startsWith("READ") -> context.getString(R.string.rec_mic_read)
+        msg == "SILENCE" -> context.getString(R.string.rec_quiet)
+        e is java.io.IOException || msg.contains("Unable to resolve host", true) || msg.contains("Failed to connect", true) -> context.getString(R.string.rec_offline)
+        msg.contains("timeout", true) || msg.contains("timed out", true) -> context.getString(R.string.rec_timeout)
+        else -> context.getString(R.string.rec_failed)
     }
 }
 
-private fun relativeTime(ts: Long): String {
+private fun relativeTime(context: android.content.Context, ts: Long): String {
     val m = (System.currentTimeMillis() - ts) / 60000
     return when {
-        m < 1 -> "ahora mismo"
-        m < 60 -> "hace $m min"
-        m < 1440 -> "hace ${m / 60} h"
-        m < 2880 -> "ayer"
+        m < 1 -> context.getString(R.string.rec_time_now)
+        m < 60 -> context.getString(R.string.rec_time_mins, m)
+        m < 1440 -> context.getString(R.string.rec_time_hours, m / 60)
+        m < 2880 -> context.getString(R.string.rec_time_yesterday)
         else -> java.text.SimpleDateFormat("d MMM", java.util.Locale.getDefault()).format(java.util.Date(ts))
     }
 }
@@ -210,7 +212,7 @@ fun RecognitionScreen(
                     if (e is CancellationException) {
                         phase = RecPhase.IDLE
                     } else {
-                        errorText = friendlyError(e)
+                        errorText = friendlyError(context, e)
                         phase = RecPhase.ERROR
                     }
                 }
@@ -229,7 +231,7 @@ fun RecognitionScreen(
             val track = runCatching { resolveTrack(title, artist) }.getOrNull()
             withContext(Dispatchers.Main) {
                 if (track != null) action(track)
-                else android.widget.Toast.makeText(context, "No la encontré en YouTube Music", android.widget.Toast.LENGTH_SHORT).show()
+                else android.widget.Toast.makeText(context, context.getString(R.string.rec_not_found), android.widget.Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -238,7 +240,7 @@ fun RecognitionScreen(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (granted) start() else {
-            errorText = "Sin micrófono no puedo escucharte"
+            errorText = context.getString(R.string.rec_no_mic)
             phase = RecPhase.ERROR
         }
     }
@@ -282,10 +284,10 @@ fun RecognitionScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                     Text(
-                        "Reconocer",
+                        stringResource(R.string.rec_title),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold
                     )
@@ -403,7 +405,7 @@ fun RecognitionScreen(
                                             RecPhase.NOMATCH, RecPhase.ERROR -> Icons.Rounded.Refresh
                                             else -> Icons.Rounded.GraphicEq
                                         },
-                                        contentDescription = "Reconocer música",
+                                        contentDescription = stringResource(R.string.set_tool_recognize),
                                         tint = btnContent,
                                         modifier = Modifier.size(if (p == RecPhase.RESULT) 76.dp else 64.dp)
                                     )
@@ -424,12 +426,12 @@ fun RecognitionScreen(
                     ) { p ->
                         Text(
                             text = when (p) {
-                                RecPhase.LISTENING -> if (round > 1) "Sigo escuchando…" else "Escuchando…"
-                                RecPhase.PROCESSING -> "Identificando…"
-                                RecPhase.RESULT -> "La tengo"
-                                RecPhase.NOMATCH -> "Mmm, no la cacé"
-                                RecPhase.ERROR -> "Ups"
-                                RecPhase.IDLE -> "Toca y acerca el teléfono a la música"
+                                RecPhase.LISTENING -> if (round > 1) stringResource(R.string.rec_still_listening) else stringResource(R.string.rec_listening)
+                                RecPhase.PROCESSING -> stringResource(R.string.rec_identifying)
+                                RecPhase.RESULT -> stringResource(R.string.rec_got_it)
+                                RecPhase.NOMATCH -> stringResource(R.string.rec_missed)
+                                RecPhase.ERROR -> stringResource(R.string.rec_oops)
+                                RecPhase.IDLE -> stringResource(R.string.rec_hint)
                             },
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
@@ -453,11 +455,11 @@ fun RecognitionScreen(
                         ) {
                             Icon(Icons.Rounded.Close, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("Cancelar")
+                            Text(stringResource(R.string.common_cancel))
                         }
                     }
                     Text(
-                        "El audio solo se usa para identificar y no se guarda",
+                        stringResource(R.string.rec_privacy_disclaimer),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
@@ -543,7 +545,7 @@ fun RecognitionScreen(
                                 Icon(Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.size(24.dp))
                                 Spacer(Modifier.width(10.dp))
                                 Text(
-                                    "Reproducir",
+                                    stringResource(R.string.common_play),
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.SemiBold
                                 )
@@ -556,24 +558,24 @@ fun RecognitionScreen(
                             ) {
                                 RecAction(
                                     icon = Icons.AutoMirrored.Rounded.QueueMusic,
-                                    label = "Cola",
+                                    label = stringResource(R.string.common_queue),
                                     onClick = {
                                         withResolved(res.title.orEmpty(), res.artist.orEmpty()) { track ->
                                             playerController.addToQueue(track)
-                                            android.widget.Toast.makeText(context, "Añadido a la cola", android.widget.Toast.LENGTH_SHORT).show()
+                                            android.widget.Toast.makeText(context, context.getString(R.string.pld_added), android.widget.Toast.LENGTH_SHORT).show()
                                         }
                                     }
                                 )
                                 RecAction(
                                     icon = Icons.Rounded.Favorite,
-                                    label = "Me gusta",
+                                    label = stringResource(R.string.pld_liked),
                                     onClick = {
                                         withResolved(res.title.orEmpty(), res.artist.orEmpty()) { track ->
                                             scope.launch {
                                                 val added = favoritesManager.toggleFavorite(track)
                                                 android.widget.Toast.makeText(
                                                     context,
-                                                    if (added) "Añadido a Me gusta" else "Quitado de Me gusta",
+                                                    if (added) context.getString(R.string.pld_added_like) else context.getString(R.string.pld_removed_like),
                                                     android.widget.Toast.LENGTH_SHORT
                                                 ).show()
                                             }
@@ -582,7 +584,7 @@ fun RecognitionScreen(
                                 )
                                 RecAction(
                                     icon = Icons.AutoMirrored.Rounded.PlaylistAdd,
-                                    label = "Playlist",
+                                    label = stringResource(R.string.pld_playlist_word),
                                     onClick = {
                                         withResolved(res.title.orEmpty(), res.artist.orEmpty()) { track ->
                                             playlistTrack = track
@@ -591,7 +593,7 @@ fun RecognitionScreen(
                                 )
                                 RecAction(
                                     icon = Icons.Rounded.Share,
-                                    label = "Compartir",
+                                    label = stringResource(R.string.common_share),
                                     onClick = {
                                         val text = buildString {
                                             append(res.title.orEmpty())
@@ -602,7 +604,7 @@ fun RecognitionScreen(
                                             type = "text/plain"
                                             putExtra(Intent.EXTRA_TEXT, text)
                                         }
-                                        context.startActivity(Intent.createChooser(send, "Compartir"))
+                                        context.startActivity(Intent.createChooser(send, context.getString(R.string.common_share)))
                                     }
                                 )
                                 if (!res.shazamUrl.isNullOrBlank()) {
@@ -643,7 +645,7 @@ fun RecognitionScreen(
                             )
                             Spacer(Modifier.height(8.dp))
                             Text(
-                                "Prueba con más volumen o más cerca",
+                                stringResource(R.string.rec_louder),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = TextAlign.Center
@@ -656,7 +658,7 @@ fun RecognitionScreen(
                                 ) {
                                     Icon(Icons.Rounded.GraphicEq, contentDescription = null, modifier = Modifier.size(18.dp))
                                     Spacer(Modifier.width(6.dp))
-                                    Text("Seguir escuchando")
+                                    Text(stringResource(R.string.rec_keep_listening))
                                 }
                                 FilledTonalButton(
                                     onClick = { start() },
@@ -664,7 +666,7 @@ fun RecognitionScreen(
                                 ) {
                                     Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
                                     Spacer(Modifier.width(6.dp))
-                                    Text("Reintentar")
+                                    Text(stringResource(R.string.common_retry))
                                 }
                             }
                         }
@@ -698,7 +700,7 @@ fun RecognitionScreen(
                             ) {
                                 Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
                                 Spacer(Modifier.width(6.dp))
-                                Text("Reintentar")
+                                Text(stringResource(R.string.common_retry))
                             }
                         }
                     }
@@ -721,14 +723,14 @@ fun RecognitionScreen(
                         )
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            "Anteriores (${history.size})",
+                            stringResource(R.string.rec_history_count, history.size),
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold,
                             modifier = Modifier.weight(1f)
                         )
                         TextButton(onClick = {
                             scope.launch(Dispatchers.IO) { historyManager.clear() }
-                        }) { Text("Limpiar") }
+                        }) { Text(stringResource(R.string.common_clear)) }
                     }
                 }
                 items(history, key = { "hist_${it.createdAt}_${it.title}" }) { entry ->
@@ -783,7 +785,7 @@ fun RecognitionScreen(
                                 overflow = TextOverflow.Ellipsis
                             )
                             Text(
-                                "${entry.artist} • ${relativeTime(entry.createdAt)}",
+                                "${entry.artist} • ${relativeTime(context, entry.createdAt)}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
@@ -793,7 +795,7 @@ fun RecognitionScreen(
                         IconButton(onClick = { onPlayResult(entry.title, entry.artist) }) {
                             Icon(
                                 Icons.Rounded.PlayArrow,
-                                contentDescription = "Reproducir",
+                                contentDescription = stringResource(R.string.common_play),
                                 tint = MaterialTheme.colorScheme.primary
                             )
                         }
@@ -802,7 +804,7 @@ fun RecognitionScreen(
                         }) {
                             Icon(
                                 Icons.Rounded.Delete,
-                                contentDescription = "Borrar",
+                                contentDescription = stringResource(R.string.common_delete),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
@@ -828,8 +830,8 @@ fun RecognitionScreen(
 
         if (showMicRationale) {
             PermissionRationaleSheet(
-                title = "Para reconocer música",
-                body = "Necesito acceso a tu micrófono para escuchar unos segundos de audio e identificar la canción. El audio no se guarda.",
+                title = stringResource(R.string.rec_mic_title),
+                body = stringResource(R.string.rec_mic_text),
                 icon = Icons.Rounded.Mic,
                 onConfirm = {
                     showMicRationale = false

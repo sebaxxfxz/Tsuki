@@ -71,7 +71,10 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.TextButton
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import coil3.compose.AsyncImage
+import com.example.tsuki.R
 import com.example.tsuki.auth.YouTubeAuthManager
 import com.example.tsuki.network.MusicSearchFilter
 import com.example.tsuki.network.TSukiContentLocale
@@ -332,7 +335,7 @@ fun MusicScreen(
                                 TSukiPlaylist(
                                     id = pl.id.toString(),
                                     title = pl.name,
-                                    subtitle = "Local • ${pl.trackCount} canciones",
+                                    subtitle = context.getString(R.string.music_subtitle_source, context.getString(R.string.music_source_local), context.resources.getQuantityString(R.plurals.songs_count, pl.trackCount, pl.trackCount)),
                                     thumbnailUrl = pl.firstTrackThumbnail
                                 )
                             }
@@ -425,7 +428,7 @@ fun MusicScreen(
                     TSukiPlaylist(
                         id = "local_${summary.id}",
                         title = summary.name,
-                        subtitle = "Playlist local • ${summary.trackCount} canciones",
+                        subtitle = context.getString(R.string.music_subtitle_source, context.getString(R.string.music_source_local_playlist), context.resources.getQuantityString(R.plurals.songs_count, summary.trackCount, summary.trackCount)),
                         thumbnailUrl = summary.firstTrackThumbnail
                     )
                 }
@@ -479,7 +482,7 @@ fun MusicScreen(
 
     fun playSearchResult(track: MediaTrack) {
         if (!isOnline) {
-            android.widget.Toast.makeText(context, "Sin conexión", android.widget.Toast.LENGTH_SHORT).show()
+            android.widget.Toast.makeText(context, context.getString(R.string.common_no_connection), android.widget.Toast.LENGTH_SHORT).show()
             return
         }
         if (playerController != null) {
@@ -505,9 +508,9 @@ fun MusicScreen(
     val greeting = remember {
         val h = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
         when {
-            h < 12 -> "Buenos días"
-            h < 19 -> "Buenas tardes"
-            else -> "Buenas noches"
+            h < 12 -> context.getString(R.string.music_greeting_morning)
+            h < 19 -> context.getString(R.string.music_greeting_afternoon)
+            else -> context.getString(R.string.music_greeting_evening)
         }
     }
 
@@ -531,22 +534,22 @@ fun MusicScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text("Buscar Música", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(stringResource(R.string.music_search_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 IconButton(onClick = {
                     isSearchActive = false
                     searchQuery = ""
                     searchResults = emptyList()
-                }) { Icon(Icons.Rounded.Close, contentDescription = "Cerrar") }
+                }) { Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.common_close)) }
             }
             Spacer(Modifier.height(8.dp))
             TextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                placeholder = { Text("Buscar canciones, artistas...") },
+                placeholder = { Text(stringResource(R.string.music_search_placeholder)) },
                 leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
                 trailingIcon = {
                     if (searchQuery.isNotEmpty()) IconButton(onClick = { searchQuery = ""; searchResults = emptyList() }) {
-                        Icon(Icons.Rounded.Clear, contentDescription = "Limpiar")
+                        Icon(Icons.Rounded.Clear, contentDescription = stringResource(R.string.common_clear))
                     }
                 },
                 singleLine = true,
@@ -563,16 +566,16 @@ fun MusicScreen(
             )
             Spacer(Modifier.height(4.dp))
             OfflineBanner(visible = !isOnline)
-            Text("Resultados • YouTube Music", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.music_results), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(12.dp))
             when {
                 isSearching -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = MaterialTheme.colorScheme.primary) }
                 searchQuery.isBlank() && searchResults.isEmpty() -> Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-                    Text("Escribe el nombre de una canción o artista para buscar", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.music_search_hint), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
                 }
                 searchResults.isEmpty() -> Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
                     Text(
-                        if (!isOnline) "Sin conexión, revisa tu red" else "No se encontraron resultados para \"$searchQuery\"",
+                        if (!isOnline) stringResource(R.string.home_no_results_offline) else stringResource(R.string.music_no_results, searchQuery),
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -611,31 +614,31 @@ fun MusicScreen(
     if (showAccountDialog && accountInfo != null) {
         AlertDialog(
             onDismissRequest = { showAccountDialog = false },
-            title = { Text(accountInfo?.name ?: "Cuenta de Google") },
-            text = {
-                Column {
-                    accountInfo?.email?.takeIf { it.isNotBlank() }?.let {
-                        Text("Email: $it", style = MaterialTheme.typography.bodyMedium)
-                        Spacer(Modifier.height(4.dp))
+                title = { Text(accountInfo?.name ?: stringResource(R.string.home_google_account)) },
+                text = {
+                    Column {
+                        accountInfo?.email?.takeIf { it.isNotBlank() }?.let {
+                            Text(stringResource(R.string.home_email, it), style = MaterialTheme.typography.bodyMedium)
+                            Spacer(Modifier.height(4.dp))
+                        }
+                        accountInfo?.channelHandle?.takeIf { it.isNotBlank() }?.let {
+                            Text(stringResource(R.string.home_channel, it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
-                    accountInfo?.channelHandle?.takeIf { it.isNotBlank() }?.let {
-                        Text("Canal: $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showAccountDialog = false
+                        scope.launch { authManager.logout() }
+                    }) {
+                        Text(stringResource(R.string.home_sign_out), color = MaterialTheme.colorScheme.error)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showAccountDialog = false }) {
+                        Text(stringResource(R.string.common_close))
                     }
                 }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    showAccountDialog = false
-                    scope.launch { authManager.logout() }
-                }) {
-                    Text("Cerrar Sesión", color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showAccountDialog = false }) {
-                    Text("Cerrar")
-                }
-            }
         )
     }
 
@@ -730,7 +733,7 @@ fun MusicScreen(
                             color = MaterialTheme.colorScheme.primary
                         )
                         Text(
-                            text = "Música",
+                            text = stringResource(R.string.music_title),
                             style = MaterialTheme.typography.headlineMedium,
                             fontWeight = FontWeight.Black,
                             color = MaterialTheme.colorScheme.onBackground
@@ -752,7 +755,7 @@ fun MusicScreen(
                             if (!accountInfo?.avatarUrl.isNullOrBlank()) {
                                 AsyncImage(
                                     model = accountInfo?.avatarUrl,
-                                    contentDescription = "Cuenta",
+                                    contentDescription = stringResource(R.string.home_account),
                                     modifier = Modifier.fillMaxSize()
                                 )
                             } else {
@@ -767,7 +770,7 @@ fun MusicScreen(
                     } else {
                         AssistChip(
                             onClick = onLoginClick,
-                            label = { Text("Conectar", style = MaterialTheme.typography.labelSmall) },
+                            label = { Text(stringResource(R.string.music_connect), style = MaterialTheme.typography.labelSmall) },
                             leadingIcon = {
                                 Icon(
                                     imageVector = Icons.Default.AccountCircle,
@@ -802,7 +805,7 @@ fun MusicScreen(
                         )
                         Spacer(Modifier.width(12.dp))
                         Text(
-                            "Buscar canciones, artistas...",
+                            stringResource(R.string.music_search_placeholder),
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -832,8 +835,8 @@ fun MusicScreen(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
                     ) {
                         Row(modifier = Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Text("Sesión expirada — vuelve a conectar", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.weight(1f))
-                            TextButton(onClick = onLoginClick) { Text("Conectar") }
+                            Text(stringResource(R.string.music_session_expired), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.weight(1f))
+                            TextButton(onClick = onLoginClick) { Text(stringResource(R.string.music_connect)) }
                         }
                     }
                 }
@@ -850,7 +853,7 @@ fun MusicScreen(
                             FilterChip(
                                 selected = selectedChip == null,
                                 onClick = { selectedChip = null },
-                                label = { Text("Todo") },
+                                label = { Text(stringResource(R.string.common_all)) },
                                 shape = CircleShape
                             )
                         }
@@ -874,7 +877,7 @@ fun MusicScreen(
             if (quickPicks.isNotEmpty()) {
                 item(key = "quick_picks_hero") {
                     Column(modifier = Modifier.padding(bottom = 20.dp)) {
-                        MusicSectionHeader(label = "Para ti", title = "Selección rápida", count = quickPicks.size, onClick = {
+                        MusicSectionHeader(label = stringResource(R.string.music_for_you), title = stringResource(R.string.music_quick_picks), count = quickPicks.size, onClick = {
                             if (playerController != null && quickPicks.isNotEmpty()) { playerController.playQueue(quickPicks, 0, false); onExpandPlayer() }
                         })
                         LazyRow(
@@ -894,7 +897,7 @@ fun MusicScreen(
             if (keepListeningTracks.isNotEmpty()) {
                 item(key = "keep_listening") {
                     Column(modifier = Modifier.padding(bottom = 20.dp)) {
-                        MusicSectionHeader(label = "Sigues escuchando", title = "Seguir escuchando", count = keepListeningTracks.size, onClick = {
+                        MusicSectionHeader(label = stringResource(R.string.music_keep_listening_label), title = stringResource(R.string.music_keep_listening_title), count = keepListeningTracks.size, onClick = {
                             if (playerController != null && keepListeningTracks.isNotEmpty()) { playerController.playQueue(keepListeningTracks, 0, false); onExpandPlayer() }
                         })
                         LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -906,7 +909,7 @@ fun MusicScreen(
                                     },
                                     onPlayRadio = {
                                         if (!isOnline) {
-                                            android.widget.Toast.makeText(context, "Sin conexión", android.widget.Toast.LENGTH_SHORT).show()
+                                            android.widget.Toast.makeText(context, context.getString(R.string.common_no_connection), android.widget.Toast.LENGTH_SHORT).show()
                                         } else if (playerController != null) { playerController.playWithRadio(track, false); onExpandPlayer() }
                                     }
                                 )
@@ -919,7 +922,7 @@ fun MusicScreen(
             if (forgottenTracks.isNotEmpty()) {
                 item(key = "forgotten") {
                     Column(modifier = Modifier.padding(bottom = 20.dp)) {
-                        MusicSectionHeader(label = "Redescubre", title = "Favoritos olvidados", count = forgottenTracks.size, onClick = {
+                        MusicSectionHeader(label = stringResource(R.string.music_rediscover), title = stringResource(R.string.music_forgotten), count = forgottenTracks.size, onClick = {
                             if (playerController != null && forgottenTracks.isNotEmpty()) { playerController.playQueue(forgottenTracks, 0, false); onExpandPlayer() }
                         })
                         LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -931,7 +934,7 @@ fun MusicScreen(
                                     },
                                     onPlayRadio = {
                                         if (!isOnline) {
-                                            android.widget.Toast.makeText(context, "Sin conexión", android.widget.Toast.LENGTH_SHORT).show()
+                                            android.widget.Toast.makeText(context, context.getString(R.string.common_no_connection), android.widget.Toast.LENGTH_SHORT).show()
                                         } else if (playerController != null) { playerController.playWithRadio(track, false); onExpandPlayer() }
                                     }
                                 )
@@ -945,7 +948,7 @@ fun MusicScreen(
                 similarSections.forEachIndexed { sIdx, section ->
                     item(key = "similar_${section.title}_$sIdx") {
                         Column(modifier = Modifier.padding(bottom = 20.dp)) {
-                            MusicSectionHeader(label = "Similares", title = section.title, count = section.tracks.size, onClick = {
+                            MusicSectionHeader(label = stringResource(R.string.music_similar), title = section.title, count = section.tracks.size, onClick = {
                                 if (playerController != null) { playerController.playQueue(section.tracks, 0, false); onExpandPlayer() }
                             })
                             LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -957,7 +960,7 @@ fun MusicScreen(
                                         },
                                         onPlayRadio = {
                                             if (!isOnline) {
-                                                android.widget.Toast.makeText(context, "Sin conexión", android.widget.Toast.LENGTH_SHORT).show()
+                                                android.widget.Toast.makeText(context, context.getString(R.string.common_no_connection), android.widget.Toast.LENGTH_SHORT).show()
                                             } else if (playerController != null) { playerController.playWithRadio(track, false); onExpandPlayer() }
                                         }
                                     )
@@ -974,8 +977,8 @@ fun MusicScreen(
                         if (likedTracks.isNotEmpty()) add(
                             TSukiPlaylist(
                                 id = "LM",
-                                title = "Tus Me Gusta",
-                                subtitle = if (syncLikedEnabled && isLoggedIn) "YouTube Music • ${likedTracks.size} canciones" else "Locales • ${likedTracks.size} canciones",
+                                title = stringResource(R.string.auto_favorites),
+                                subtitle = if (syncLikedEnabled && isLoggedIn) context.getString(R.string.music_subtitle_source, context.getString(R.string.music_source_ytm), context.resources.getQuantityString(R.plurals.songs_count, likedTracks.size, likedTracks.size)) else context.getString(R.string.music_subtitle_source, context.getString(R.string.music_source_local_items), context.resources.getQuantityString(R.plurals.songs_count, likedTracks.size, likedTracks.size)),
                                 thumbnailUrl = likedTracks.firstOrNull()?.artworkUrl
                             )
                         )
@@ -1030,11 +1033,11 @@ fun MusicScreen(
 
         if (!isLoggedIn) {
             val guestHeroTracks = if (effectiveHistoryTracks.isNotEmpty()) effectiveHistoryTracks else recommendations
-            val guestHeroTitle = if (effectiveHistoryTracks.isNotEmpty()) "Escuchado recientemente" else "Hecho para ti"
             if (guestHeroTracks.isNotEmpty()) {
                 item(key = "guest_hero") {
+                    val guestHeroTitle = if (effectiveHistoryTracks.isNotEmpty()) stringResource(R.string.music_recently_played) else stringResource(R.string.music_made_for_you)
                     Column(modifier = Modifier.padding(bottom = 20.dp)) {
-                        MusicSectionHeader(label = "Para ti", title = guestHeroTitle, count = guestHeroTracks.size, onClick = {
+                        MusicSectionHeader(label = stringResource(R.string.music_for_you), title = guestHeroTitle, count = guestHeroTracks.size, onClick = {
                             if (playerController != null) { playerController.playQueue(guestHeroTracks, 0, false); onExpandPlayer() }
                         })
                         LazyRow(
@@ -1064,10 +1067,10 @@ fun MusicScreen(
                             }
                         }
                         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text("Conecta tu cuenta para ver tus mixes", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)
-                            Text("Mixes personalizados, similares y más", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(stringResource(R.string.music_connect_mixes), style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)
+                            Text(stringResource(R.string.music_connect_mixes_sub), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        AssistChip(onClick = onLoginClick, label = { Text("Conectar") }, leadingIcon = { Icon(Icons.Default.AccountCircle, contentDescription = null, modifier = Modifier.size(16.dp)) }, shape = CircleShape)
+                        AssistChip(onClick = onLoginClick, label = { Text(stringResource(R.string.music_connect)) }, leadingIcon = { Icon(Icons.Default.AccountCircle, contentDescription = null, modifier = Modifier.size(16.dp)) }, shape = CircleShape)
                     }
                 }
             }
@@ -1076,7 +1079,7 @@ fun MusicScreen(
         if (trendingMusic.isNotEmpty()) {
             item(key = "music_trending") {
                 Column(modifier = Modifier.padding(bottom = 20.dp)) {
-                    MusicSectionHeader(label = "Tendencias", title = "Lo más sonado", count = trendingMusic.size, onClick = {
+                    MusicSectionHeader(label = stringResource(R.string.music_trending), title = stringResource(R.string.music_trending_title), count = trendingMusic.size, onClick = {
                         if (playerController != null) { playerController.playQueue(trendingMusic, 0, false); onExpandPlayer() }
                     })
                     LazyRow(

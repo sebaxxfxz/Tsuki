@@ -41,6 +41,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -50,6 +51,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil3.compose.AsyncImage
+import com.example.tsuki.R
 import com.example.tsuki.data.local.WatchHistoryManager
 import com.example.tsuki.ui.components.rememberHiResImageModel
 import java.text.SimpleDateFormat
@@ -94,15 +96,15 @@ fun WeeklyWrappedOverlay(
     week: WatchHistoryManager.WeeklyWrapped,
     isCurrentWeek: Boolean,
     onDismiss: () -> Unit,
-    titleText: String = "TU WRAPPED",
+    titleText: String? = null,
     periodLabel: String? = null,
-    badgeText: String = "Esta semana"
+    badgeText: String? = null
 ) {
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
     ) {
-        val rangeFormatter = remember { SimpleDateFormat("d MMM", Locale("es")) }
+        val rangeFormatter = remember { SimpleDateFormat("d MMM", Locale.getDefault()) }
         var appeared by remember { mutableStateOf(false) }
         androidx.compose.runtime.LaunchedEffect(Unit) { appeared = true }
         val heroAlpha by androidx.compose.animation.core.animateFloatAsState(
@@ -163,7 +165,7 @@ fun WeeklyWrappedOverlay(
                         ) {
                             Icon(
                                 Icons.Rounded.Close,
-                                contentDescription = "Cerrar",
+                                contentDescription = stringResource(R.string.common_close),
                                 tint = MaterialTheme.colorScheme.onSurface
                             )
                         }
@@ -175,13 +177,13 @@ fun WeeklyWrappedOverlay(
                                 .graphicsLayer { alpha = heroAlpha; scaleX = heroScale; scaleY = heroScale }
                         ) {
                             Text(
-                                titleText,
+                                titleText ?: stringResource(R.string.wrap_title),
                                 style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Black, letterSpacing = 4.sp),
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
                             )
                             Spacer(Modifier.height(6.dp))
                             Text(
-                                periodLabel ?: "Semana ${rangeFormatter.format(Date(week.weekStartMs))} – ${rangeFormatter.format(Date(week.weekStartMs + 6L * 86400000L))}",
+                                periodLabel ?: stringResource(R.string.wrap_week_range, rangeFormatter.format(Date(week.weekStartMs)), rangeFormatter.format(Date(week.weekStartMs + 6L * 86400000L))),
                                 style = MaterialTheme.typography.titleMedium,
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f)
                             )
@@ -192,15 +194,15 @@ fun WeeklyWrappedOverlay(
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                "${week.plays} reproducciones",
+                                stringResource(R.string.wrap_plays_count, week.plays),
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f)
                             )
                             if (isCurrentWeek) {
                                 Spacer(Modifier.height(10.dp))
                                 Surface(shape = CircleShape, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f)) {
-                                    Text(
-                                        badgeText,
+                                Text(
+                                    badgeText ?: stringResource(R.string.wrap_week),
                                         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
                                     )
@@ -214,7 +216,7 @@ fun WeeklyWrappedOverlay(
                     item(key = "wrapped_podium") {
                         Column(modifier = Modifier.m3StaggeredEntrance(0)) {
                             Text(
-                                "El podio de la semana",
+                                stringResource(R.string.wrap_podium),
                                 style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Black),
                                 color = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
@@ -237,7 +239,7 @@ fun WeeklyWrappedOverlay(
                 if (rest.isNotEmpty()) {
                     item(key = "wrapped_rest_header") {
                         Text(
-                            "También sonaron",
+                            stringResource(R.string.wrap_also),
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier
@@ -253,7 +255,7 @@ fun WeeklyWrappedOverlay(
                 if (week.topArtists.isNotEmpty()) {
                     item(key = "wrapped_artists_header") {
                         Text(
-                            "Tus artistas",
+                            stringResource(R.string.wrap_artists),
                             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Black),
                             color = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier

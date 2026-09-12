@@ -28,16 +28,21 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.ui.PlayerView
 import coil3.compose.AsyncImage
+import com.example.tsuki.R
 import com.example.tsuki.domain.model.MediaTrack
 import com.example.tsuki.playback.PlayerController
 import kotlin.math.roundToInt
@@ -93,12 +98,15 @@ fun CornerPipPlayer(
                     .background(Color.Black)
             ) {
                 if (isVideoMode) {
+                    val ctrl by playerController.mediaControllerFlow.collectAsStateWithLifecycle()
                     AndroidView(
                         factory = { ctx ->
                             PlayerView(ctx).apply {
                                 useController = false
                                 resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                                 setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
+                                setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
+                                player = playerController.mediaController
                                 layoutParams = FrameLayout.LayoutParams(
                                     ViewGroup.LayoutParams.MATCH_PARENT,
                                     ViewGroup.LayoutParams.MATCH_PARENT
@@ -106,7 +114,6 @@ fun CornerPipPlayer(
                             }
                         },
                         update = { view ->
-                            val ctrl = playerController.mediaController
                             if (view.player != ctrl) view.player = ctrl
                         },
                         onRelease = { view ->
@@ -182,7 +189,7 @@ fun CornerPipPlayer(
                         IconButton(onClick = onClose, modifier = Modifier.fillMaxSize()) {
                             Icon(
                                 imageVector = Icons.Default.Close,
-                                contentDescription = "Cerrar",
+                                contentDescription = stringResource(R.string.common_close),
                                 tint = Color.White,
                                 modifier = Modifier.size(16.dp)
                             )

@@ -36,6 +36,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -61,6 +62,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.example.tsuki.R
 import com.example.tsuki.data.local.PlayerPreferences
 import com.example.tsuki.playback.AudioEqualizerHelper
 import kotlinx.coroutines.flow.first
@@ -68,14 +70,25 @@ import kotlinx.coroutines.launch
 import java.util.Locale
 
 private val EQ_PRESETS: Map<String, List<Int>> = mapOf(
-    "Plano" to listOf(0, 0, 0, 0, 0),
-    "Rock" to listOf(500, 300, -200, 300, 600),
-    "Pop" to listOf(-150, 300, 450, 300, -150),
-    "Jazz" to listOf(400, 250, -150, 200, 350),
-    "Clásica" to listOf(450, 350, -100, 350, 400),
-    "Bass" to listOf(700, 500, 0, -100, -200),
-    "Vocal" to listOf(-250, -100, 400, 450, 100),
-    "Electrónica" to listOf(550, 300, 0, 300, 500)
+    "flat" to listOf(0, 0, 0, 0, 0),
+    "rock" to listOf(500, 300, -200, 300, 600),
+    "pop" to listOf(-150, 300, 450, 300, -150),
+    "jazz" to listOf(400, 250, -150, 200, 350),
+    "classical" to listOf(450, 350, -100, 350, 400),
+    "bass" to listOf(700, 500, 0, -100, -200),
+    "vocal" to listOf(-250, -100, 400, 450, 100),
+    "electronic" to listOf(550, 300, 0, 300, 500)
+)
+
+private val EQ_PRESET_LEGACY: Map<String, String> = mapOf(
+    "Plano" to "flat",
+    "Rock" to "rock",
+    "Pop" to "pop",
+    "Jazz" to "jazz",
+    "Clásica" to "classical",
+    "Bass" to "bass",
+    "Vocal" to "vocal",
+    "Electrónica" to "electronic"
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -114,7 +127,8 @@ fun EqualizerDialog(
         bassBoost = prefs.eqBassBoost.first()
         virtualizer = prefs.eqVirtualizer.first()
         outputGain = prefs.eqOutputGainMb.first()
-        selectedPreset = prefs.eqPreset.first()
+        val savedPreset = prefs.eqPreset.first()
+        selectedPreset = EQ_PRESET_LEGACY[savedPreset] ?: savedPreset
     }
 
     fun persistBands() {
@@ -176,12 +190,12 @@ fun EqualizerDialog(
                     Spacer(modifier = Modifier.width(14.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Ecualizador",
+                            text = stringResource(R.string.eq_title),
                             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = if (capabilities.bandCount > 0) "${capabilities.bandCount} bandas · sesión activa" else "Esperando sesión de audio…",
+                            text = if (capabilities.bandCount > 0) stringResource(R.string.eq_bands_active, capabilities.bandCount) else stringResource(R.string.eq_waiting),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -210,7 +224,21 @@ fun EqualizerDialog(
                                         applyPreset(presetName)
                                         scope.launch { prefs.setEqPreset(presetName) }
                                     },
-                                    label = { Text(presetName, style = MaterialTheme.typography.labelSmall) },
+                                    label = {
+                                        Text(
+                                            when (presetName) {
+                                                "flat" -> stringResource(R.string.eq_preset_flat)
+                                                "rock" -> stringResource(R.string.eq_preset_rock)
+                                                "pop" -> stringResource(R.string.eq_preset_pop)
+                                                "jazz" -> stringResource(R.string.eq_preset_jazz)
+                                                "classical" -> stringResource(R.string.eq_preset_classical)
+                                                "bass" -> stringResource(R.string.eq_preset_bass)
+                                                "vocal" -> stringResource(R.string.eq_preset_vocal)
+                                                else -> stringResource(R.string.eq_preset_electronic)
+                                            },
+                                            style = MaterialTheme.typography.labelSmall
+                                        )
+                                    },
                                     enabled = eqEnabled
                                 )
                             }
@@ -260,7 +288,7 @@ fun EqualizerDialog(
                 } else {
                     Surface(color = MaterialTheme.colorScheme.surfaceContainerHighest, shape = RoundedCornerShape(16.dp)) {
                         Text(
-                            text = "Reproduce una canción para activar el ecualizador del dispositivo",
+                            text = stringResource(R.string.eq_empty),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center,
@@ -272,7 +300,7 @@ fun EqualizerDialog(
                 EqSection {
                     EqEffectRow(
                         icon = Icons.Rounded.GraphicEq,
-                        title = "Refuerzo de graves",
+                        title = stringResource(R.string.eq_bass),
                         value = "${bassBoost / 10}%",
                         enabled = eqEnabled
                     )
@@ -293,7 +321,7 @@ fun EqualizerDialog(
 
                     EqEffectRow(
                         icon = Icons.Rounded.SurroundSound,
-                        title = "Virtualizador surround",
+                        title = stringResource(R.string.eq_virtualizer),
                         value = "${virtualizer / 10}%",
                         enabled = eqEnabled
                     )
@@ -314,7 +342,7 @@ fun EqualizerDialog(
 
                     EqEffectRow(
                         icon = Icons.Rounded.VolumeUp,
-                        title = "Ganancia de salida",
+                        title = stringResource(R.string.eq_gain),
                         value = formatDb(outputGain / 100f),
                         enabled = eqEnabled
                     )
@@ -347,9 +375,9 @@ fun EqualizerDialog(
                             prefs.setEqPreset("custom")
                             prefs.setEqBassBoost(0); prefs.setEqVirtualizer(0); prefs.setEqOutputGainMb(0)
                         }
-                    }) { Text("Restablecer") }
+                    }) { Text(stringResource(R.string.common_reset)) }
                     Spacer(Modifier.width(8.dp))
-                    Button(onClick = onDismiss) { Text("Cerrar") }
+                    Button(onClick = onDismiss) { Text(stringResource(R.string.common_close)) }
                 }
             }
         }

@@ -1,14 +1,24 @@
 package com.example.tsuki.ui.player
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -56,6 +66,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.stringResource
+import com.example.tsuki.R
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -119,27 +131,130 @@ fun PlayerTopActionsV9(
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Rounded.PlaylistAdd,
-                        contentDescription = "Añadir a playlist",
+                        contentDescription = stringResource(R.string.player_add_to_playlist),
                         tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
                         modifier = Modifier.size(28.dp)
                     )
                 }
             }
-            IconButton(
-                onClick = {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onToggleFavorite()
-                },
-                modifier = Modifier.size(44.dp)
-            ) {
-                Icon(
-                    imageVector = if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
-                    contentDescription = if (isFavorite) "Quitar de favoritos" else "Añadir a favoritos",
-                    tint = if (isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.size(28.dp)
-                )
-            }
+            V9FavoriteButton(
+                isFavorite = isFavorite,
+                onToggle = onToggleFavorite,
+                activeColor = MaterialTheme.colorScheme.primary,
+                inactiveColor = MaterialTheme.colorScheme.onSurface
+            )
         }
+    }
+}
+
+@Composable
+fun V9FavoriteButton(
+    isFavorite: Boolean,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier,
+    activeColor: Color = MaterialTheme.colorScheme.primary,
+    inactiveColor: Color = MaterialTheme.colorScheme.onSurface
+) {
+    val haptic = LocalHapticFeedback.current
+    val heartScale = remember { Animatable(1f) }
+    val ringScale = remember { Animatable(0.6f) }
+    val ringAlpha = remember { Animatable(0f) }
+    val coroutineScope = rememberCoroutineScope()
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+
+    val baseScale by animateFloatAsState(
+        targetValue = if (isPressed) 0.82f else 1.0f,
+        animationSpec = spring(dampingRatio = 0.65f, stiffness = 600f),
+        label = "FavBaseScale"
+    )
+
+    fun triggerBurst() {
+        coroutineScope.launch {
+            heartScale.snapTo(0.68f)
+            heartScale.animateTo(
+                targetValue = 1.35f,
+                animationSpec = spring(dampingRatio = 0.42f, stiffness = 520f)
+            )
+            heartScale.animateTo(
+                targetValue = 1.0f,
+                animationSpec = spring(dampingRatio = 0.6f, stiffness = 420f)
+            )
+        }
+        coroutineScope.launch {
+            ringScale.snapTo(0.6f)
+            ringAlpha.snapTo(0.85f)
+            ringScale.animateTo(
+                targetValue = 1.5f,
+                animationSpec = tween(durationMillis = 300, easing = androidx.compose.animation.core.FastOutSlowInEasing)
+            )
+        }
+        coroutineScope.launch {
+            ringAlpha.animateTo(
+                targetValue = 0f,
+                animationSpec = tween(durationMillis = 300, easing = androidx.compose.animation.core.LinearEasing)
+            )
+        }
+    }
+
+    fun triggerDeflate() {
+        coroutineScope.launch {
+            heartScale.snapTo(0.85f)
+            heartScale.animateTo(
+                targetValue = 1.0f,
+                animationSpec = spring(dampingRatio = 0.65f, stiffness = 450f)
+            )
+        }
+    }
+
+    Box(
+        modifier = modifier
+            .size(44.dp)
+            .clip(CircleShape)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = {
+                    if (!isFavorite) {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        triggerBurst()
+                    } else {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        triggerDeflate()
+                    }
+                    onToggle()
+                }
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        if (ringAlpha.value > 0.01f) {
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .graphicsLayer {
+                        scaleX = ringScale.value
+                        scaleY = ringScale.value
+                        alpha = ringAlpha.value
+                    }
+                    .border(
+                        width = 2.dp,
+                        color = activeColor,
+                        shape = CircleShape
+                    )
+            )
+        }
+
+        Icon(
+            imageVector = if (isFavorite) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+            contentDescription = if (isFavorite) stringResource(R.string.player_remove_fav) else stringResource(R.string.player_add_fav),
+            tint = if (isFavorite) activeColor else inactiveColor.copy(alpha = 0.85f),
+            modifier = Modifier
+                .size(28.dp)
+                .graphicsLayer {
+                    scaleX = baseScale * heartScale.value
+                    scaleY = baseScale * heartScale.value
+                }
+        )
     }
 }
 
@@ -245,7 +360,7 @@ fun V9AnimatedPlaybackControls(
             ) {
                 Icon(
                     imageVector = Icons.Rounded.SkipPrevious,
-                    contentDescription = "Anterior",
+                    contentDescription = stringResource(R.string.player_previous),
                     tint = tintOtherIcons,
                     modifier = Modifier.size(32.dp)
                 )
@@ -261,16 +376,36 @@ fun V9AnimatedPlaybackControls(
                 animationSpec = dpSpringSpec,
                 label = "playCorner"
             )
+            val playPauseInteractionSource = remember { MutableInteractionSource() }
+            val isPlayPausePressed by playPauseInteractionSource.collectIsPressedAsState()
+            val playPauseButtonScale by animateFloatAsState(
+                targetValue = if (isPlayPausePressed) 0.90f else 1.0f,
+                animationSpec = spring(dampingRatio = 0.62f, stiffness = 600f),
+                label = "playPauseButtonScale"
+            )
+
+            val playPauseRotation by animateFloatAsState(
+                targetValue = if (playPauseVisualState) 90f else 0f,
+                animationSpec = spring(dampingRatio = 0.58f, stiffness = 420f),
+                label = "playPauseRotation"
+            )
+
             Box(
                 modifier = Modifier
                     .weight(playWeight)
                     .fillMaxHeight()
                     .graphicsLayer {
+                        scaleX = playPauseButtonScale
+                        scaleY = playPauseButtonScale
                         clip = true
                         shape = RoundedCornerShape(playCorner)
                     }
                     .background(colorPlayPause)
-                    .clickable(role = androidx.compose.ui.semantics.Role.Button) {
+                    .clickable(
+                        interactionSource = playPauseInteractionSource,
+                        indication = null,
+                        role = androidx.compose.ui.semantics.Role.Button
+                    ) {
                         lastClicked = V9PlaybackButtonType.PLAY_PAUSE
                         clickTrigger++
                         hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -278,19 +413,31 @@ fun V9AnimatedPlaybackControls(
                     },
                 contentAlignment = Alignment.Center
             ) {
-                Crossfade(
+                AnimatedContent(
                     targetState = playPauseVisualState,
-                    animationSpec = androidx.compose.animation.core.tween(
-                        durationMillis = com.example.tsuki.ui.components.M3MotionTokens.DurationShort4,
-                        easing = com.example.tsuki.ui.components.M3MotionTokens.EmphasizedDecelerateEasing
-                    ),
-                    label = "v9PlayPauseCrossfade"
+                    transitionSpec = {
+                        (scaleIn(
+                            animationSpec = spring(dampingRatio = 0.55f, stiffness = 480f),
+                            initialScale = 0.65f
+                        ) + fadeIn(tween(140)))
+                            .togetherWith(
+                                scaleOut(
+                                    animationSpec = spring(dampingRatio = 0.75f, stiffness = 650f),
+                                    targetScale = 0.65f
+                                ) + fadeOut(tween(100))
+                            )
+                    },
+                    label = "v9PlayPauseMorph"
                 ) { playing ->
                     Icon(
                         imageVector = if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                        contentDescription = if (playing) "Pausar" else "Reproducir",
+                        contentDescription = if (playing) stringResource(R.string.player_pause) else stringResource(R.string.common_play),
                         tint = tintPlayPauseIcon,
-                        modifier = Modifier.size(38.dp)
+                        modifier = Modifier
+                            .size(38.dp)
+                            .graphicsLayer {
+                                rotationZ = if (playing) (playPauseRotation - 90f) else playPauseRotation
+                            }
                     )
                 }
             }
@@ -316,7 +463,7 @@ fun V9AnimatedPlaybackControls(
             ) {
                 Icon(
                     imageVector = Icons.Rounded.SkipNext,
-                    contentDescription = "Siguiente",
+                    contentDescription = stringResource(R.string.common_next),
                     tint = tintOtherIcons,
                     modifier = Modifier.size(32.dp)
                 )
@@ -349,7 +496,7 @@ fun V9SecondaryControlsRow(
         ) {
             Icon(
                 imageVector = Icons.Rounded.Shuffle,
-                contentDescription = "Aleatorio",
+                contentDescription = stringResource(R.string.common_shuffle),
                 tint = if (shuffleEnabled) accentColor else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
                 modifier = Modifier.size(24.dp)
             )
@@ -363,7 +510,7 @@ fun V9SecondaryControlsRow(
         ) {
             Icon(
                 imageVector = Icons.Rounded.Equalizer,
-                contentDescription = "Ecualizador",
+                contentDescription = stringResource(R.string.player_eq),
                 tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
                 modifier = Modifier.size(24.dp)
             )
@@ -377,7 +524,7 @@ fun V9SecondaryControlsRow(
         ) {
             Icon(
                 imageVector = if (repeatMode == Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
-                contentDescription = "Repetir",
+                contentDescription = stringResource(R.string.player_repeat),
                 tint = if (repeatMode != Player.REPEAT_MODE_OFF) accentColor else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
                 modifier = Modifier.size(24.dp)
             )

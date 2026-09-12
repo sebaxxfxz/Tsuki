@@ -54,11 +54,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.example.tsuki.R
 import com.example.tsuki.domain.model.MediaTrack
 import com.example.tsuki.playback.PlayerController
 import com.example.tsuki.ui.components.FastScrollBox
@@ -79,6 +82,7 @@ fun ReorderableQueueList(
     isPlaying: Boolean = true
 ) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     val lazyListState = rememberLazyListState()
 
@@ -132,8 +136,8 @@ fun ReorderableQueueList(
                         if (removed != null) {
                             scope.launch {
                                 val result = snackbarHostState.showSnackbar(
-                                    message = "\"${removed.title}\" eliminado",
-                                    actionLabel = "Deshacer",
+                                    message = context.getString(R.string.player_queue_removed, removed.title),
+                                    actionLabel = context.getString(R.string.common_undo),
                                     duration = SnackbarDuration.Short
                                 )
                                 if (result == SnackbarResult.ActionPerformed) {
@@ -262,7 +266,7 @@ fun ReorderableQueueList(
                         ) {
                             Icon(
                                 imageVector = Icons.Rounded.DragHandle,
-                                contentDescription = "Arrastrar para reordenar",
+                                contentDescription = stringResource(R.string.pld_drag_reorder),
                                 tint = if (isDragging) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                                 modifier = Modifier.size(22.dp)
                             )

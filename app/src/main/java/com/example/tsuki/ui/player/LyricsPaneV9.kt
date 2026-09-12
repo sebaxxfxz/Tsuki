@@ -28,6 +28,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
+import com.example.tsuki.R
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -104,7 +106,7 @@ fun LyricsPaneV9(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = onPrevious, modifier = Modifier.size(44.dp)) {
-                    Icon(imageVector = Icons.Rounded.SkipPrevious, contentDescription = "Anterior", tint = MaterialTheme.colorScheme.onSurface)
+                    Icon(imageVector = Icons.Rounded.SkipPrevious, contentDescription = stringResource(R.string.player_previous), tint = MaterialTheme.colorScheme.onSurface)
                 }
                 IconButton(
                     onClick = onPlayPause,
@@ -114,7 +116,7 @@ fun LyricsPaneV9(
                 ) {
                     Icon(
                         imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                        contentDescription = if (isPlaying) "Pausar" else "Reproducir",
+                        contentDescription = if (isPlaying) stringResource(R.string.player_pause) else stringResource(R.string.common_play),
                         tint = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier
                             .size(28.dp)
@@ -122,7 +124,7 @@ fun LyricsPaneV9(
                     )
                 }
                 IconButton(onClick = onNext, modifier = Modifier.size(44.dp)) {
-                    Icon(imageVector = Icons.Rounded.SkipNext, contentDescription = "Siguiente", tint = MaterialTheme.colorScheme.onSurface)
+                    Icon(imageVector = Icons.Rounded.SkipNext, contentDescription = stringResource(R.string.common_next), tint = MaterialTheme.colorScheme.onSurface)
                 }
             }
             VolumeSliderV9(modifier = Modifier.fillMaxWidth())

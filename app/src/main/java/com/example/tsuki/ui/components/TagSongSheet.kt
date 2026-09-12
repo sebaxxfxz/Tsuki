@@ -18,10 +18,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.example.tsuki.R
 import com.example.tsuki.data.local.TrackTagsManager
 import com.example.tsuki.data.recommendation.TSukiInteractionType
 import com.example.tsuki.data.recommendation.TSukiNeuroEngine
@@ -29,7 +31,7 @@ import com.example.tsuki.domain.model.MediaTrack
 import kotlinx.coroutines.launch
 
 private val SUGGESTED_MOODS = listOf(
-    "Chill", "Workout", "Focus", "Sleep", "Party", "Drive", "Triste", "Romántico"
+    "Chill", "Workout", "Focus", "Sleep", "Party", "Drive", "Sad", "Romantic"
 )
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -65,7 +67,7 @@ fun TagSongSheet(
                 .padding(bottom = 32.dp)
         ) {
             Text(
-                text = "Etiquetar canción",
+                text = stringResource(R.string.tag_title),
                 style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(bottom = 12.dp)
@@ -110,7 +112,7 @@ fun TagSongSheet(
             }
 
             Text(
-                text = "¿Cómo te hace sentir?",
+                text = stringResource(R.string.tag_feel),
                 style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = 8.dp)
@@ -137,7 +139,7 @@ fun TagSongSheet(
                                 tagsManager.setMood(videoId, track.title, track.artist, mood)
                                 TSukiNeuroEngine.onTrackInteraction(track, TSukiInteractionType.MOOD_TAGGED)
                                 currentMood = mood.lowercase()
-                                Toast.makeText(context, "Etiquetada como $mood", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, context.getString(R.string.tag_tagged, mood), Toast.LENGTH_SHORT).show()
                             }
                         }
                     ) {
@@ -174,7 +176,7 @@ fun TagSongSheet(
                 OutlinedTextField(
                     value = customMood,
                     onValueChange = { customMood = it },
-                    label = { Text("Otro mood") },
+                    label = { Text(stringResource(R.string.tag_other)) },
                     singleLine = true,
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(12.dp)
@@ -188,20 +190,20 @@ fun TagSongSheet(
                                 TSukiNeuroEngine.onTrackInteraction(track, TSukiInteractionType.MOOD_TAGGED)
                                 currentMood = customMood.trim().lowercase()
                                 customMood = ""
-                                Toast.makeText(context, "Etiqueta guardada", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, context.getString(R.string.tag_saved), Toast.LENGTH_SHORT).show()
                             }
                         }
                     },
                     enabled = customMood.isNotBlank()
                 ) {
-                    Icon(imageVector = Icons.Rounded.Check, contentDescription = "Guardar mood")
+                    Icon(imageVector = Icons.Rounded.Check, contentDescription = stringResource(R.string.tag_save_mood))
                 }
             }
 
             Spacer(modifier = Modifier.height(20.dp))
 
             Text(
-                text = "No recomendar",
+                text = stringResource(R.string.tag_dont_recommend),
                 style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = 8.dp)
@@ -219,7 +221,7 @@ fun TagSongSheet(
                             .clickable {
                                 scope.launch {
                                     TSukiNeuroEngine.onArtistRejected(track.artist)
-                                    Toast.makeText(context, "Menos de ${track.artist} en tu feed", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, context.getString(R.string.tag_less_artist_done, track.artist), Toast.LENGTH_SHORT).show()
                                     onDismiss()
                                 }
                             }
@@ -234,7 +236,7 @@ fun TagSongSheet(
                         )
                         Spacer(modifier = Modifier.width(12.dp))
                         Text(
-                            text = "Menos de este artista",
+                            text = stringResource(R.string.tag_less_artist),
                             style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
                             color = MaterialTheme.colorScheme.onErrorContainer
                         )
@@ -246,7 +248,7 @@ fun TagSongSheet(
                             .clickable {
                                 scope.launch {
                                     TSukiNeuroEngine.onTrackInteraction(track, TSukiInteractionType.NOT_INTERESTED)
-                                    Toast.makeText(context, "No volverá a aparecer", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, context.getString(R.string.tag_not_again), Toast.LENGTH_SHORT).show()
                                     onDismiss()
                                 }
                             }
@@ -261,7 +263,7 @@ fun TagSongSheet(
                         )
                         Spacer(modifier = Modifier.width(12.dp))
                         Text(
-                            text = "No recomendar esta canción",
+                            text = stringResource(R.string.tag_not_this),
                             style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
                             color = MaterialTheme.colorScheme.onErrorContainer
                         )

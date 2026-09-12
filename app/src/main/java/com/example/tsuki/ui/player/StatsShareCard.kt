@@ -18,6 +18,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
+import com.example.tsuki.R
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -101,7 +103,7 @@ fun StatsShareCard(
                 color = onContainer
             )
             Text(
-                text = "$plays reproducciones · $uniqueSongs canciones · $uniqueArtists artistas",
+                text = stringResource(R.string.stats_card_summary, plays, uniqueSongs, uniqueArtists),
                 style = MaterialTheme.typography.bodySmall,
                 color = onContainer.copy(alpha = 0.8f)
             )
@@ -110,7 +112,7 @@ fun StatsShareCard(
 
             if (topSongs.isEmpty()) {
                 Text(
-                    text = "Sin canciones en este período",
+                    text = stringResource(R.string.stats_card_empty),
                     style = MaterialTheme.typography.bodySmall,
                     color = onContainer.copy(alpha = 0.7f)
                 )

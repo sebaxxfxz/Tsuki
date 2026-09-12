@@ -70,6 +70,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -125,6 +126,10 @@ class MainActivity : ComponentActivity() {
     private val appearancePreferences by lazy { AppearancePreferences(this) }
 
     private val youtubeVideoIdRegex = Regex("(?:[?&]v=|youtu\\.be/|/shorts/|/embed/|/live/)([A-Za-z0-9_-]{11})")
+
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(com.example.tsuki.util.AppLocale.wrap(newBase, com.example.tsuki.util.AppLocale.readStored(newBase)))
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -249,13 +254,13 @@ class MainActivity : ComponentActivity() {
 }
 
 @Suppress("SpellCheckingInspection")
-enum class TSukiDestination(val label: String, val icon: ImageVector) {
-    HOME("Inicio", Icons.Rounded.Home),
-    MUSIC("Música", Icons.Rounded.MusicNote),
-    SUBSCRIPTIONS("Suscripciones", Icons.Rounded.Subscriptions),
-    LIBRARY("Biblioteca", Icons.Rounded.Download),
-    RECOGNIZE("Reconocer", Icons.Rounded.GraphicEq),
-    SETTINGS("Ajustes", Icons.Rounded.Settings)
+enum class TSukiDestination(val labelRes: Int, val icon: ImageVector) {
+    HOME(R.string.nav_home, Icons.Rounded.Home),
+    MUSIC(R.string.music_title, Icons.Rounded.MusicNote),
+    SUBSCRIPTIONS(R.string.subs_title, Icons.Rounded.Subscriptions),
+    LIBRARY(R.string.lib_title, Icons.Rounded.Download),
+    RECOGNIZE(R.string.nav_recognize, Icons.Rounded.GraphicEq),
+    SETTINGS(R.string.nav_settings, Icons.Rounded.Settings)
 }
 
 @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
@@ -447,8 +452,10 @@ fun TSukiMainScreen(playerController: PlayerController) {
                 if (playerController.uiState.value.isVideoMode) {
                     isPlayerExpanded = true
                     isCornerPip = false
+                    playerSheetState.collapseImmediate()
                 } else {
                     playerSheetState.expandSoft()
+                    isPlayerExpanded = false
                 }
             }
         }
@@ -471,6 +478,12 @@ fun TSukiMainScreen(playerController: PlayerController) {
     }
     BackHandler(enabled = isPlayerExpanded && isVideoPlaying) {
         minimizeToCornerPip()
+    }
+
+    LaunchedEffect(playerState.isVideoMode) {
+        if (playerState.isVideoMode && !playerSheetState.isCollapsed) {
+            playerSheetState.collapseImmediate()
+        }
     }
 
     if (onboardingDone == null) {
@@ -534,7 +547,14 @@ fun TSukiMainScreen(playerController: PlayerController) {
                                     viewModel = homeViewModel,
                                     playerController = playerController,
                                     onExpandPlayer = {
-                                        if (playerController.uiState.value.isVideoMode) { isPlayerExpanded = true; isCornerPip = false } else { playerSheetState.expandSoft() }
+                                        if (playerController.uiState.value.isVideoMode) {
+                                            isPlayerExpanded = true
+                                            isCornerPip = false
+                                            playerSheetState.collapseImmediate()
+                                        } else {
+                                            playerSheetState.expandSoft()
+                                            isPlayerExpanded = false
+                                        }
                                     },
                                     onPersonalizationClick = { showPersonalization = true },
                                     onShortClick = { tracks, index ->
@@ -551,7 +571,7 @@ fun TSukiMainScreen(playerController: PlayerController) {
                                 recommendations = recommendations,
                                 isLoading = isLoadingMusic,
                                 playerController = playerController,
-                                onExpandPlayer = { playerSheetState.expandSoft(); isCornerPip = false },
+                                onExpandPlayer = { playerSheetState.expandSoft(); isCornerPip = false; isPlayerExpanded = false },
                                 onLoginClick = { showLogin = true },
                                 onTrackClick = { track ->
                                     val queue = when {
@@ -572,7 +592,14 @@ fun TSukiMainScreen(playerController: PlayerController) {
                             TSukiDestination.SUBSCRIPTIONS -> SubscriptionsScreen(
                                 playerController = playerController,
                                 onExpandPlayer = {
-                                    if (playerController.uiState.value.isVideoMode) { isPlayerExpanded = true; isCornerPip = false } else { playerSheetState.expandSoft() }
+                                    if (playerController.uiState.value.isVideoMode) {
+                                        isPlayerExpanded = true
+                                        isCornerPip = false
+                                        playerSheetState.collapseImmediate()
+                                    } else {
+                                        playerSheetState.expandSoft()
+                                        isPlayerExpanded = false
+                                    }
                                 },
                                 onExploreClick = { currentDestination = TSukiDestination.HOME }
                             )
@@ -594,9 +621,11 @@ fun TSukiMainScreen(playerController: PlayerController) {
                                     if (track.isVideoItem) {
                                         isPlayerExpanded = true
                                         isCornerPip = false
+                                        playerSheetState.collapseImmediate()
                                     } else {
                                         playerSheetState.expandSoft()
                                         isCornerPip = false
+                                        isPlayerExpanded = false
                                     }
                                 }
                             )
@@ -681,6 +710,7 @@ fun TSukiMainScreen(playerController: PlayerController) {
                                     if (!playerState.isVideoMode) {
                                         isPlayerExpanded = true
                                         isCornerPip = false
+                                        playerSheetState.collapseImmediate()
                                     }
                                 },
                                 onNextClick = { playerController.playNext() },
@@ -730,7 +760,7 @@ fun TSukiMainScreen(playerController: PlayerController) {
                     val pillItems = remember(currentDestination, showTogether) {
                         TSukiDestination.entries.map { dest ->
                             TSukiNavTabItem(
-                                label = dest.label,
+                                label = context.resources.getString(dest.labelRes),
                                 icon = dest.icon,
                                 selected = dest == currentDestination,
                                 onClick = { if (showTogether) showTogether = false; currentDestination = dest }
@@ -844,8 +874,8 @@ fun TSukiMainScreen(playerController: PlayerController) {
 
         if (showStartupRationale) {
             PermissionRationaleSheet(
-                title = "Tu música y avisos",
-                body = "Para mostrar la música guardada en tu dispositivo y avisarte cuando salgan videos nuevos de tus suscripciones o termine una descarga. Puedes cambiarlo luego en ajustes.",
+                title = stringResource(R.string.perm_title),
+                body = stringResource(R.string.perm_body),
                 icon = Icons.Rounded.MusicNote,
                 onConfirm = {
                     showStartupRationale = false

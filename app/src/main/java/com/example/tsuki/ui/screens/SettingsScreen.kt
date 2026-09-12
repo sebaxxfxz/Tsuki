@@ -80,6 +80,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -87,6 +88,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.tsuki.data.backup.BackupManager
 import com.example.tsuki.data.backup.MergeMode
+import com.example.tsuki.R
 import com.example.tsuki.data.local.AppThemeMode
 import com.example.tsuki.data.local.AppearancePreferences
 import com.example.tsuki.data.local.PlayerPreferences
@@ -99,18 +101,19 @@ import com.example.tsuki.ui.components.settings.SettingsGroup
 import com.example.tsuki.ui.components.settings.SliderPreference
 import com.example.tsuki.ui.components.settings.TogglePreference
 import com.example.tsuki.ui.viewmodels.SettingsViewModel
+import com.example.tsuki.util.AppLocale
 import kotlinx.coroutines.launch
 import java.util.Locale
 
-enum class SettingsCategory(val label: String) {
-    ALL("Todos"),
-    PLAYBACK("Reproducción"),
-    APPEARANCE("Interfaz"),
-    LYRICS("Letras"),
-    LIBRARY("Biblioteca"),
-    REGION("Región"),
-    TOOLS("Herramientas"),
-    STORAGE("Almacenamiento")
+enum class SettingsCategory(val labelRes: Int) {
+    ALL(R.string.set_cat_all),
+    PLAYBACK(R.string.set_cat_playback),
+    APPEARANCE(R.string.set_cat_appearance),
+    LYRICS(R.string.set_cat_lyrics),
+    LIBRARY(R.string.set_cat_library),
+    REGION(R.string.set_cat_region),
+    TOOLS(R.string.set_cat_tools),
+    STORAGE(R.string.set_cat_storage)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -170,7 +173,7 @@ fun SettingsScreen(
         if (uri != null) {
             scope.launch {
                 val success = BackupManager.exportAll(context, uri).isSuccess
-                snackbarHostState.showSnackbar(if (success) "Backup exportado" else "No pude exportar el backup")
+                snackbarHostState.showSnackbar(if (success) context.getString(R.string.set_backup_ok) else context.getString(R.string.set_backup_export_fail))
             }
         }
     }
@@ -183,14 +186,19 @@ fun SettingsScreen(
                 BackupManager.importAll(context, uri, MergeMode.MERGE).fold(
                     onSuccess = { summary ->
                         snackbarHostState.showSnackbar(
-                            "Importadas ${summary.playlistsImported} playlists " +
-                                "(${summary.tracksImported} canciones), ${summary.favoritesImported} favoritos, " +
-                                "${summary.watchHistoryImported} de historial, ${summary.recognitionsImported} reconocimientos " +
-                                "y ${summary.tagsImported} etiquetas"
+                            context.getString(
+                                R.string.set_import_summary,
+                                summary.playlistsImported,
+                                summary.tracksImported,
+                                summary.favoritesImported,
+                                summary.watchHistoryImported,
+                                summary.recognitionsImported,
+                                summary.tagsImported
+                            )
                         )
                     },
                     onFailure = {
-                        snackbarHostState.showSnackbar("No pude importar el backup")
+                        snackbarHostState.showSnackbar(context.getString(R.string.set_backup_import_fail))
                     }
                 )
             }
@@ -207,55 +215,55 @@ fun SettingsScreen(
         return searchQuery.isNotBlank() || selectedCategory == SettingsCategory.ALL || selectedCategory == category
     }
 
-    val p1 = itemMatches("Calidad de audio", "Códec preferido Opus")
-    val p2 = itemMatches("Ahorro de datos", "Audio en baja calidad")
-    val p5 = itemMatches("Ignorar en pistas gapless", "continua")
-    val p6 = itemMatches("Saltar silencios", "Eliminar pausas mudas")
-    val p10 = itemMatches("Modo privado", "historial")
-    val p7 = itemMatches("Auto-Queue / Radio infinita", "pistas similares")
-    val p8 = itemMatches("Seek extra con doble tap", "Doble tap")
-    val p9 = itemMatches("Segundo plano y batería", "Optimización de batería Xiaomi MIUI HyperOS pantalla apagada")
+    val p1 = itemMatches(stringResource(R.string.set_quality_title), stringResource(R.string.set_quality_sub))
+    val p2 = itemMatches(stringResource(R.string.set_datasaver_title), stringResource(R.string.set_datasaver_sub))
+    val p5 = itemMatches(stringResource(R.string.set_gapless_title), stringResource(R.string.set_gapless_sub))
+    val p6 = itemMatches(stringResource(R.string.set_skipsilence_title), stringResource(R.string.set_skipsilence_sub))
+    val p10 = itemMatches(stringResource(R.string.set_private_title), stringResource(R.string.set_private_sub))
+    val p7 = itemMatches(stringResource(R.string.set_autoqueue_title), stringResource(R.string.set_autoqueue_sub))
+    val p8 = itemMatches(stringResource(R.string.set_seekextra_title), stringResource(R.string.set_seekextra_sub))
+    val p9 = itemMatches(stringResource(R.string.set_background_title), stringResource(R.string.set_background_warn))
     val showPlayback = categoryMatches(SettingsCategory.PLAYBACK) && (searchQuery.isBlank() || p1 || p2 || p5 || p6 || p7 || p8 || p9 || p10)
 
-    val a1 = itemMatches("Modo oscuro", "Tema claro u oscuro")
-    val a2 = itemMatches("Negro puro (AMOLED)", "Fondo negro absoluto")
-    val a3 = itemMatches("Tema dinámico", "Color de toda la app")
-    val a4 = itemMatches("Esquinas de miniaturas", "Redondeo de portadas")
-    val a5 = itemMatches("Barra de progreso", "Estilo de la barra")
-    val a6 = itemMatches("Personalización del Feed", "Temas, categorías")
-    val a7 = itemMatches("Color de acento", "Color fijo")
+    val a1 = itemMatches(stringResource(R.string.set_dark_title), stringResource(R.string.set_dark_sub))
+    val a2 = itemMatches(stringResource(R.string.set_pureblack_title), stringResource(R.string.set_pureblack_sub))
+    val a3 = itemMatches(stringResource(R.string.set_dyntheme_title), stringResource(R.string.set_dyntheme_sub))
+    val a4 = itemMatches(stringResource(R.string.set_corners_title), stringResource(R.string.set_corners_sub))
+    val a5 = itemMatches(stringResource(R.string.set_bar_title), stringResource(R.string.set_bar_sub))
+    val a6 = itemMatches(stringResource(R.string.set_personal_title), stringResource(R.string.set_personal_sub))
+    val a7 = itemMatches(stringResource(R.string.set_accent_title), stringResource(R.string.set_accent_auto))
     val showAppearance = categoryMatches(SettingsCategory.APPEARANCE) && (searchQuery.isBlank() || a1 || a2 || a3 || a4 || a5 || a6 || a7)
 
-    val l1 = itemMatches("Proveedor de letras", "Proveedor seleccionado")
-    val l2 = itemMatches("Tamaño de letra karaoke", "sincronizadas")
-    val l3 = itemMatches("Sincronización de letras", "seguimiento")
-    val l4 = itemMatches("Desenfoque de líneas inactivas", "cantando")
-    val l5 = itemMatches("Precachear letras", "cola, sin conexión, datos")
+    val l1 = itemMatches(stringResource(R.string.set_provider_title), stringResource(R.string.set_provider_sub, ""))
+    val l2 = itemMatches(stringResource(R.string.set_karaoke_size_title), stringResource(R.string.set_karaoke_size_sub))
+    val l3 = itemMatches(stringResource(R.string.set_lyrics_sync_title), stringResource(R.string.set_lyrics_sync_sub))
+    val l4 = itemMatches(stringResource(R.string.set_blur_title), stringResource(R.string.set_blur_sub))
+    val l5 = itemMatches(stringResource(R.string.set_precache_title), stringResource(R.string.set_precache_sub))
     val showLyrics = categoryMatches(SettingsCategory.LYRICS) && (searchQuery.isBlank() || l1 || l2 || l3 || l4 || l5)
 
-    val b1 = itemMatches("Sincronizar biblioteca YouTube", "Me Gusta")
-    val b2 = itemMatches("Sincronizar playlists de YT Music", "playlists")
-    val b3 = itemMatches("Sincronizar historial", "Historial")
-    val b4 = itemMatches("Carpetas de la biblioteca", "carpetas de audio")
-    val b5 = itemMatches("Importar playlist", "Spotify")
+    val b1 = itemMatches(stringResource(R.string.set_sync_yt_title), stringResource(R.string.set_sync_yt_sub))
+    val b2 = itemMatches(stringResource(R.string.set_sync_pl_title), stringResource(R.string.set_sync_pl_sub))
+    val b3 = itemMatches(stringResource(R.string.set_sync_hist_title), stringResource(R.string.set_sync_hist_sub))
+    val b4 = itemMatches(stringResource(R.string.set_folders_title), stringResource(R.string.set_folders_sub, 0))
+    val b5 = itemMatches(stringResource(R.string.set_import_pl_title), stringResource(R.string.set_import_pl_sub))
     val showLibrary = categoryMatches(SettingsCategory.LIBRARY) && (searchQuery.isBlank() || b1 || b2 || b3 || b4 || b5)
 
-    val r1 = itemMatches("Idioma del contenido", "Idioma")
-    val r2 = itemMatches("País / Región", "Región")
+    val r1 = itemMatches(stringResource(R.string.set_content_lang_title), stringResource(R.string.lang_app_title))
+    val r2 = itemMatches(stringResource(R.string.set_country_title), stringResource(R.string.set_cat_region))
     val showRegion = categoryMatches(SettingsCategory.REGION) && (searchQuery.isBlank() || r1 || r2)
 
-    val t1 = itemMatches("Reconocer música", "canciones que suenan")
-    val t2 = itemMatches("Escuchar juntos", "tiempo real")
-    val t3 = itemMatches("Estadísticas de escucha", "Tiempo total")
+    val t1 = itemMatches(stringResource(R.string.set_tool_recognize), stringResource(R.string.set_tool_recognize_sub))
+    val t2 = itemMatches(stringResource(R.string.set_tool_together), stringResource(R.string.set_tool_together_sub))
+    val t3 = itemMatches(stringResource(R.string.set_tool_stats), stringResource(R.string.set_tool_stats_sub))
     val showTools = categoryMatches(SettingsCategory.TOOLS) && (searchQuery.isBlank() || t1 || t2 || t3)
 
-    val s1 = itemMatches("Caché de audio", "Caché")
-    val s2 = itemMatches("Vaciar caché de audio", "Libera el espacio")
+    val s1 = itemMatches(stringResource(R.string.set_cache_title), stringResource(R.string.set_cache_title))
+    val s2 = itemMatches(stringResource(R.string.set_clear_cache_title), stringResource(R.string.set_clear_cache_sub))
     val showStorage = categoryMatches(SettingsCategory.STORAGE) && (searchQuery.isBlank() || s1 || s2)
 
-    val bkp3 = itemMatches("Borrar historial", "historial de reproducción")
-    val bkp1 = itemMatches("Exportar datos", "Playlists, favoritos, historial, reconocimientos")
-    val bkp2 = itemMatches("Importar datos", "Restaura, merge")
+    val bkp3 = itemMatches(stringResource(R.string.set_clear_history_title), stringResource(R.string.set_clear_history_sub))
+    val bkp1 = itemMatches(stringResource(R.string.set_export_title), stringResource(R.string.set_export_sub))
+    val bkp2 = itemMatches(stringResource(R.string.set_import_title), stringResource(R.string.set_import_sub))
     val showBackup = categoryMatches(SettingsCategory.STORAGE) && (searchQuery.isBlank() || bkp1 || bkp2 || bkp3)
 
     val anyVisible = showPlayback || showAppearance || showLyrics || showLibrary || showRegion || showTools || showStorage || showBackup
@@ -266,7 +274,7 @@ fun SettingsScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = "Configuración",
+                        text = stringResource(R.string.set_title),
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold
                     )
@@ -275,7 +283,7 @@ fun SettingsScreen(
                     IconButton(onClick = onBack) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Atrás"
+                            contentDescription = stringResource(R.string.common_back)
                         )
                     }
                 },
@@ -296,7 +304,7 @@ fun SettingsScreen(
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                placeholder = { Text("Buscar en configuración...") },
+                placeholder = { Text(stringResource(R.string.set_search_hint)) },
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.Rounded.Search,
@@ -307,10 +315,10 @@ fun SettingsScreen(
                 trailingIcon = {
                     if (searchQuery.isNotEmpty()) {
                         IconButton(onClick = { searchQuery = "" }) {
-                            Icon(
-                                imageVector = Icons.Rounded.Close,
-                                contentDescription = "Limpiar"
-                            )
+                                Icon(
+                                    imageVector = Icons.Rounded.Close,
+                                    contentDescription = stringResource(R.string.common_clear)
+                                )
                         }
                     }
                 },
@@ -336,7 +344,7 @@ fun SettingsScreen(
                     items = SettingsCategory.entries,
                     selectedItem = selectedCategory,
                     onItemSelected = { selectedCategory = it },
-                    label = { it.label }
+                    label = { context.resources.getString(it.labelRes) }
                 )
             }
 
@@ -363,13 +371,13 @@ fun SettingsScreen(
                                 )
                                 Spacer(modifier = Modifier.height(12.dp))
                                 Text(
-                                    text = "No se encontraron ajustes",
+                                    text = stringResource(R.string.set_no_results),
                                     style = MaterialTheme.typography.titleMedium,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = "Prueba con otro término de búsqueda",
+                                    text = stringResource(R.string.set_no_results_hint),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -381,21 +389,21 @@ fun SettingsScreen(
                 if (showPlayback) {
                     item {
                         SettingsGroup(
-                            title = "Reproducción y Audio",
+                            title = stringResource(R.string.set_group_playback),
                             icon = Icons.Rounded.GraphicEq,
                             modifier = Modifier.m3StaggeredEntrance(0)
                         ) {
                             if (p1) {
                                 ListPreference(
-                                    title = "Calidad de audio",
-                                    subtitle = "Códec preferido Opus; Auto se adapta a la red",
+                                    title = stringResource(R.string.set_quality_title),
+                                    subtitle = stringResource(R.string.set_quality_sub),
                                     icon = Icons.Rounded.Speed,
                                     selectedValue = state.audioQuality,
                                     entries = listOf(
-                                        "Auto (según red)" to PlayerPreferences.AUDIO_QUALITY_AUTO,
-                                        "Alta" to PlayerPreferences.AUDIO_QUALITY_HIGH,
-                                        "Media (~128 kbps)" to PlayerPreferences.AUDIO_QUALITY_MEDIUM,
-                                        "Baja (ahorra datos)" to PlayerPreferences.AUDIO_QUALITY_LOW
+                                        stringResource(R.string.set_quality_auto) to PlayerPreferences.AUDIO_QUALITY_AUTO,
+                                        stringResource(R.string.set_quality_high) to PlayerPreferences.AUDIO_QUALITY_HIGH,
+                                        stringResource(R.string.set_quality_medium) to PlayerPreferences.AUDIO_QUALITY_MEDIUM,
+                                        stringResource(R.string.set_quality_low) to PlayerPreferences.AUDIO_QUALITY_LOW
                                     ),
                                     onValueChange = { viewModel.setAudioQuality(it) }
                                 )
@@ -403,8 +411,8 @@ fun SettingsScreen(
 
                             if (p2) {
                                 TogglePreference(
-                                    title = "Ahorro de datos",
-                                    subtitle = "Audio en baja calidad en redes medidas y sin precarga",
+                                    title = stringResource(R.string.set_datasaver_title),
+                                    subtitle = stringResource(R.string.set_datasaver_sub),
                                     icon = Icons.Rounded.DataSaverOn,
                                     checked = state.dataSaver,
                                     onCheckedChange = { viewModel.setDataSaver(it) }
@@ -413,8 +421,8 @@ fun SettingsScreen(
 
                             if (p5) {
                                 TogglePreference(
-                                    title = "Crossfade en pistas gapless",
-                                    subtitle = "Se configura desde el player, en Sonido y reproducción",
+                                    title = stringResource(R.string.set_gapless_title),
+                                    subtitle = stringResource(R.string.set_gapless_sub),
                                     icon = Icons.Rounded.MergeType,
                                     checked = state.crossfadeGapless,
                                     onCheckedChange = { viewModel.setCrossfadeGapless(it) },
@@ -424,8 +432,8 @@ fun SettingsScreen(
 
                             if (p6) {
                                 TogglePreference(
-                                    title = "Saltar silencios",
-                                    subtitle = "Eliminar pausas mudas al inicio y final de las pistas",
+                                    title = stringResource(R.string.set_skipsilence_title),
+                                    subtitle = stringResource(R.string.set_skipsilence_sub),
                                     icon = Icons.Rounded.GraphicEq,
                                     checked = state.skipSilenceEnabled,
                                     onCheckedChange = { viewModel.setSkipSilenceEnabled(it) }
@@ -434,8 +442,8 @@ fun SettingsScreen(
 
                             if (p7) {
                                 TogglePreference(
-                                    title = "Auto-Queue / Radio infinita",
-                                    subtitle = "Añadir pistas similares automáticamente al finalizar la cola",
+                                    title = stringResource(R.string.set_autoqueue_title),
+                                    subtitle = stringResource(R.string.set_autoqueue_sub),
                                     icon = Icons.AutoMirrored.Rounded.QueueMusic,
                                     checked = state.autoQueueEnabled,
                                     onCheckedChange = { viewModel.setAutoQueueEnabled(it) }
@@ -444,8 +452,8 @@ fun SettingsScreen(
 
                             if (p8) {
                                 TogglePreference(
-                                    title = "Seek extra con doble tap",
-                                    subtitle = "Doble tap en portada: ±15s/20s en vez de 5s/10s",
+                                    title = stringResource(R.string.set_seekextra_title),
+                                    subtitle = stringResource(R.string.set_seekextra_sub),
                                     checked = state.seekExtraSeconds,
                                     onCheckedChange = { viewModel.setSeekExtraSeconds(it) }
                                 )
@@ -453,8 +461,8 @@ fun SettingsScreen(
 
                             if (p10) {
                                 TogglePreference(
-                                    title = "Modo privado",
-                                    subtitle = "No registrar lo que escuchas en el historial ni en estadísticas",
+                                    title = stringResource(R.string.set_private_title),
+                                    subtitle = stringResource(R.string.set_private_sub),
                                     icon = Icons.Rounded.VisibilityOff,
                                     checked = state.privateMode,
                                     onCheckedChange = { viewModel.setPrivateMode(it) }
@@ -463,11 +471,11 @@ fun SettingsScreen(
 
                             if (p9) {
                                 ActionPreference(
-                                    title = "Segundo plano y batería",
+                                    title = stringResource(R.string.set_background_title),
                                     subtitle = if (isIgnoringBattery) {
-                                        "Sin restricciones activas • Optimizado para Xiaomi y pantalla bloqueada"
+                                        stringResource(R.string.set_background_ok)
                                     } else {
-                                        "Ahorro de batería activo • Toca para evitar que Xiaomi cierre la app a los 10 min"
+                                        stringResource(R.string.set_background_warn)
                                     },
                                     icon = Icons.Rounded.BatteryChargingFull,
                                     onClick = { showBatteryDialog = true }
@@ -480,20 +488,20 @@ fun SettingsScreen(
                 if (showAppearance) {
                     item {
                         SettingsGroup(
-                            title = "Interfaz y Tema",
+                            title = stringResource(R.string.set_group_appearance),
                             icon = Icons.Rounded.Palette,
                             modifier = Modifier.m3StaggeredEntrance(1)
                         ) {
                             if (a1) {
                                 ListPreference(
-                                    title = "Modo oscuro",
-                                    subtitle = "Tema claro u oscuro de la app",
+                                    title = stringResource(R.string.set_dark_title),
+                                    subtitle = stringResource(R.string.set_dark_sub),
                                     icon = Icons.Rounded.DarkMode,
                                     selectedValue = state.darkModeSetting.name,
                                     entries = listOf(
-                                        "Según el sistema" to "SYSTEM",
-                                        "Claro" to "LIGHT",
-                                        "Oscuro" to "DARK"
+                                        stringResource(R.string.lang_app_system) to "SYSTEM",
+                                        stringResource(R.string.set_theme_light) to "LIGHT",
+                                        stringResource(R.string.set_theme_dark) to "DARK"
                                     ),
                                     onValueChange = { viewModel.setDarkMode(it) }
                                 )
@@ -501,8 +509,8 @@ fun SettingsScreen(
 
                             if (a2) {
                                 TogglePreference(
-                                    title = "Negro puro (AMOLED)",
-                                    subtitle = "Fondo negro absoluto en modo oscuro, ahorra batería",
+                                    title = stringResource(R.string.set_pureblack_title),
+                                    subtitle = stringResource(R.string.set_pureblack_sub),
                                     icon = Icons.Rounded.Contrast,
                                     checked = state.pureBlack,
                                     onCheckedChange = { viewModel.setPureBlack(it) }
@@ -511,13 +519,13 @@ fun SettingsScreen(
 
                             if (a3) {
                                 ListPreference(
-                                    title = "Tema dinámico",
-                                    subtitle = "Color de toda la app",
+                                    title = stringResource(R.string.set_dyntheme_title),
+                                    subtitle = stringResource(R.string.set_dyntheme_sub),
                                     icon = Icons.Rounded.Palette,
                                     selectedValue = state.appThemeMode.name,
                                     entries = listOf(
-                                        "Wallpaper del sistema" to "SYSTEM",
-                                        "Portada de la canción" to "ARTWORK"
+                                        stringResource(R.string.set_dyn_wallpaper) to "SYSTEM",
+                                        stringResource(R.string.set_dyn_artwork) to "ARTWORK"
                                     ),
                                     onValueChange = { viewModel.setAppThemeMode(if (it == "ARTWORK") AppThemeMode.ARTWORK else AppThemeMode.SYSTEM) }
                                 )
@@ -525,11 +533,11 @@ fun SettingsScreen(
 
                             if (a7) {
                                 ListPreference(
-                                    title = "Color de acento",
+                                    title = stringResource(R.string.set_accent_title),
                                     subtitle = if (state.accentColor == AppearancePreferences.ACCENT_AUTO) {
-                                        "Sigue la portada o el sistema"
+                                        stringResource(R.string.set_accent_auto)
                                     } else {
-                                        "Color fijo para toda la app"
+                                        stringResource(R.string.set_accent_fixed)
                                     },
                                     icon = Icons.Rounded.ColorLens,
                                     selectedValue = state.accentColor,
@@ -540,8 +548,8 @@ fun SettingsScreen(
 
                             if (a4) {
                                 SliderPreference(
-                                    title = "Esquinas de miniaturas",
-                                    subtitle = "Redondeo de portadas y cards",
+                                    title = stringResource(R.string.set_corners_title),
+                                    subtitle = stringResource(R.string.set_corners_sub),
                                     value = state.thumbCornerDp,
                                     onValueChange = { viewModel.setThumbCornerDp(it) },
                                     valueRange = AppearancePreferences.THUMB_CORNER_MIN..AppearancePreferences.THUMB_CORNER_MAX,
@@ -551,14 +559,14 @@ fun SettingsScreen(
 
                             if (a5) {
                                 ListPreference(
-                                    title = "Barra de progreso",
-                                    subtitle = "Estilo de la barra del reproductor",
+                                    title = stringResource(R.string.set_bar_title),
+                                    subtitle = stringResource(R.string.set_bar_sub),
                                     icon = Icons.Rounded.LinearScale,
                                     selectedValue = state.progressBarStyle.name,
                                     entries = listOf(
-                                        "Estándar" to "STANDARD",
-                                        "Gruesa" to "THICK",
-                                        "Minimalista" to "MINIMAL"
+                                        stringResource(R.string.set_bar_standard) to "STANDARD",
+                                        stringResource(R.string.set_bar_thick) to "THICK",
+                                        stringResource(R.string.set_bar_minimal) to "MINIMAL"
                                     ),
                                     onValueChange = { viewModel.setProgressBarStyle(it) }
                                 )
@@ -566,8 +574,8 @@ fun SettingsScreen(
 
                             if (a6) {
                                 ActionPreference(
-                                    title = "Personalización del Feed",
-                                    subtitle = "Temas, categorías y canales favoritos",
+                                    title = stringResource(R.string.set_personal_title),
+                                    subtitle = stringResource(R.string.set_personal_sub),
                                     icon = Icons.Rounded.Palette,
                                     onClick = onPersonalizationClick
                                 )
@@ -579,14 +587,14 @@ fun SettingsScreen(
                 if (showLyrics) {
                     item {
                         SettingsGroup(
-                            title = "Letras y Karaoke",
+                            title = stringResource(R.string.set_group_lyrics),
                             icon = Icons.Rounded.Lyrics,
                             modifier = Modifier.m3StaggeredEntrance(2)
                         ) {
                             if (l1) {
                                 ListPreference(
-                                    title = "Proveedor de letras",
-                                    subtitle = "Proveedor seleccionado: ${state.preferredLyricsProvider}",
+                                    title = stringResource(R.string.set_provider_title),
+                                    subtitle = stringResource(R.string.set_provider_sub, state.preferredLyricsProvider),
                                     icon = Icons.Rounded.Lyrics,
                                     selectedValue = state.preferredLyricsProvider,
                                     entries = state.availableLyricsProviders.map { it to it },
@@ -596,8 +604,8 @@ fun SettingsScreen(
 
                             if (l2) {
                                 SliderPreference(
-                                    title = "Tamaño de letra karaoke",
-                                    subtitle = "Tamaño del texto en letras sincronizadas",
+                                    title = stringResource(R.string.set_karaoke_size_title),
+                                    subtitle = stringResource(R.string.set_karaoke_size_sub),
                                     value = state.lyricsTextSize.toFloat(),
                                     onValueChange = { viewModel.setLyricsTextSize(it.toInt()) },
                                     valueRange = PlayerPreferences.LYRICS_TEXT_SIZE_MIN.toFloat()..PlayerPreferences.LYRICS_TEXT_SIZE_MAX.toFloat(),
@@ -607,8 +615,8 @@ fun SettingsScreen(
 
                             if (l3) {
                                 SliderPreference(
-                                    title = "Sincronización de letras",
-                                    subtitle = "Adelanta (−) o retrasa (+) el seguimiento",
+                                    title = stringResource(R.string.set_lyrics_sync_title),
+                                    subtitle = stringResource(R.string.set_lyrics_sync_sub),
                                     value = state.lyricsSyncOffsetMs.toFloat(),
                                     onValueChange = { viewModel.setLyricsSyncOffsetMs(it.toInt()) },
                                     valueRange = PlayerPreferences.LYRICS_SYNC_OFFSET_MIN.toFloat()..PlayerPreferences.LYRICS_SYNC_OFFSET_MAX.toFloat(),
@@ -618,8 +626,8 @@ fun SettingsScreen(
 
                             if (l4) {
                                 TogglePreference(
-                                    title = "Desenfoque de líneas inactivas",
-                                    subtitle = "Difuminar las líneas que no se están cantando",
+                                    title = stringResource(R.string.set_blur_title),
+                                    subtitle = stringResource(R.string.set_blur_sub),
                                     icon = Icons.Rounded.BlurOn,
                                     checked = state.lyricsLineBlur,
                                     onCheckedChange = { viewModel.setLyricsLineBlur(it) }
@@ -628,8 +636,8 @@ fun SettingsScreen(
 
                             if (l5) {
                                 TogglePreference(
-                                    title = "Precachear letras de la cola",
-                                    subtitle = "Descarga por adelantado la letra de las siguientes canciones (usa datos)",
+                                    title = stringResource(R.string.set_precache_title),
+                                    subtitle = stringResource(R.string.set_precache_sub),
                                     icon = Icons.Rounded.CloudDownload,
                                     checked = state.precacheLyrics,
                                     onCheckedChange = { viewModel.setPrecacheLyrics(it) }
@@ -642,14 +650,14 @@ fun SettingsScreen(
                 if (showLibrary) {
                     item {
                         SettingsGroup(
-                            title = "Biblioteca y Sincronización",
+                            title = stringResource(R.string.set_group_library),
                             icon = Icons.AutoMirrored.Rounded.QueueMusic,
                             modifier = Modifier.m3StaggeredEntrance(3)
                         ) {
                             if (b1) {
                                 TogglePreference(
-                                    title = "Sincronizar biblioteca YouTube",
-                                    subtitle = "Me Gusta y tu música personal al iniciar",
+                                    title = stringResource(R.string.set_sync_yt_title),
+                                    subtitle = stringResource(R.string.set_sync_yt_sub),
                                     icon = Icons.Rounded.Public,
                                     checked = state.syncLikedEnabled,
                                     onCheckedChange = { viewModel.setSyncLikedEnabled(it) }
@@ -658,8 +666,8 @@ fun SettingsScreen(
 
                             if (b2) {
                                 TogglePreference(
-                                    title = "Sincronizar playlists de YT Music",
-                                    subtitle = "Tus playlists creadas y guardadas",
+                                    title = stringResource(R.string.set_sync_pl_title),
+                                    subtitle = stringResource(R.string.set_sync_pl_sub),
                                     icon = Icons.AutoMirrored.Rounded.QueueMusic,
                                     checked = state.syncPlaylistsEnabled,
                                     onCheckedChange = { viewModel.setSyncPlaylistsEnabled(it) }
@@ -668,8 +676,8 @@ fun SettingsScreen(
 
                             if (b3) {
                                 TogglePreference(
-                                    title = "Sincronizar historial",
-                                    subtitle = "Historial reciente de YouTube Music",
+                                    title = stringResource(R.string.set_sync_hist_title),
+                                    subtitle = stringResource(R.string.set_sync_hist_sub),
                                     icon = Icons.Rounded.Insights,
                                     checked = state.syncHistoryEnabled,
                                     onCheckedChange = { viewModel.setSyncHistoryEnabled(it) }
@@ -678,8 +686,8 @@ fun SettingsScreen(
 
                             if (b4) {
                                 ActionPreference(
-                                    title = "Carpetas de la biblioteca",
-                                    subtitle = "Elige qué carpetas de audio excluir (${excludedFolders.size} excluidas)",
+                                    title = stringResource(R.string.set_folders_title),
+                                    subtitle = stringResource(R.string.set_folders_sub, excludedFolders.size),
                                     icon = Icons.Rounded.FolderOff,
                                     onClick = { showFolderDialog = true }
                                 )
@@ -687,8 +695,8 @@ fun SettingsScreen(
 
                             if (b5) {
                                 ActionPreference(
-                                    title = "Importar playlist",
-                                    subtitle = "Spotify / ArchiveTune / EchoMusic (JSON, CSV, M3U, ZIP)",
+                                    title = stringResource(R.string.set_import_pl_title),
+                                    subtitle = stringResource(R.string.set_import_pl_sub),
                                     icon = Icons.AutoMirrored.Rounded.QueueMusic,
                                     onClick = onImportSpotifyClick
                                 )
@@ -700,13 +708,29 @@ fun SettingsScreen(
                 if (showRegion) {
                     item {
                         SettingsGroup(
-                            title = "Idioma y Región",
+                            title = stringResource(R.string.set_group_region),
                             icon = Icons.Rounded.Language,
                             modifier = Modifier.m3StaggeredEntrance(4)
                         ) {
+                            ListPreference(
+                                title = stringResource(R.string.lang_app_title),
+                                selectedValue = state.appLocaleTag.ifEmpty { AppLocale.readStored(context) },
+                                icon = Icons.Rounded.Public,
+                                entries = listOf(
+                                    stringResource(R.string.lang_app_system) to "",
+                                    stringResource(R.string.lang_app_spanish) to AppLocale.SPANISH,
+                                    stringResource(R.string.lang_app_english) to AppLocale.ENGLISH
+                                ),
+                                onValueChange = {
+                                    viewModel.setAppLocale(it)
+                                    (context as? android.app.Activity)?.let { activity ->
+                                        AppLocale.applyAndRecreate(activity, it)
+                                    }
+                                }
+                            )
                             if (r1) {
                                 ListPreference(
-                                    title = "Idioma del contenido",
+                                    title = stringResource(R.string.set_content_lang_title),
                                     subtitle = when (state.contentLanguageTag) {
                                         "es" -> "Español"
                                         "en" -> "English"
@@ -728,7 +752,7 @@ fun SettingsScreen(
 
                             if (r2) {
                                 ListPreference(
-                                    title = "País / Región",
+                                    title = stringResource(R.string.set_country_title),
                                     subtitle = state.contentCountry,
                                     icon = Icons.Rounded.Public,
                                     selectedValue = state.contentCountry,
@@ -751,14 +775,14 @@ fun SettingsScreen(
                 if (showTools) {
                     item {
                         SettingsGroup(
-                            title = "Herramientas",
+                            title = stringResource(R.string.set_group_tools),
                             icon = Icons.Rounded.Tune,
                             modifier = Modifier.m3StaggeredEntrance(5)
                         ) {
                             if (t1) {
                                 ActionPreference(
-                                    title = "Reconocer música",
-                                    subtitle = "Identifica canciones que suenan a tu alrededor",
+                                    title = stringResource(R.string.set_tool_recognize),
+                                    subtitle = stringResource(R.string.set_tool_recognize_sub),
                                     icon = Icons.Rounded.GraphicEq,
                                     onClick = onRecognitionClick
                                 )
@@ -766,8 +790,8 @@ fun SettingsScreen(
 
                             if (t2) {
                                 ActionPreference(
-                                    title = "Escuchar juntos",
-                                    subtitle = "Comparte tu música en tiempo real por LAN o online",
+                                    title = stringResource(R.string.set_tool_together),
+                                    subtitle = stringResource(R.string.set_tool_together_sub),
                                     icon = Icons.Rounded.Group,
                                     onClick = onTogetherClick
                                 )
@@ -775,8 +799,8 @@ fun SettingsScreen(
 
                             if (t3) {
                                 ActionPreference(
-                                    title = "Estadísticas de escucha",
-                                    subtitle = "Tiempo total, top canciones, artistas y patrones",
+                                    title = stringResource(R.string.set_tool_stats),
+                                    subtitle = stringResource(R.string.set_tool_stats_sub),
                                     icon = Icons.Rounded.Insights,
                                     onClick = onStatsClick
                                 )
@@ -788,13 +812,13 @@ fun SettingsScreen(
                 if (showStorage) {
                     item {
                         SettingsGroup(
-                            title = "Almacenamiento y Respaldo",
+                            title = stringResource(R.string.set_group_storage),
                             icon = Icons.Rounded.Storage,
                             modifier = Modifier.m3StaggeredEntrance(6)
                         ) {
                             if (s1) {
                                 ListPreference(
-                                    title = "Caché de audio",
+                                    title = stringResource(R.string.set_cache_title),
                                     subtitle = cacheSubtitle(state.cacheSizeMb, audioCacheUsedMb),
                                     icon = Icons.Rounded.Storage,
                                     selectedValue = state.cacheSizeMb.toString(),
@@ -804,7 +828,7 @@ fun SettingsScreen(
                                         "512 MB" to "512",
                                         "1 GB" to "1024",
                                         "2 GB" to "2048",
-                                        "Ilimitada" to "-1"
+                                        stringResource(R.string.set_cache_unlimited) to "-1"
                                     ),
                                     onValueChange = { viewModel.setCacheSizeMb(it.toIntOrNull() ?: PlayerPreferences.CACHE_SIZE_DEFAULT_MB) }
                                 )
@@ -812,8 +836,8 @@ fun SettingsScreen(
 
                             if (s2) {
                                 ActionPreference(
-                                    title = "Vaciar caché de audio",
-                                    subtitle = "Libera el espacio ocupado por canciones temporales",
+                                    title = stringResource(R.string.set_clear_cache_title),
+                                    subtitle = stringResource(R.string.set_clear_cache_sub),
                                     icon = Icons.Rounded.DeleteSweep,
                                     onClick = { showClearCacheConfirm = true }
                                 )
@@ -825,14 +849,14 @@ fun SettingsScreen(
                 if (showBackup) {
                     item {
                         SettingsGroup(
-                            title = "Copia de seguridad",
+                            title = stringResource(R.string.set_group_backup),
                             icon = Icons.Rounded.Backup,
                             modifier = Modifier.m3StaggeredEntrance(7)
                         ) {
                             if (bkp1) {
                                 ActionPreference(
-                                    title = "Exportar datos",
-                                    subtitle = "Playlists, favoritos, historial, reconocimientos y etiquetas en un JSON",
+                                    title = stringResource(R.string.set_export_title),
+                                    subtitle = stringResource(R.string.set_export_sub),
                                     icon = Icons.Rounded.Upload,
                                     onClick = {
                                         val stamp = java.text.SimpleDateFormat("yyyyMMdd", Locale.US).format(java.util.Date())
@@ -843,8 +867,8 @@ fun SettingsScreen(
 
                             if (bkp3) {
                                 ActionPreference(
-                                    title = "Borrar historial de reproducción",
-                                    subtitle = "Elimina todo el historial y el tiempo de escucha registrado",
+                                    title = stringResource(R.string.set_clear_history_title),
+                                    subtitle = stringResource(R.string.set_clear_history_sub),
                                     icon = Icons.Rounded.DeleteSweep,
                                     onClick = { showClearHistoryConfirm = true }
                                 )
@@ -852,8 +876,8 @@ fun SettingsScreen(
 
                             if (bkp2) {
                                 ActionPreference(
-                                    title = "Importar datos",
-                                    subtitle = "Restaura desde un backup JSON sin borrar lo existente",
+                                    title = stringResource(R.string.set_import_title),
+                                    subtitle = stringResource(R.string.set_import_sub),
                                     icon = Icons.Rounded.Download,
                                     onClick = { importLauncher.launch(arrayOf("application/json", "*/*")) }
                                 )
@@ -867,17 +891,17 @@ fun SettingsScreen(
         if (showClearCacheConfirm) {
             androidx.compose.material3.AlertDialog(
                 onDismissRequest = { showClearCacheConfirm = false },
-                title = { Text("Vaciar caché de audio") },
-                text = { Text("Se eliminarán las canciones temporales descargadas en caché. Tus descargas permanentes no se tocan.") },
+                title = { Text(stringResource(R.string.set_clear_cache_title)) },
+                text = { Text(stringResource(R.string.set_clear_cache_confirm)) },
                 confirmButton = {
                     TextButton(onClick = {
                         showClearCacheConfirm = false
                         viewModel.clearAudioCache()
-                        showSnack("Caché de audio vaciada")
-                    }) { Text("Vaciar", color = MaterialTheme.colorScheme.error) }
+                        showSnack(context.getString(R.string.set_cache_cleared))
+                    }) { Text(stringResource(R.string.set_clear), color = MaterialTheme.colorScheme.error) }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showClearCacheConfirm = false }) { Text("Cancelar") }
+                    TextButton(onClick = { showClearCacheConfirm = false }) { Text(stringResource(R.string.common_cancel)) }
                 }
             )
         }
@@ -885,18 +909,18 @@ fun SettingsScreen(
         if (showClearHistoryConfirm) {
             androidx.compose.material3.AlertDialog(
                 onDismissRequest = { showClearHistoryConfirm = false },
-                title = { Text("Borrar historial") },
-                text = { Text("Se eliminará todo el historial de reproducción y el tiempo de escucha. Esta acción no se puede deshacer.") },
+                title = { Text(stringResource(R.string.set_clear_history_title)) },
+                text = { Text(stringResource(R.string.set_clear_history_confirm)) },
                 confirmButton = {
                     TextButton(onClick = {
                         showClearHistoryConfirm = false
                         viewModel.clearWatchHistory { count ->
-                            showSnack("Historial borrado ($count canciones)")
+                            showSnack(context.getString(R.string.set_history_cleared, count))
                         }
-                    }) { Text("Borrar", color = MaterialTheme.colorScheme.error) }
+                    }) { Text(stringResource(R.string.set_delete), color = MaterialTheme.colorScheme.error) }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showClearHistoryConfirm = false }) { Text("Cancelar") }
+                    TextButton(onClick = { showClearHistoryConfirm = false }) { Text(stringResource(R.string.common_cancel)) }
                 }
             )
         }
@@ -905,14 +929,14 @@ fun SettingsScreen(
             androidx.compose.material3.AlertDialog(
                 onDismissRequest = { showFolderDialog = false },
                 confirmButton = {
-                    TextButton(onClick = { showFolderDialog = false }) { Text("Listo") }
+                    TextButton(onClick = { showFolderDialog = false }) { Text(stringResource(R.string.set_done)) }
                 },
-                title = { Text("Carpetas a excluir") },
+                title = { Text(stringResource(R.string.set_folders_exclude_title)) },
                 text = {
                     if (audioFolders.isEmpty()) {
                         Column(modifier = Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(
-                                "No se encontraron carpetas con archivos de audio locales.",
+                                stringResource(R.string.set_folders_empty),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -978,7 +1002,7 @@ fun SettingsScreen(
                 },
                 title = {
                     Text(
-                        if (isXiaomi) "Segundo plano en Xiaomi / HyperOS" else "Optimización de batería",
+                        if (isXiaomi) stringResource(R.string.set_batt_xiaomi_title) else stringResource(R.string.set_batt_title),
                         style = MaterialTheme.typography.headlineSmall
                     )
                 },
@@ -989,9 +1013,9 @@ fun SettingsScreen(
                     ) {
                         Text(
                             text = if (isXiaomi) {
-                                "Xiaomi y HyperOS cierran apps en segundo plano cada 10 min si la caché se limpia al bloquear. Para que no se pause la música:"
+                                stringResource(R.string.set_batt_xiaomi_text)
                             } else {
-                                "Para evitar que el sistema detenga la música cuando la pantalla esté bloqueada:"
+                                stringResource(R.string.set_batt_text)
                             },
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1015,7 +1039,7 @@ fun SettingsScreen(
                                                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
                                             }
                                             try { context.startActivity(intent) } catch (_: Exception) {
-                                                showSnack("No se pudo abrir los ajustes de la app")
+                                                showSnack(context.getString(R.string.set_batt_fail_app))
                                             }
                                         }
                                         .padding(8.dp),
@@ -1030,13 +1054,13 @@ fun SettingsScreen(
                                     Spacer(modifier = Modifier.width(12.dp))
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
-                                            text = "1. Configurar 'Sin restricciones'",
+                                            text = stringResource(R.string.set_batt_step1),
                                             style = MaterialTheme.typography.titleSmall,
                                             fontWeight = FontWeight.Bold,
                                             color = MaterialTheme.colorScheme.onSurface
                                         )
                                         Text(
-                                            text = "Abre Info de TSuki -> Ahorro de batería -> 'Sin restricciones'.",
+                                            text = stringResource(R.string.set_batt_step1_sub),
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
@@ -1065,7 +1089,7 @@ fun SettingsScreen(
                                                     try {
                                                         context.startActivity(fallback)
                                                     } catch (_: Exception) {
-                                                        showSnack("No se pudo abrir el inicio automático de MIUI")
+                                                        showSnack(context.getString(R.string.set_batt_fail_autostart))
                                                     }
                                                 }
                                             }
@@ -1080,14 +1104,14 @@ fun SettingsScreen(
                                         )
                                         Spacer(modifier = Modifier.width(12.dp))
                                         Column(modifier = Modifier.weight(1f)) {
-                                            Text(
-                                                text = "2. Inicio automático (MIUI)",
-                                                style = MaterialTheme.typography.titleSmall,
-                                                fontWeight = FontWeight.Bold,
-                                                color = MaterialTheme.colorScheme.onSurface
-                                            )
-                                            Text(
-                                                text = "Permite a TSuki mantener el servicio de música activo.",
+                                        Text(
+                                            text = stringResource(R.string.set_batt_step2),
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text(
+                                            text = stringResource(R.string.set_batt_step2_sub),
                                                 style = MaterialTheme.typography.bodySmall,
                                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                                             )
@@ -1112,7 +1136,7 @@ fun SettingsScreen(
                                                 try {
                                                     context.startActivity(fallback)
                                                 } catch (_: Exception) {
-                                                    showSnack("No se pudo abrir la optimización de batería")
+                                                    showSnack(context.getString(R.string.set_batt_fail_batt))
                                                 }
                                             }
                                         }
@@ -1128,13 +1152,13 @@ fun SettingsScreen(
                                     Spacer(modifier = Modifier.width(12.dp))
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
-                                            text = if (isIgnoringBattery) "3. Optimización Android: Desactivada" else "3. Desactivar optimización Android",
+                                            text = if (isIgnoringBattery) stringResource(R.string.set_batt_step3_off) else stringResource(R.string.set_batt_step3_on),
                                             style = MaterialTheme.typography.titleSmall,
                                             fontWeight = FontWeight.Bold,
                                             color = MaterialTheme.colorScheme.onSurface
                                         )
                                         Text(
-                                            text = if (isIgnoringBattery) "Permiso concedido para no restringir la música." else "Toca para solicitar exclusión de ahorro de energía del sistema.",
+                                            text = if (isIgnoringBattery) stringResource(R.string.set_batt_step3_off_sub) else stringResource(R.string.set_batt_step3_on_sub),
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
@@ -1146,7 +1170,7 @@ fun SettingsScreen(
                 },
                 confirmButton = {
                     TextButton(onClick = { showBatteryDialog = false }) {
-                        Text("Cerrar")
+                        Text(stringResource(R.string.common_close))
                     }
                 }
             )
@@ -1154,11 +1178,12 @@ fun SettingsScreen(
     }
 }
 
+@Composable
 private fun cacheSubtitle(sizeMb: Int, usedMb: Long): String {
-    val sizeLabel = if (sizeMb <= 0) "Ilimitada" else if (sizeMb >= 1024 && sizeMb % 1024 == 0) "${sizeMb / 1024} GB" else "$sizeMb MB"
+    val sizeLabel = if (sizeMb <= 0) stringResource(R.string.set_cache_unlimited) else if (sizeMb >= 1024 && sizeMb % 1024 == 0) "${sizeMb / 1024} GB" else "$sizeMb MB"
     val usedLabel = when {
         usedMb >= 1024 -> String.format(Locale.US, "%.1f GB", usedMb / 1024f)
         else -> "$usedMb MB"
     }
-    return "$sizeLabel · en uso: $usedLabel (el cambio se aplica al reiniciar)"
+    return stringResource(R.string.set_cache_subtitle, sizeLabel, usedLabel)
 }

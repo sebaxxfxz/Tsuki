@@ -103,7 +103,7 @@ object UpdateChecker {
                 val inp = SimpleDateFormat(pattern, Locale.US)
                 val d = inp.parse(normalized)
                 if (d != null) {
-                    val out = SimpleDateFormat("d 'de' MMMM, yyyy", Locale.forLanguageTag("es-ES"))
+                    val out = if (Locale.getDefault().language.startsWith("es")) SimpleDateFormat("d 'de' MMMM, yyyy", Locale.forLanguageTag("es-ES")) else SimpleDateFormat("MMMM d, yyyy", Locale.US)
                     return out.format(d)
                 }
             } catch (_: Exception) {}

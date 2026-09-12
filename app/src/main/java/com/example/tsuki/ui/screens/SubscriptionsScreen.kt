@@ -68,10 +68,13 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.example.tsuki.R
 import com.example.tsuki.data.local.HomePreferences
 import com.example.tsuki.data.local.TSukiChannelSubscription
 import com.example.tsuki.data.local.TSukiSubscriptionRepository
@@ -91,10 +94,10 @@ import kotlinx.coroutines.withContext
 import androidx.compose.foundation.border
 import androidx.compose.foundation.lazy.itemsIndexed
 
-private enum class SubSort(val label: String) {
-    RECENT("Recientes"),
-    VIEWS("Más vistos"),
-    CHANNEL("Por canal")
+private enum class SubSort(val labelRes: Int) {
+    RECENT(R.string.subs_sort_recent),
+    VIEWS(R.string.subs_sort_views),
+    CHANNEL(R.string.subs_sort_channel)
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -191,9 +194,9 @@ fun SubscriptionsScreen(
                 homePrefs.setSubNotifyEnabled(true)
                 SubNotifyScheduler.setEnabled(context, true)
             }
-            Toast.makeText(context, "Te avisaré de videos nuevos", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.subs_notify_on), Toast.LENGTH_SHORT).show()
         } else {
-            Toast.makeText(context, "Activa las notificaciones en ajustes del sistema", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, context.getString(R.string.subs_notify_sys), Toast.LENGTH_LONG).show()
         }
     }
 
@@ -205,7 +208,7 @@ fun SubscriptionsScreen(
                 homePrefs.setSubNotifyEnabled(false)
                 SubNotifyScheduler.setEnabled(context, false)
             }
-            Toast.makeText(context, "Avisos desactivados", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.subs_notify_off), Toast.LENGTH_SHORT).show()
         } else {
             val perm = android.Manifest.permission.POST_NOTIFICATIONS
             if (androidx.core.content.ContextCompat.checkSelfPermission(context, perm) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
@@ -213,7 +216,7 @@ fun SubscriptionsScreen(
                     homePrefs.setSubNotifyEnabled(true)
                     SubNotifyScheduler.setEnabled(context, true)
                 }
-                Toast.makeText(context, "Te avisaré de videos nuevos", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, context.getString(R.string.subs_notify_on), Toast.LENGTH_SHORT).show()
             } else {
                 showNotifyRationale = true
             }
@@ -223,10 +226,10 @@ fun SubscriptionsScreen(
     val backupRepo = remember { com.example.tsuki.data.local.TSukiBackupRepository(context) }
     var exportMsg by remember { mutableStateOf<String?>(null) }
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
-        uri?.let { scope.launch { val r = backupRepo.exportSubscriptionsAsNewPipe(it); android.widget.Toast.makeText(context, if (r.isSuccess) "Exportado" else "Error", android.widget.Toast.LENGTH_SHORT).show() } }
+        uri?.let { scope.launch { val r = backupRepo.exportSubscriptionsAsNewPipe(it); android.widget.Toast.makeText(context, if (r.isSuccess) context.getString(R.string.set_backup_ok) else context.getString(R.string.common_error), android.widget.Toast.LENGTH_SHORT).show() } }
     }
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        uri?.let { scope.launch { val r = backupRepo.importNewPipe(it); exportMsg = if (r.isSuccess) "Importados ${r.getOrNull()}" else "Error"; android.widget.Toast.makeText(context, exportMsg ?: "", android.widget.Toast.LENGTH_SHORT).show(); if (r.isSuccess) load() } }
+        uri?.let { scope.launch { val r = backupRepo.importNewPipe(it); exportMsg = if (r.isSuccess) context.getString(R.string.subs_imported, r.getOrNull()) else context.getString(R.string.common_error); android.widget.Toast.makeText(context, exportMsg ?: "", android.widget.Toast.LENGTH_SHORT).show(); if (r.isSuccess) load() } }
     }
 
     LaunchedEffect(displaySubs.size) {
@@ -240,18 +243,18 @@ fun SubscriptionsScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Suscripciones", style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
+                Text(stringResource(R.string.subs_title), style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     IconButton(onClick = { toggleNotify() }) {
                         Icon(
                             if (notifyEnabled) Icons.Rounded.Notifications else Icons.Rounded.NotificationsOff,
-                            contentDescription = "Avisos de videos nuevos",
+                            contentDescription = stringResource(R.string.subs_notify_title),
                             tint = if (notifyEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                     IconButton(onClick = { importLauncher.launch("application/json") }) { Icon(Icons.Rounded.Download, contentDescription = null) }
                     IconButton(onClick = { exportLauncher.launch("tsuki_subs_${System.currentTimeMillis()}.json") }) { Icon(Icons.Rounded.Upload, contentDescription = null) }
-                    Text("${displaySubs.size} canales", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(pluralStringResource(R.plurals.subs_channels, displaySubs.size, displaySubs.size), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
@@ -302,7 +305,7 @@ fun SubscriptionsScreen(
                                     Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                                         Icon(
                                             Icons.Rounded.Star,
-                                            contentDescription = "Favorito",
+                                            contentDescription = stringResource(R.string.common_favorite),
                                             tint = MaterialTheme.colorScheme.onPrimary,
                                             modifier = Modifier.size(12.dp)
                                         )
@@ -347,13 +350,13 @@ fun SubscriptionsScreen(
                     FilterChip(
                         selected = showOnlyNew,
                         onClick = { showOnlyNew = !showOnlyNew },
-                        label = { Text("Nuevos (${sessionNewIds.size})") }
+                        label = { Text(stringResource(R.string.subs_new, sessionNewIds.size)) }
                     )
                 }
                 Spacer(Modifier.weight(1f))
                 Box {
                     IconButton(onClick = { showSortMenu = true }) {
-                        Icon(Icons.Rounded.Sort, contentDescription = "Ordenar")
+                        Icon(Icons.Rounded.Sort, contentDescription = stringResource(R.string.common_sort))
                     }
                     DropdownMenu(
                         expanded = showSortMenu,
@@ -364,7 +367,7 @@ fun SubscriptionsScreen(
                     ) {
                         SubSort.entries.forEach { mode ->
                             DropdownMenuItem(
-                                text = { Text(mode.label) },
+                                text = { Text(stringResource(mode.labelRes)) },
                                 leadingIcon = {
                                     if (sortMode == mode) Icon(Icons.Rounded.Check, contentDescription = null)
                                 },
@@ -396,22 +399,22 @@ fun SubscriptionsScreen(
                     ) {
                         Icon(Icons.Filled.Subscriptions, contentDescription = null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.primary)
                         Spacer(Modifier.height(16.dp))
-                        Text("Aún no sigues canales", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
-                        Text("Busca creadores en el onboarding o desde la búsqueda y síguelos para ver sus videos aquí", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(R.string.subs_empty), style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+                        Text(stringResource(R.string.subs_empty_hint), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(Modifier.height(16.dp))
                         Surface(
                             shape = RoundedCornerShape(50),
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.clickable {
                                 onExploreClick?.invoke() ?: run {
-                                    android.widget.Toast.makeText(context, "Busca creadores desde la pestaña Inicio", android.widget.Toast.LENGTH_SHORT).show()
+                                    android.widget.Toast.makeText(context, context.getString(R.string.subs_empty_hint2), android.widget.Toast.LENGTH_SHORT).show()
                                 }
                             }
                         ) {
                             Row(modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Filled.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(18.dp))
                                 Spacer(Modifier.width(8.dp))
-                                Text("Explorar canales", color = MaterialTheme.colorScheme.onPrimary)
+                                Text(stringResource(R.string.subs_explore), color = MaterialTheme.colorScheme.onPrimary)
                             }
                         }
                     }
@@ -423,7 +426,7 @@ fun SubscriptionsScreen(
                 }
                 videos.isEmpty() -> {
                     Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-                        Text("Sin videos recientes de tus suscripciones", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(R.string.subs_no_recent), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
                 else -> {
@@ -446,7 +449,7 @@ fun SubscriptionsScreen(
                     }
                     if (filtered.isEmpty()) {
                         Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-                            Text("Nada por aquí con ese filtro", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(stringResource(R.string.subs_no_filter), color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     } else if (sortMode == SubSort.CHANNEL && selectedChannelId == null) {
                         val groups = remember(filtered, displaySubs) {
@@ -578,7 +581,7 @@ fun SubscriptionsScreen(
                     }
                     SubSheetRow(
                         icon = if (isFav) Icons.Rounded.Star else Icons.Rounded.StarBorder,
-                        label = if (isFav) "Quitar de favoritos" else "Marcar favorito",
+                        label = if (isFav) stringResource(R.string.subs_unfav) else stringResource(R.string.subs_fav),
                         onClick = {
                             sheetChannel = null
                             scope.launch(Dispatchers.IO) {
@@ -589,30 +592,30 @@ fun SubscriptionsScreen(
                                     homePrefs.addFavoriteChannel("${channel.channelId}|${channel.channelName}|${channel.channelThumbnail}")
                                 }
                             }
-                            Toast.makeText(context, if (isFav) "Quitado de favoritos" else "Marcado como favorito", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, if (isFav) context.getString(R.string.subs_unfav_done) else context.getString(R.string.subs_fav_done), Toast.LENGTH_SHORT).show()
                         }
                     )
                     SubSheetRow(
                         icon = if (isMuted) Icons.Rounded.VolumeUp else Icons.Rounded.VolumeOff,
-                        label = if (isMuted) "Activar canal" else "Silenciar canal",
+                        label = if (isMuted) stringResource(R.string.subs_unmute) else stringResource(R.string.subs_mute),
                         onClick = {
                             sheetChannel = null
                             scope.launch(Dispatchers.IO) {
                                 if (isMuted) homePrefs.unblockChannel(channel.channelId)
                                 else homePrefs.blockChannel(channel.channelId)
                             }
-                            Toast.makeText(context, if (isMuted) "Canal activado" else "Ya no verás videos de este canal", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, if (isMuted) context.getString(R.string.subs_unmuted) else context.getString(R.string.subs_muted), Toast.LENGTH_SHORT).show()
                             load()
                         }
                     )
                     SubSheetRow(
                         icon = Icons.Rounded.PersonRemove,
-                        label = "Dejar de seguir",
+                        label = stringResource(R.string.subs_unfollow),
                         onClick = {
                             sheetChannel = null
                             if (selectedChannelId == channel.channelId) selectedChannelId = null
                             scope.launch(Dispatchers.IO) { subRepo.unsubscribe(channel.channelId) }
-                            Toast.makeText(context, "Dejaste de seguir a ${channel.channelName}", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, context.getString(R.string.subs_unfollowed, channel.channelName), Toast.LENGTH_SHORT).show()
                         }
                     )
                 }
@@ -621,8 +624,8 @@ fun SubscriptionsScreen(
 
         if (showNotifyRationale) {
             PermissionRationaleSheet(
-                title = "Notificaciones de TSuki",
-                body = "Te aviso cuando salgan videos nuevos de tus suscripciones y cuando la descarga termine. Puedes cambiarlo luego en ajustes.",
+                title = stringResource(R.string.subs_notify_rationale_title),
+                body = stringResource(R.string.subs_notify_rationale_body),
                 icon = Icons.Rounded.Notifications,
                 onConfirm = {
                     showNotifyRationale = false

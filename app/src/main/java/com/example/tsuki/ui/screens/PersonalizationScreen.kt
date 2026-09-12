@@ -23,8 +23,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.tsuki.R
 import com.example.tsuki.data.local.HomePreferences
 import com.example.tsuki.data.local.TSukiBackupRepository
 import com.example.tsuki.data.recommendation.TSukiNeuroEngine
@@ -63,7 +65,7 @@ fun PersonalizationScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Ajustes TSuki", fontWeight = FontWeight.Bold) },
+                title = { Text(stringResource(R.string.pers_title), fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
@@ -89,8 +91,8 @@ fun PersonalizationScreen(
             uri?.let {
                 scope.launch {
                     val res = backupRepo.exportSubscriptionsAsNewPipe(it)
-                    exportMsg = if (res.isSuccess) "Exportado NewPipe OK" else "Error export"
-                    Toast.makeText(context, exportMsg ?: "", Toast.LENGTH_SHORT).show()
+                    val msg = if (res.isSuccess) context.getString(R.string.pers_export_newpipe_ok) else context.getString(R.string.pers_export_newpipe_fail)
+                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -98,8 +100,8 @@ fun PersonalizationScreen(
             uri?.let {
                 scope.launch {
                     val res = backupRepo.importNewPipe(it)
-                    exportMsg = if (res.isSuccess) "Importados ${res.getOrNull()} canales" else "Error import"
-                    Toast.makeText(context, exportMsg ?: "", Toast.LENGTH_SHORT).show()
+                    val msg = if (res.isSuccess) context.getString(R.string.pers_import_newpipe_ok, res.getOrNull() ?: 0) else context.getString(R.string.pers_import_newpipe_fail)
+                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -107,7 +109,7 @@ fun PersonalizationScreen(
             uri?.let {
                 scope.launch {
                     val res = backupRepo.exportMaster(it)
-                    Toast.makeText(context, if (res.isSuccess) "Backup maestro OK" else "Error backup", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, if (res.isSuccess) context.getString(R.string.pers_backup_ok) else context.getString(R.string.pers_backup_fail), Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -115,7 +117,7 @@ fun PersonalizationScreen(
             uri?.let {
                 scope.launch {
                     val res = backupRepo.importMaster(it)
-                    Toast.makeText(context, if (res.isSuccess) "Restaurado OK" else "Error restore", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, if (res.isSuccess) context.getString(R.string.pers_restore_ok) else context.getString(R.string.pers_restore_fail), Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -138,12 +140,12 @@ fun PersonalizationScreen(
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Text(
-                            "Tus Intereses y Canales",
+                            stringResource(R.string.pers_interests_title),
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            "Vuelve a seleccionar tus temas preferidos (Gaming, Tecnología, Anime, etc.) y los canales que quieres seguir en tu feed.",
+                            stringResource(R.string.pers_interests_desc),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -156,7 +158,7 @@ fun PersonalizationScreen(
                             },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("Cambiar temas y canales seguidos")
+                            Text(stringResource(R.string.pers_sub))
                         }
                     }
                 }
@@ -172,13 +174,13 @@ fun PersonalizationScreen(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Text("Idioma y región del contenido", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.pers_content), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                         Text(
-                            "Define en qué idioma se muestran los títulos y descripciones, y de qué país salen las tendencias. Evita que el contenido se traduzca automáticamente a otro idioma.",
+                            stringResource(R.string.pers_content_desc),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        Text("Idioma", style = MaterialTheme.typography.labelLarge)
+                        Text(stringResource(R.string.pers_lang), style = MaterialTheme.typography.labelLarge)
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             items(contentLanguageOptions, key = { it.tag }) { option ->
                                 FilterChip(
@@ -188,7 +190,7 @@ fun PersonalizationScreen(
                                 )
                             }
                         }
-                        Text("País (tendencias)", style = MaterialTheme.typography.labelLarge)
+                        Text(stringResource(R.string.pers_country), style = MaterialTheme.typography.labelLarge)
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             items(contentCountryOptions, key = { it }) { code ->
                                 FilterChip(
@@ -214,8 +216,8 @@ fun PersonalizationScreen(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("Exportar / Importar Suscripciones", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                        Text("Guarda tus canales en JSON NewPipe o CSV YouTube para migrar sin cuenta. También backup maestro.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(R.string.pers_export), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.pers_export_sub), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                             FilledTonalButton(onClick = { exportLauncher.launch("tsuki_subs_${System.currentTimeMillis()}.json") }, modifier = Modifier.weight(1f)) {
                                 Icon(Icons.Rounded.Upload, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -230,7 +232,7 @@ fun PersonalizationScreen(
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                             OutlinedButton(onClick = { exportMasterLauncher.launch("tsuki_backup_${System.currentTimeMillis()}.json") }, modifier = Modifier.weight(1f)) { Text("Backup") }
-                            OutlinedButton(onClick = { importMasterLauncher.launch("application/json") }, modifier = Modifier.weight(1f)) { Text("Restaurar") }
+                            OutlinedButton(onClick = { importMasterLauncher.launch("application/json") }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.pers_restore)) }
                         }
                         if (exportMsg != null) Text(exportMsg ?: "", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                     }
@@ -244,11 +246,10 @@ fun PersonalizationScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Icon(Icons.Rounded.Psychology, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                        Text("TSuki Brain (Inteligencia Local)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.pers_brain_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     }
                     Text(
-                        "TSuki aprende de lo que ves, saltas y buscas. Todo esto se procesa y guarda " +
-                        "estrictamente en tu dispositivo. Puedes reiniciarlo si quieres empezar desde cero.",
+                        stringResource(R.string.pers_brain_desc),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -261,11 +262,11 @@ fun PersonalizationScreen(
                             contentColor = MaterialTheme.colorScheme.onErrorContainer
                         )
                     ) {
-                        Text("Reiniciar TSuki Brain")
+                        Text(stringResource(R.string.pers_brain_reset_btn))
                     }
                     if (resetSuccess) {
                         Text(
-                            "Brain reiniciado. Ciérralo y vuelve a abrir para ver los cambios.",
+                            stringResource(R.string.pers_brain_reset_success),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.primary
                         )
@@ -277,8 +278,8 @@ fun PersonalizationScreen(
         if (showResetDialog) {
             AlertDialog(
                 onDismissRequest = { showResetDialog = false },
-                title = { Text("¿Reiniciar TSuki Brain?") },
-                text = { Text("Perderás todo el entrenamiento local y preferencias aprendidas. No se puede deshacer.") },
+                title = { Text(stringResource(R.string.pers_reset_title)) },
+                text = { Text(stringResource(R.string.pers_reset_text)) },
                 confirmButton = {
                     Button(
                         onClick = {
@@ -290,12 +291,12 @@ fun PersonalizationScreen(
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                     ) {
-                        Text("Borrar y reiniciar")
+                        Text(stringResource(R.string.pers_reset_go))
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { showResetDialog = false }) {
-                        Text("Cancelar")
+                        Text(stringResource(R.string.common_cancel))
                     }
                 }
             )
