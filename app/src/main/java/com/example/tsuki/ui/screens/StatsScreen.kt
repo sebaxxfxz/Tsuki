@@ -54,12 +54,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import com.example.tsuki.R
 import com.example.tsuki.data.local.WatchHistoryManager
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Share
@@ -112,7 +114,7 @@ fun StatsScreen(
         val bounds = statsCardBounds
         val window = statsDialogWindow
         if (window == null || bounds == null || android.os.Build.VERSION.SDK_INT < 26) {
-            android.widget.Toast.makeText(context, "No se pudo generar la imagen", android.widget.Toast.LENGTH_SHORT).show()
+            android.widget.Toast.makeText(context, context.getString(R.string.player_image_fail), android.widget.Toast.LENGTH_SHORT).show()
             return
         }
         val width = bounds.width.toInt().coerceAtLeast(1)
@@ -138,21 +140,21 @@ fun StatsScreen(
                                     putExtra(android.content.Intent.EXTRA_STREAM, uri)
                                     addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                 }
-                                context.startActivity(android.content.Intent.createChooser(sendIntent, "Compartir"))
+                                context.startActivity(android.content.Intent.createChooser(sendIntent, context.getString(R.string.common_share)))
                                 true
                             }.getOrDefault(false)
                         }
-                        if (!ok) android.widget.Toast.makeText(context, "No se pudo generar la imagen", android.widget.Toast.LENGTH_SHORT).show()
+                        if (!ok) android.widget.Toast.makeText(context, context.getString(R.string.player_image_fail), android.widget.Toast.LENGTH_SHORT).show()
                     }
                 } else {
-                    android.widget.Toast.makeText(context, "No se pudo generar la imagen", android.widget.Toast.LENGTH_SHORT).show()
+                    android.widget.Toast.makeText(context, context.getString(R.string.player_image_fail), android.widget.Toast.LENGTH_SHORT).show()
                 }
             },
             android.os.Handler(android.os.Looper.getMainLooper())
         )
     }
 
-    val periods = listOf("7 días" to 7L, "30 días" to 30L, "90 días" to 90L, "Todo" to 0L)
+    val periods = listOf(stringResource(R.string.stats_days) to 7L, stringResource(R.string.stats_days30) to 30L, stringResource(R.string.stats_days90) to 90L, stringResource(R.string.common_all) to 0L)
 
     LaunchedEffect(periodIndex) {
         isLoading = true
@@ -179,10 +181,10 @@ fun StatsScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Text("Estadísticas", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.stats_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Atrás") }
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back)) }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
@@ -217,7 +219,8 @@ fun StatsScreen(
             item(key = "monthly_wrapped") {
                 monthlyWrapped?.let { month ->
                     if (month.plays > 0) {
-                        val monthFormatter = remember { SimpleDateFormat("MMMM 'de' yyyy", Locale("es")) }
+                        val monthFmtPattern = stringResource(R.string.stats_month_fmt)
+                        val monthFormatter = remember(monthFmtPattern) { SimpleDateFormat(monthFmtPattern, Locale.getDefault()) }
                         Surface(
                             shape = RoundedCornerShape(20.dp),
                             color = MaterialTheme.colorScheme.primaryContainer,
@@ -240,12 +243,12 @@ fun StatsScreen(
                                 )
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        "Wrapped del mes",
+                                        stringResource(R.string.stats_month_wrap),
                                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                                         color = MaterialTheme.colorScheme.onPrimaryContainer
                                     )
                                     Text(
-                                        "Tu resumen de ${monthFormatter.format(Date(month.weekStartMs))}",
+                                        stringResource(R.string.stats_month_sub, monthFormatter.format(Date(month.weekStartMs))),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                                     )
@@ -273,7 +276,7 @@ fun StatsScreen(
                     ) {
                         Icon(Icons.Rounded.Share, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Compartir resumen")
+                        Text(stringResource(R.string.stats_share))
                     }
                 }
             }
@@ -291,7 +294,7 @@ fun StatsScreen(
                 item(key = "empty") {
                     Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
                         Text(
-                            "Aún no hay datos de escucha.\nReproduce música para generar estadísticas.",
+                            stringResource(R.string.stats_empty),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center
@@ -304,7 +307,7 @@ fun StatsScreen(
             item(key = "heatmap") {
                 Column(modifier = Modifier.fillMaxWidth().m3StaggeredEntrance(1), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(
-                        "Actividad del último año",
+                        stringResource(R.string.stats_year),
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                         modifier = Modifier.padding(horizontal = 16.dp)
                     )
@@ -316,7 +319,7 @@ fun StatsScreen(
                 item(key = "weekly_wrapped") {
                     Column(modifier = Modifier.fillMaxWidth().m3StaggeredEntrance(2), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text(
-                            "Wrapped semanal",
+                            stringResource(R.string.stats_week_wrap),
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                             modifier = Modifier.padding(horizontal = 16.dp)
                         )
@@ -328,7 +331,7 @@ fun StatsScreen(
             item(key = "patterns_hour") {
                 Column(modifier = Modifier.fillMaxWidth().m3StaggeredEntrance(3)) {
                     StatsBarChart(
-                        title = "Patrón por hora del día",
+                        title = stringResource(R.string.stats_hours),
                         buckets = stats.hourBuckets,
                         labels = (0 until 24 step 3).map { String.format(Locale.US, "%02d", it) }
                     )
@@ -337,16 +340,16 @@ fun StatsScreen(
 
             item(key = "patterns_weekday") {
                 StatsBarChart(
-                    title = "Patrón por día de la semana",
+                    title = stringResource(R.string.stats_weekdays),
                     buckets = stats.weekdayBuckets,
-                    labels = listOf("D", "L", "M", "X", "J", "V", "S")
+                    labels = listOf(stringResource(R.string.stats_dow_0), stringResource(R.string.stats_dow_1), stringResource(R.string.stats_dow_2), stringResource(R.string.stats_dow_3), stringResource(R.string.stats_dow_4), stringResource(R.string.stats_dow_5), stringResource(R.string.stats_dow_6))
                 )
             }
 
             if (stats.topSongs.isNotEmpty()) {
                 item(key = "top_songs_header") {
                     Text(
-                        "Top canciones",
+                        stringResource(R.string.stats_top_songs),
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                         modifier = Modifier.padding(horizontal = 16.dp).m3StaggeredEntrance(4)
                     )
@@ -359,7 +362,7 @@ fun StatsScreen(
             if (stats.topArtists.isNotEmpty()) {
                 item(key = "top_artists_header") {
                     Text(
-                        "Top artistas",
+                        stringResource(R.string.stats_top_artists),
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                         modifier = Modifier.padding(horizontal = 16.dp)
                     )
@@ -373,14 +376,15 @@ fun StatsScreen(
 
     if (showMonthlyWrapped) {
         monthlyWrapped?.let { month ->
-            val monthFormatter = remember { SimpleDateFormat("MMMM 'de' yyyy", Locale("es")) }
+            val monthFmtPattern = stringResource(R.string.stats_month_fmt)
+            val monthFormatter = remember(monthFmtPattern) { SimpleDateFormat(monthFmtPattern, Locale.getDefault()) }
             com.example.tsuki.ui.components.WeeklyWrappedOverlay(
                 week = month,
                 isCurrentWeek = true,
                 onDismiss = { showMonthlyWrapped = false },
-                titleText = "TU MES",
+                titleText = stringResource(R.string.stats_your_month),
                 periodLabel = monthFormatter.format(Date(month.weekStartMs)).replaceFirstChar { it.uppercase() },
-                badgeText = "Este mes"
+                badgeText = stringResource(R.string.wrap_month)
             )
         }
     }
@@ -408,11 +412,11 @@ fun StatsScreen(
                     androidx.compose.material3.OutlinedButton(
                         onClick = { showShareCard = false },
                         shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp)
-                    ) { Text("Cancelar") }
+                    ) { Text(stringResource(R.string.common_cancel)) }
                     androidx.compose.material3.Button(
                         onClick = { shareStatsCard() },
                         shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp)
-                    ) { Text("Compartir imagen") }
+                    ) { Text(stringResource(R.string.player_share_image)) }
                 }
             }
         }
@@ -449,7 +453,7 @@ private fun StatsHero(totalMs: Long, plays: Int, uniqueSongs: Int, uniqueArtists
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
-                "TIEMPO TOTAL",
+                stringResource(R.string.stats_total_time),
                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = 3.sp),
                 color = MaterialTheme.colorScheme.primary
             )
@@ -462,9 +466,9 @@ private fun StatsHero(totalMs: Long, plays: Int, uniqueSongs: Int, uniqueArtists
             )
             Spacer(Modifier.height(4.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                StatPill("$plays", "reproducciones", Modifier.weight(1.6f))
-                StatPill("$uniqueSongs", "canciones", Modifier.weight(1f))
-                StatPill("$uniqueArtists", "artistas", Modifier.weight(1f))
+                StatPill("$plays", stringResource(R.string.stats_plays), Modifier.weight(1.6f))
+                StatPill("$uniqueSongs", stringResource(R.string.stats_songs), Modifier.weight(1f))
+                StatPill("$uniqueArtists", stringResource(R.string.stats_artists), Modifier.weight(1f))
             }
         }
     }
@@ -503,7 +507,7 @@ private fun ListenHeatmap(daily: List<WatchHistoryManager.DailyListen>) {
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
         ) {
             Text(
-                "Sin actividad registrada todavía",
+                stringResource(R.string.stats_no_activity),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -528,8 +532,8 @@ private fun ListenHeatmap(daily: List<WatchHistoryManager.DailyListen>) {
         MaterialTheme.colorScheme.primary.copy(alpha = 0.80f),
         MaterialTheme.colorScheme.primary
     )
-    val monthFormatter = remember { SimpleDateFormat("MMM", Locale("es")) }
-    val dayFormatter = remember { SimpleDateFormat("EEE d MMM", Locale("es")) }
+    val monthFormatter = remember { SimpleDateFormat("MMM", Locale.getDefault()) }
+    val dayFormatter = remember { SimpleDateFormat("EEE d MMM", Locale.getDefault()) }
     var selectedDay by remember { mutableStateOf<Long?>(null) }
     val scrollState = rememberScrollState()
 
@@ -578,7 +582,7 @@ private fun ListenHeatmap(daily: List<WatchHistoryManager.DailyListen>) {
                         Box(modifier = Modifier.width(cellSize).height(16.dp)) {
                             if (showLabel) {
                                 Text(
-                                    monthFormatter.format(cal.time).take(1).uppercase(Locale("es")),
+                                    monthFormatter.format(cal.time).take(1).uppercase(Locale.getDefault()),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -619,11 +623,11 @@ private fun ListenHeatmap(daily: List<WatchHistoryManager.DailyListen>) {
 
         val selectedListen = selectedDay?.let { byDay[it] }
         val selectedLabel = selectedDay?.let { day ->
-            selectedListen?.let { "${formatTotalTime(it.timeListenedMs)} · ${dayFormatter.format(Date(day)).lowercase(Locale("es"))}" }
-                ?: "Sin escucha ese día"
+            selectedListen?.let { "${formatTotalTime(it.timeListenedMs)} · ${dayFormatter.format(Date(day)).lowercase(Locale.getDefault())}" }
+                ?: stringResource(R.string.stats_no_day)
         }
         Text(
-            selectedLabel ?: "Toca un día para ver el detalle",
+            selectedLabel ?: stringResource(R.string.stats_tap_day),
             style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
             color = if (selectedListen != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 4.dp)
@@ -634,11 +638,11 @@ private fun ListenHeatmap(daily: List<WatchHistoryManager.DailyListen>) {
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             modifier = Modifier.padding(horizontal = 4.dp)
         ) {
-            Text("Menos", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.stats_less), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             levelColors.forEach { color ->
                 Box(modifier = Modifier.size(10.dp).clip(RoundedCornerShape(2.dp)).background(color))
             }
-            Text("Más", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.stats_more), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -646,8 +650,8 @@ private fun ListenHeatmap(daily: List<WatchHistoryManager.DailyListen>) {
 @Composable
 private fun WeeklyWrappedRow(weekly: List<WatchHistoryManager.WeeklyWrapped>) {
     val currentWeekStart = remember { startOfWeekMs(System.currentTimeMillis()) }
-    val startFormatter = remember { SimpleDateFormat("d", Locale("es")) }
-    val endFormatter = remember { SimpleDateFormat("d MMM", Locale("es")) }
+    val startFormatter = remember { SimpleDateFormat("d", Locale.getDefault()) }
+    val endFormatter = remember { SimpleDateFormat("d MMM", Locale.getDefault()) }
     LazyRow(
         contentPadding = PaddingValues(horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -664,7 +668,7 @@ private fun WeeklyWrappedRow(weekly: List<WatchHistoryManager.WeeklyWrapped>) {
                 Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
-                            "Semana ${startFormatter.format(Date(week.weekStartMs))}–${endFormatter.format(Date(week.weekStartMs + 6L * DAY_MS))}",
+                            stringResource(R.string.wrap_week_range, startFormatter.format(Date(week.weekStartMs)), endFormatter.format(Date(week.weekStartMs + 6L * DAY_MS))),
                             style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -673,7 +677,7 @@ private fun WeeklyWrappedRow(weekly: List<WatchHistoryManager.WeeklyWrapped>) {
                         if (isCurrent) {
                             Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primaryContainer) {
                                 Text(
-                                    "Esta semana",
+                                    stringResource(R.string.wrap_week),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
@@ -688,14 +692,14 @@ private fun WeeklyWrappedRow(weekly: List<WatchHistoryManager.WeeklyWrapped>) {
                             color = MaterialTheme.colorScheme.primary
                         )
                         Text(
-                            "${week.plays} reproducciones",
+                            stringResource(R.string.wrap_plays_count, week.plays),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                     if (week.topSongs.isNotEmpty()) {
                         Text(
-                            "Top canciones",
+                            stringResource(R.string.stats_top_songs),
                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -725,14 +729,14 @@ private fun WeeklyWrappedRow(weekly: List<WatchHistoryManager.WeeklyWrapped>) {
                     }
                     if (week.topArtists.isNotEmpty()) {
                         Text(
-                            "Top artistas",
+                            stringResource(R.string.stats_top_artists),
                             style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             week.topArtists.take(3).forEachIndexed { index, artist ->
                                 Text(
-                                    "${index + 1}. ${artist.title} · ${artist.plays} plays",
+                                    stringResource(R.string.stats_artist_line, index + 1, artist.title, artist.plays),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurface,
                                     maxLines = 1,

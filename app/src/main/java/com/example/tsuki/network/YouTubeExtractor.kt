@@ -1,6 +1,8 @@
 package com.example.tsuki.network
 
+import android.content.Context
 import android.util.Log
+import com.example.tsuki.R
 import com.example.tsuki.domain.model.MediaTrack
 import com.example.tsuki.domain.model.MediaType
 import kotlinx.coroutines.Dispatchers
@@ -50,7 +52,7 @@ data class StreamResult(
     val durationMs: Long = 0L
 )
 
-class YouTubeExtractor {
+class YouTubeExtractor(private val appContext: Context? = null) {
 
     private val service = ServiceList.YouTube
 
@@ -201,17 +203,31 @@ class YouTubeExtractor {
                         name = channel.name ?: return@mapNotNull null,
                         avatarUrl = channel.thumbnails?.sortedByDescending { it.height }?.firstOrNull()?.url,
                         channel.subscriberCount.takeIf { it > 0 }?.let { c ->
+                            val ctx = appContext
                             when {
-                                c >= 1_000_000 -> String.format(java.util.Locale.US, "%.1f M suscriptores", c / 1_000_000f)
-                                c >= 1000 -> String.format(java.util.Locale.US, "%.1f K suscriptores", c / 1000f)
-                                else -> "$c suscriptores"
+                                c >= 1_000_000 -> {
+                                    val v = String.format(java.util.Locale.US, "%.1f", c / 1_000_000f)
+                                    if (ctx != null) ctx.getString(R.string.xtr_subs_m, v) else "$v M subscribers"
+                                }
+                                c >= 1000 -> {
+                                    val v = String.format(java.util.Locale.US, "%.1f", c / 1000f)
+                                    if (ctx != null) ctx.getString(R.string.xtr_subs_k, v) else "$v K subscribers"
+                                }
+                                else -> if (ctx != null) ctx.getString(R.string.xtr_subs_exact, c) else "$c subscribers"
                             }
                         },
                         channel.streamCount?.let { c ->
+                            val ctx = appContext
                             when {
-                                c >= 1_000_000 -> String.format(java.util.Locale.US, "%.1f M videos", c / 1_000_000f)
-                                c >= 1000 -> String.format(java.util.Locale.US, "%.1f K videos", c / 1000f)
-                                else -> "$c videos"
+                                c >= 1_000_000 -> {
+                                    val v = String.format(java.util.Locale.US, "%.1f", c / 1_000_000f)
+                                    if (ctx != null) ctx.getString(R.string.xtr_videos_m, v) else "$v M videos"
+                                }
+                                c >= 1000 -> {
+                                    val v = String.format(java.util.Locale.US, "%.1f", c / 1000f)
+                                    if (ctx != null) ctx.getString(R.string.xtr_videos_k, v) else "$v K videos"
+                                }
+                                else -> if (ctx != null) ctx.getString(R.string.xtr_videos_exact, c) else "$c videos"
                             }
                         },
                         channel.description
@@ -380,7 +396,7 @@ class YouTubeExtractor {
                     else -> null
                 }
             }
-            val selectedAudioTrackName = originalTrack?.label ?: "Audio original"
+            val selectedAudioTrackName = originalTrack?.label ?: appContext?.getString(R.string.xtr_audio_original) ?: "Original audio"
 
             var bestProgressiveVideoUrl: String? = null
             var maxProgressiveBitrate = 0
@@ -582,7 +598,18 @@ class YouTubeExtractor {
         "tr" to "Turco",
         "pl" to "Polaco",
         "nl" to "Holandés",
-        "uk" to "Ucraniano"
+        "uk" to "Ucraniano",
+        "spanish" to "Español",
+        "english" to "Inglés",
+        "french" to "Francés",
+        "german" to "Alemán",
+        "portuguese" to "Portugués",
+        "japanese" to "Japonés",
+        "korean" to "Coreano",
+        "chinese" to "Chino",
+        "russian" to "Ruso",
+        "hindi" to "Hindi",
+        "italian" to "Italiano"
     )
 
     private fun isAudioStreamExplicitlyOriginal(stream: org.schabi.newpipe.extractor.stream.AudioStream): Boolean {
@@ -658,7 +685,7 @@ class YouTubeExtractor {
             if (baseName == null) {
                 try {
                     val loc = java.util.Locale.forLanguageTag(tag)
-                    val disp = loc.getDisplayLanguage(java.util.Locale("es"))
+                    val disp = loc.getDisplayLanguage(java.util.Locale.getDefault())
                     if (disp.isNotBlank() && !disp.equals(tag, ignoreCase = true) && !disp.equals("und", ignoreCase = true)) {
                         baseName = disp.replaceFirstChar { it.uppercase() }
                     }
@@ -667,22 +694,22 @@ class YouTubeExtractor {
         }
 
         if (baseName.isNullOrBlank() && locale != null) {
-            val disp = locale.getDisplayLanguage(java.util.Locale("es"))
+            val disp = locale.getDisplayLanguage(java.util.Locale.getDefault())
             if (disp.isNotBlank() && !disp.equals(locale.language, ignoreCase = true)) {
                 baseName = disp.replaceFirstChar { it.uppercase() }
             }
         }
 
         if (baseName.isNullOrBlank()) {
-            baseName = if (isOriginal) "Audio original" else "Pista ${index + 1}"
+            baseName = if (isOriginal) appContext?.getString(R.string.xtr_audio_original) ?: "Original audio" else appContext?.getString(R.string.xtr_track_n, index + 1) ?: "Track ${index + 1}"
         }
 
         return if (isOriginal) {
             if (baseName.contains("Original", ignoreCase = true)) baseName
-            else "$baseName (Original)"
+            else baseName + (appContext?.getString(R.string.xtr_suffix_original) ?: " (Original)")
         } else {
             if (baseName.contains("Doblado", ignoreCase = true) || baseName.contains("Original", ignoreCase = true)) baseName
-            else "$baseName (Doblado)"
+            else baseName + (appContext?.getString(R.string.xtr_suffix_dubbed) ?: " (Dubbed)")
         }
     }
 }

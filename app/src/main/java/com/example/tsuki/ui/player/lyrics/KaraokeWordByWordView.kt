@@ -12,9 +12,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.tsuki.R
 import com.example.tsuki.domain.model.LyricsEntry
 import com.mocharealm.accompanist.lyrics.ui.composable.lyrics.KaraokeLyricsView
 
@@ -35,7 +37,7 @@ fun KaraokeWordByWordView(
     if (syncedLyrics.lines.isEmpty()) {
         Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text(
-                text = "No hay letras disponibles",
+                text = stringResource(R.string.player_no_lyrics),
                 color = Color.Gray,
                 style = MaterialTheme.typography.bodyLarge,
             )

@@ -14,8 +14,13 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.animation.core.animateFloatAsState
@@ -64,7 +69,9 @@ import androidx.compose.material.icons.outlined.Headphones
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.ThumbDown
 import androidx.compose.material.icons.outlined.ThumbUp
+import androidx.compose.material.icons.rounded.AspectRatio
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.FitScreen
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.MoreVert
@@ -73,6 +80,7 @@ import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Speed
 import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.ZoomOutMap
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -92,6 +100,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -105,6 +114,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import com.example.tsuki.R
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -124,6 +135,7 @@ import com.example.tsuki.domain.model.PlayerMode
 import com.example.tsuki.network.RydVoteData
 import com.example.tsuki.network.YouTubeExtractor
 import com.example.tsuki.playback.PlayerController
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import androidx.collection.LruCache
@@ -164,6 +176,29 @@ fun VideoPlayerScreen(
     var showControls by remember { mutableStateOf(false) }
     var isFullscreen by remember { mutableStateOf(false) }
     var seekOverlayText by remember { mutableStateOf<String?>(null) }
+    var videoResizeMode by remember { mutableIntStateOf(AspectRatioFrameLayout.RESIZE_MODE_FIT) }
+    var zoomBadgeText by remember { mutableStateOf<String?>(null) }
+    var zoomBadgeJob by remember { mutableStateOf<Job?>(null) }
+
+    fun setResizeModeWithFeedback(newMode: Int) {
+        if (videoResizeMode == newMode) return
+        videoResizeMode = newMode
+        val textRes = when (newMode) {
+            AspectRatioFrameLayout.RESIZE_MODE_ZOOM -> R.string.vid_aspect_zoom_toast
+            AspectRatioFrameLayout.RESIZE_MODE_FILL -> R.string.vid_aspect_fill_toast
+            else -> R.string.vid_aspect_fit_toast
+        }
+        zoomBadgeText = context.getString(textRes)
+        try {
+            val haptic = (context as? Activity)?.window?.decorView
+            haptic?.performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK)
+        } catch (_: Exception) {}
+        zoomBadgeJob?.cancel()
+        zoomBadgeJob = scope.launch {
+            delay(1500)
+            zoomBadgeText = null
+        }
+    }
     var isDescriptionExpanded by remember { mutableStateOf(false) }
     var isSubscribed by remember(track?.artist) { mutableStateOf(false) }
     val favoritesManager = remember { com.example.tsuki.data.local.FavoritesManager.getInstance(context) }
@@ -312,66 +347,91 @@ fun VideoPlayerScreen(
                     )
                 }
                 .pointerInput(isFullscreen) {
-                    var isBrightness = false
-                    var isVolume = false
-                    var totalDragY = 0f
-                    detectDragGestures(
-                        onDragStart = { offset ->
-                            totalDragY = 0f
-                            val width = size.width
-                            if (isFullscreen) {
-                                if (offset.x < width / 2) {
-                                    isBrightness = true
-                                    isVolume = false
-                                } else {
-                                    isVolume = true
-                                    isBrightness = false
-                                }
-                            }
-                        },
-                        onDrag = { change, dragAmount ->
-                            if (isFullscreen) {
-                                change.consume()
-                                if (isBrightness) {
-                                    window?.let {
-                                        val attributes = it.attributes
-                                        val newBrightness = (attributes.screenBrightness - dragAmount.y / 1000f).coerceIn(0f, 1f)
-                                        attributes.screenBrightness = newBrightness
-                                        it.attributes = attributes
-                                    }
-                                } else if (isVolume) {
-                                    val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-                                    val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-                                    val currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-                                    val newVolume = (currentVolume - (dragAmount.y / 50f).toInt()).coerceIn(0, maxVolume)
-                                    audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, newVolume, 0)
-                                }
-                            } else {
+                    if (!isFullscreen) {
+                        var totalDragY = 0f
+                        detectDragGestures(
+                            onDragStart = { totalDragY = 0f },
+                            onDrag = { change, dragAmount ->
                                 totalDragY += dragAmount.y
                                 if (totalDragY > 80f) {
                                     change.consume()
                                     onMinimizeToPip()
                                 }
                             }
+                        )
+                    } else {
+                        awaitEachGesture {
+                            var isBrightness = false
+                            var isVolume = false
+                            var totalZoom = 1f
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            val width = size.width
+                            if (down.position.x < width / 2) {
+                                isBrightness = true
+                                isVolume = false
+                            } else {
+                                isVolume = true
+                                isBrightness = false
+                            }
+                            do {
+                                val event = awaitPointerEvent()
+                                val pointers = event.changes
+                                if (pointers.size >= 2) {
+                                    val zoom = event.calculateZoom()
+                                    totalZoom *= zoom
+                                    if (totalZoom > 1.12f) {
+                                        setResizeModeWithFeedback(AspectRatioFrameLayout.RESIZE_MODE_ZOOM)
+                                        totalZoom = 1f
+                                    } else if (totalZoom < 0.88f) {
+                                        setResizeModeWithFeedback(AspectRatioFrameLayout.RESIZE_MODE_FIT)
+                                        totalZoom = 1f
+                                    }
+                                    pointers.forEach { it.consume() }
+                                } else if (pointers.size == 1) {
+                                    val change = pointers.first()
+                                    val dragY = change.position.y - change.previousPosition.y
+                                    if (kotlin.math.abs(dragY) > 2f) {
+                                        change.consume()
+                                        if (isBrightness) {
+                                            window?.let {
+                                                val attributes = it.attributes
+                                                val newBrightness = (attributes.screenBrightness - dragY / 1000f).coerceIn(0f, 1f)
+                                                attributes.screenBrightness = newBrightness
+                                                it.attributes = attributes
+                                            }
+                                        } else if (isVolume) {
+                                            val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                                            val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                                            val currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                                            val newVolume = (currentVolume - (dragY / 50f).toInt()).coerceIn(0, maxVolume)
+                                            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, newVolume, 0)
+                                        }
+                                    }
+                                }
+                            } while (event.changes.any { it.pressed })
                         }
-                    )
+                    }
                 }
         ) {
             if (track?.artworkUrl != null) {
                 AsyncImage(
                     model = track.artworkUrl,
                     contentDescription = null,
-                    contentScale = ContentScale.Fit,
+                    contentScale = if (videoResizeMode == AspectRatioFrameLayout.RESIZE_MODE_ZOOM) ContentScale.Crop else ContentScale.Fit,
                     modifier = Modifier.fillMaxSize()
                 )
             }
+
+            val controller by playerController.mediaControllerFlow.collectAsStateWithLifecycle()
 
             AndroidView(
                 factory = { ctx ->
                     PlayerView(ctx).apply {
                         useController = false
-                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        resizeMode = videoResizeMode
                         setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
+                        setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
+                        player = playerController.mediaController
                         layoutParams = FrameLayout.LayoutParams(
                             ViewGroup.LayoutParams.MATCH_PARENT,
                             ViewGroup.LayoutParams.MATCH_PARENT
@@ -379,9 +439,11 @@ fun VideoPlayerScreen(
                     }
                 },
                 update = { view ->
-                    val controller = playerController.mediaController
                     if (view.player != controller) {
                         view.player = controller
+                    }
+                    if (view.resizeMode != videoResizeMode) {
+                        view.resizeMode = videoResizeMode
                     }
                 },
                 onRelease = { view ->
@@ -391,6 +453,42 @@ fun VideoPlayerScreen(
             )
 
             Box(modifier = Modifier.fillMaxSize()) {
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = zoomBadgeText != null,
+                    enter = fadeIn() + scaleIn(initialScale = 0.85f),
+                    exit = fadeOut() + scaleOut(targetScale = 0.85f),
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .then(if (isFullscreen) Modifier.statusBarsPadding() else Modifier)
+                        .padding(top = 16.dp)
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = Color.Black.copy(alpha = 0.82f),
+                        contentColor = Color.White,
+                        tonalElevation = 6.dp
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (videoResizeMode == AspectRatioFrameLayout.RESIZE_MODE_ZOOM) Icons.Rounded.ZoomOutMap else Icons.Rounded.FitScreen,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = zoomBadgeText.orEmpty(),
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color.White
+                            )
+                        }
+                    }
+                }
+
                 if (showControls) {
                     Box(
                         modifier = Modifier
@@ -408,7 +506,7 @@ fun VideoPlayerScreen(
                         ) {
                             Icon(
                                 imageVector = if (isFullscreen) Icons.Default.FullscreenExit else Icons.Rounded.KeyboardArrowDown,
-                                contentDescription = "Minimizar",
+                                contentDescription = stringResource(R.string.vid_minimize),
                                 tint = Color.White,
                                 modifier = Modifier.size(28.dp)
                             )
@@ -422,12 +520,31 @@ fun VideoPlayerScreen(
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
+                            if (isFullscreen) {
+                                IconButton(
+                                    onClick = {
+                                        val nextMode = if (videoResizeMode == AspectRatioFrameLayout.RESIZE_MODE_FIT) {
+                                            AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                                        } else {
+                                            AspectRatioFrameLayout.RESIZE_MODE_FIT
+                                        }
+                                        setResizeModeWithFeedback(nextMode)
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = if (videoResizeMode == AspectRatioFrameLayout.RESIZE_MODE_ZOOM) Icons.Rounded.ZoomOutMap else Icons.Rounded.FitScreen,
+                                        contentDescription = stringResource(R.string.vid_aspect_ratio),
+                                        tint = Color.White,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+                            }
                             IconButton(
                                 onClick = { showSettingsSheet = true }
                             ) {
                                 Icon(
                                     imageVector = Icons.Rounded.MoreVert,
-                                    contentDescription = "Ajustes del video",
+                                    contentDescription = stringResource(R.string.vid_settings),
                                     tint = Color.White,
                                     modifier = Modifier.size(24.dp)
                                 )
@@ -437,7 +554,7 @@ fun VideoPlayerScreen(
                             ) {
                                 Icon(
                                     imageVector = if (isFullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
-                                    contentDescription = "Pantalla completa",
+                                    contentDescription = stringResource(R.string.vid_fullscreen),
                                     tint = Color.White,
                                     modifier = Modifier.size(24.dp)
                                 )
@@ -471,7 +588,7 @@ fun VideoPlayerScreen(
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.FastRewind,
-                                        contentDescription = "Retroceder 10s",
+                                        contentDescription = stringResource(R.string.vid_back10),
                                         tint = Color.White,
                                         modifier = Modifier.size(26.dp)
                                     )
@@ -504,7 +621,7 @@ fun VideoPlayerScreen(
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.FastForward,
-                                        contentDescription = "Adelantar 10s",
+                                        contentDescription = stringResource(R.string.vid_forward10),
                                         tint = Color.White,
                                         modifier = Modifier.size(26.dp)
                                     )
@@ -625,7 +742,7 @@ fun VideoPlayerScreen(
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = if (isDescriptionExpanded) "menos" else "...más",
+                                text = if (isDescriptionExpanded) stringResource(R.string.vid_show_less) else stringResource(R.string.vid_show_more),
                                 style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
                                 color = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier.clickable { isDescriptionExpanded = !isDescriptionExpanded }
@@ -706,7 +823,7 @@ fun VideoPlayerScreen(
 
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = track?.artist ?: "Canal",
+                                        text = track?.artist ?: stringResource(R.string.common_channel),
                                         style = MaterialTheme.typography.titleMedium.copy(
                                             fontWeight = FontWeight.SemiBold,
                                             fontSize = 15.sp
@@ -745,7 +862,7 @@ fun VideoPlayerScreen(
                                     isSubscribed = !isSubscribed
                                     Toast.makeText(
                                         context,
-                                        if (isSubscribed) "Suscrito a ${track?.artist}" else "Suscripción cancelada",
+                                        if (isSubscribed) context.getString(R.string.vid_subscribed_to, track?.artist ?: "") else context.getString(R.string.vid_unsubscribed),
                                         Toast.LENGTH_SHORT
                                     ).show()
                                 },
@@ -772,13 +889,13 @@ fun VideoPlayerScreen(
                                         )
                                         Spacer(modifier = Modifier.width(6.dp))
                                         Text(
-                                            text = "Suscrito",
+                                            text = stringResource(R.string.vid_subscribed),
                                             style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
                                             color = MaterialTheme.colorScheme.onSurface
                                         )
                                     } else {
                                         Text(
-                                            text = "Suscribirse",
+                                            text = stringResource(R.string.vid_subscribe),
                                             style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
                                             color = MaterialTheme.colorScheme.onPrimary
                                         )
@@ -903,7 +1020,7 @@ fun VideoPlayerScreen(
                             item {
                                 ActionChip(
                                     icon = Icons.Rounded.Tune,
-                                    label = "Calidad: ${playerState.selectedQuality}",
+                                    label = stringResource(R.string.vid_quality_chip, playerState.selectedQuality),
                                     tint = if (playerState.selectedQuality != "Auto") MaterialTheme.colorScheme.primary else null,
                                     onClick = { showQualitySheet = true }
                                 )
@@ -912,7 +1029,7 @@ fun VideoPlayerScreen(
                             item {
                                 ActionChip(
                                     icon = Icons.Outlined.Headphones,
-                                    label = playerState.selectedAudioTrack?.let { "Audio: $it" } ?: "Pista de audio",
+                                    label = playerState.selectedAudioTrack?.let { stringResource(R.string.vid_audio_chip, it) } ?: stringResource(R.string.vid_audio_track),
                                     tint = if (playerState.availableAudioTracks.size > 1) MaterialTheme.colorScheme.primary else null,
                                     onClick = { showAudioTrackSheet = true }
                                 )
@@ -921,7 +1038,7 @@ fun VideoPlayerScreen(
                             item {
                                 ActionChip(
                                     icon = if (isSaved) Icons.Outlined.Bookmark else Icons.Outlined.BookmarkBorder,
-                                    label = if (isSaved) "Guardado" else "Guardar",
+                                    label = if (isSaved) stringResource(R.string.vid_saved) else stringResource(R.string.vid_save),
                                     tint = if (isSaved) MaterialTheme.colorScheme.primary else null,
                                     onClick = {
                                         track?.let { t ->
@@ -931,7 +1048,7 @@ fun VideoPlayerScreen(
                                                 favoritesManager.toggleFavorite(t)
                                                 Toast.makeText(
                                                     context,
-                                                    if (newState) "Guardado en Favoritos" else "Eliminado de Favoritos",
+                                                    if (newState) context.getString(R.string.vid_saved_fav) else context.getString(R.string.vid_removed_fav),
                                                     Toast.LENGTH_SHORT
                                                 ).show()
                                             }
@@ -944,22 +1061,22 @@ fun VideoPlayerScreen(
                                 val isDownloaded = track?.let { playerController.downloadEngine.isDownloaded(it.videoId ?: it.id) } ?: false
                                 ActionChip(
                                     icon = if (isDownloaded) Icons.Outlined.DownloadDone else Icons.Outlined.Download,
-                                    label = if (isDownloaded) "Descargado" else "Descargar",
+                                    label = if (isDownloaded) stringResource(R.string.pld_downloaded) else stringResource(R.string.common_download),
                                     onClick = {
                                         if (isDownloaded) {
                                             track?.let {
                                                 val vid = it.videoId ?: it.id
                                                 playerController.downloadEngine.deleteDownloadedTrack(vid)
-                                                Toast.makeText(context, "Video eliminado de descargas", Toast.LENGTH_SHORT).show()
+                                                Toast.makeText(context, context.getString(R.string.vid_video_removed), Toast.LENGTH_SHORT).show()
                                             }
                                             return@ActionChip
                                         }
                                         scope.launch {
                                             track?.let {
-                                                Toast.makeText(context, "Iniciando descarga en MP4...", Toast.LENGTH_SHORT).show()
+                                                Toast.makeText(context, context.getString(R.string.vid_dl_start), Toast.LENGTH_SHORT).show()
                                                 val res = playerController.downloadEngine.downloadVideo(it)
                                                 if (res != null) {
-                                                    Toast.makeText(context, "Descarga completada en Almacenamiento", Toast.LENGTH_LONG).show()
+                                                    Toast.makeText(context, context.getString(R.string.vid_dl_done), Toast.LENGTH_LONG).show()
                                                 }
                                             }
                                         }
@@ -970,10 +1087,10 @@ fun VideoPlayerScreen(
                             item {
                                 ActionChip(
                                     icon = Icons.Outlined.Headphones,
-                                    label = "Solo Audio",
+                                    label = stringResource(R.string.vid_audio_only),
                                     onClick = {
                                         playerController.setPlayerMode(PlayerMode.AudioOnly)
-                                        Toast.makeText(context, "Cambiando a modo Solo Audio", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, context.getString(R.string.vid_audio_only_switch), Toast.LENGTH_SHORT).show()
                                     }
                                 )
                             }
@@ -981,14 +1098,14 @@ fun VideoPlayerScreen(
                             item {
                                 ActionChip(
                                     icon = Icons.Outlined.Share,
-                                    label = "Compartir",
+                                    label = stringResource(R.string.common_share),
                                     onClick = {
                                         val videoId = track?.videoId ?: track?.id ?: ""
                                         val sendIntent = Intent(Intent.ACTION_SEND).apply {
                                             putExtra(Intent.EXTRA_TEXT, "https://youtu.be/$videoId")
                                             type = "text/plain"
                                         }
-                                        context.startActivity(Intent.createChooser(sendIntent, "Compartir video"))
+                                        context.startActivity(Intent.createChooser(sendIntent, context.getString(R.string.player_share_chooser)))
                                     }
                                 )
                             }
@@ -1032,13 +1149,13 @@ fun VideoPlayerScreen(
                         ) {
                             Column(modifier = Modifier.padding(12.dp)) {
                                 Text(
-                                    text = "Comentarios",
+                                    text = stringResource(R.string.vid_comments),
                                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Spacer(modifier = Modifier.height(6.dp))
                                 Text(
-                                    text = "Add a comment...",
+                                    text = stringResource(R.string.vid_add_comment),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -1101,7 +1218,7 @@ fun VideoPlayerScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = if (commentsLoading) "Comentarios…" else "Comentarios (${comments.size})",
+                        text = if (commentsLoading) stringResource(R.string.vid_comments_loading) else stringResource(R.string.vid_comments_count, comments.size),
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                     )
                     IconButton(onClick = { showCommentsSheet = false }) {
@@ -1128,7 +1245,7 @@ fun VideoPlayerScreen(
                     commentsError || comments.isEmpty() -> {
                         Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
                             Text(
-                                text = if (commentsError) "No se pudieron cargar los comentarios" else "Sin comentarios en este video",
+                                text = if (commentsError) stringResource(R.string.vid_comments_fail) else stringResource(R.string.vid_comments_empty),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -1264,12 +1381,12 @@ fun VideoPlayerScreen(
                         )
                         Column {
                             Text(
-                                "Calidad de video",
+                                stringResource(R.string.vid_quality_title),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                "Selecciona la resolución deseada",
+                                stringResource(R.string.vid_quality_sub),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1298,7 +1415,7 @@ fun VideoPlayerScreen(
                     Surface(
                         onClick = {
                             playerController.setQuality("Auto")
-                            Toast.makeText(context, "Calidad automática", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, context.getString(R.string.vid_quality_auto), Toast.LENGTH_SHORT).show()
                             showQualitySheet = false
                         },
                         shape = RoundedCornerShape(14.dp),
@@ -1315,7 +1432,7 @@ fun VideoPlayerScreen(
                             if (isAutoSelected) {
                                 Icon(
                                     imageVector = Icons.Rounded.Check,
-                                    contentDescription = "Seleccionado",
+                                    contentDescription = stringResource(R.string.vid_selected),
                                     tint = MaterialTheme.colorScheme.primary,
                                     modifier = Modifier.size(20.dp)
                                 )
@@ -1324,14 +1441,14 @@ fun VideoPlayerScreen(
                             }
                             Column {
                                 Text(
-                                    text = "Auto",
+                                    text = stringResource(R.string.vid_quality_auto_row),
                                     style = MaterialTheme.typography.bodyLarge,
                                     fontWeight = if (isAutoSelected) FontWeight.Bold else FontWeight.Medium,
                                     color = if (isAutoSelected) MaterialTheme.colorScheme.onPrimaryContainer
                                             else MaterialTheme.colorScheme.onSurface
                                 )
                                 Text(
-                                    text = "Ajuste dinámico según velocidad de red",
+                                    text = stringResource(R.string.vid_quality_auto_sub),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -1344,7 +1461,7 @@ fun VideoPlayerScreen(
                         Surface(
                             onClick = {
                                 playerController.setQuality(q.label)
-                                Toast.makeText(context, "Cambiando a ${q.label}", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, context.getString(R.string.vid_quality_to, q.label), Toast.LENGTH_SHORT).show()
                                 showQualitySheet = false
                             },
                             shape = RoundedCornerShape(14.dp),
@@ -1365,7 +1482,7 @@ fun VideoPlayerScreen(
                                     if (isSel) {
                                         Icon(
                                             imageVector = Icons.Rounded.Check,
-                                            contentDescription = "Seleccionado",
+                                            contentDescription = stringResource(R.string.vid_selected),
                                             tint = MaterialTheme.colorScheme.primary,
                                             modifier = Modifier.size(20.dp)
                                         )
@@ -1426,14 +1543,14 @@ fun VideoPlayerScreen(
                         modifier = Modifier.size(24.dp)
                     )
                     Text(
-                        text = "Pistas de Audio / Idioma",
+                        text = stringResource(R.string.vid_tracks_title),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
                 }
 
                 Text(
-                    text = "Selecciona el idioma o doblaje preferido para este video",
+                    text = stringResource(R.string.vid_tracks_sub),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1449,7 +1566,7 @@ fun VideoPlayerScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "Este video solo cuenta con una pista de audio estándar.",
+                            text = stringResource(R.string.vid_tracks_empty),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1460,7 +1577,7 @@ fun VideoPlayerScreen(
                         Surface(
                             onClick = {
                                 playerController.setAudioTrack(audioOption)
-                                Toast.makeText(context, "Idioma cambiado a: ${audioOption.label}", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, context.getString(R.string.vid_lang_changed, audioOption.label), Toast.LENGTH_SHORT).show()
                                 showAudioTrackSheet = false
                             },
                             shape = RoundedCornerShape(14.dp),
@@ -1481,7 +1598,7 @@ fun VideoPlayerScreen(
                                     if (isSelected) {
                                         Icon(
                                             imageVector = Icons.Rounded.Check,
-                                            contentDescription = "Seleccionado",
+                                            contentDescription = stringResource(R.string.vid_selected),
                                             tint = MaterialTheme.colorScheme.primary,
                                             modifier = Modifier.size(20.dp)
                                         )
@@ -1512,7 +1629,7 @@ fun VideoPlayerScreen(
                                         shape = RoundedCornerShape(6.dp)
                                     ) {
                                         Text(
-                                            text = "Original",
+                                            text = stringResource(R.string.vid_original),
                                             style = MaterialTheme.typography.labelSmall,
                                             fontWeight = FontWeight.Bold,
                                             color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSecondaryContainer,
@@ -1542,7 +1659,7 @@ fun VideoPlayerScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text(
-                    text = "Ajustes del Reproductor",
+                    text = stringResource(R.string.vid_settings_title),
                     style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                     modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp)
                 )
@@ -1574,7 +1691,7 @@ fun VideoPlayerScreen(
                                 modifier = Modifier.size(22.dp)
                             )
                             Text(
-                                text = "Calidad de video",
+                                text = stringResource(R.string.vid_quality_title),
                                 style = MaterialTheme.typography.bodyLarge,
                                 fontWeight = FontWeight.Medium
                             )
@@ -1619,7 +1736,7 @@ fun VideoPlayerScreen(
                                 modifier = Modifier.size(22.dp)
                             )
                             Text(
-                                text = "Pistas de audio / Idioma",
+                                text = stringResource(R.string.vid_tracks_title),
                                 style = MaterialTheme.typography.bodyLarge,
                                 fontWeight = FontWeight.Medium
                             )
@@ -1629,7 +1746,60 @@ fun VideoPlayerScreen(
                             color = MaterialTheme.colorScheme.secondaryContainer
                         ) {
                             Text(
-                                text = playerState.selectedAudioTrack ?: "Original",
+                                text = playerState.selectedAudioTrack ?: stringResource(R.string.vid_original),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                }
+
+                Surface(
+                    onClick = {
+                        val nextMode = when (videoResizeMode) {
+                            AspectRatioFrameLayout.RESIZE_MODE_FIT -> AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                            AspectRatioFrameLayout.RESIZE_MODE_ZOOM -> AspectRatioFrameLayout.RESIZE_MODE_FILL
+                            else -> AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        }
+                        setResizeModeWithFeedback(nextMode)
+                    },
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.AspectRatio,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Text(
+                                text = stringResource(R.string.vid_aspect_ratio),
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.secondaryContainer
+                        ) {
+                            Text(
+                                text = when (videoResizeMode) {
+                                    AspectRatioFrameLayout.RESIZE_MODE_ZOOM -> stringResource(R.string.vid_aspect_zoom)
+                                    AspectRatioFrameLayout.RESIZE_MODE_FILL -> stringResource(R.string.vid_aspect_fill)
+                                    else -> stringResource(R.string.vid_aspect_fit)
+                                },
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -1656,7 +1826,7 @@ fun VideoPlayerScreen(
                                 modifier = Modifier.size(22.dp)
                             )
                             Text(
-                                text = "Velocidad de reproducción (${playbackSpeed}x)",
+                                text = stringResource(R.string.vid_speed, playbackSpeed.toString()),
                                 style = MaterialTheme.typography.bodyLarge,
                                 fontWeight = FontWeight.Medium
                             )
@@ -1713,12 +1883,12 @@ fun VideoPlayerScreen(
                         )
                         Column {
                             Text(
-                                text = "Ventana flotante (PiP)",
+                                text = stringResource(R.string.vid_pip),
                                 style = MaterialTheme.typography.bodyLarge,
                                 fontWeight = FontWeight.Medium
                             )
                             Text(
-                                text = "Continuar viendo fuera de la app",
+                                text = stringResource(R.string.vid_pip_sub),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1730,7 +1900,7 @@ fun VideoPlayerScreen(
                     onClick = {
                         showSettingsSheet = false
                         playerController.setPlayerMode(PlayerMode.AudioOnly)
-                        Toast.makeText(context, "Modo Solo Audio activado", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, context.getString(R.string.vid_audio_only_on), Toast.LENGTH_SHORT).show()
                     },
                     shape = RoundedCornerShape(14.dp),
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
@@ -1749,12 +1919,12 @@ fun VideoPlayerScreen(
                         )
                         Column {
                             Text(
-                                text = "Escuchar en segundo plano (Solo audio)",
+                                text = stringResource(R.string.vid_background),
                                 style = MaterialTheme.typography.bodyLarge,
                                 fontWeight = FontWeight.Medium
                             )
                             Text(
-                                text = "Ahorra batería reproduciendo con pantalla apagada",
+                                text = stringResource(R.string.vid_background_sub),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

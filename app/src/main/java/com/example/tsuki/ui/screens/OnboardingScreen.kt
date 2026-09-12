@@ -7,6 +7,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,8 +33,12 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.rounded.Language
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
@@ -42,7 +47,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -61,6 +68,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
@@ -68,9 +76,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import com.example.tsuki.R
 import com.example.tsuki.data.local.HomePreferences
 import com.example.tsuki.data.recommendation.TSukiNeuroEngine
 import com.example.tsuki.data.recommendation.TSukiTopicCatalog
+import com.example.tsuki.util.AppLocale
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -135,15 +145,28 @@ fun OnboardingScreen(
     var isSearching by remember { mutableStateOf(false) }
     var subscribed by remember { mutableStateOf<Set<String>>(emptySet()) }
     var searchJob by remember { mutableStateOf<Job?>(null) }
+    var appLocale by remember { mutableStateOf(AppLocale.readStored(context)) }
+    var showLanguageMenu by remember { mutableStateOf(false) }
+
+    val isEnglish = AppLocale.resolveTag(appLocale) == AppLocale.ENGLISH
 
     val stepTitles = listOf(
-        "Elige tus intereses",
-        "Sigue canales"
+        stringResource(R.string.onboard_step_interests),
+        stringResource(R.string.onboard_step_channels)
     )
     val totalSteps = 2
 
     fun finish() {
         scope.launch {
+            val resolved = AppLocale.resolveTag(appLocale)
+            val nextLang = if (resolved == AppLocale.ENGLISH) "en" else "es"
+            val nextCountry = if (resolved == AppLocale.ENGLISH) "US" else "ES"
+            prefs.setContentLanguage(nextLang)
+            prefs.setContentCountry(nextCountry)
+            com.example.tsuki.network.TSukiContentLocale.languageTag = nextLang
+            com.example.tsuki.network.TSukiContentLocale.countryCode = nextCountry
+            try { java.io.File(context.cacheDir, "tsuki_home_feed_cache.json").delete() } catch (_: Exception) {}
+
             TSukiNeuroEngine.completeOnboarding(selectedTopics)
             prefs.setSelectedTopics(selectedTopics)
             prefs.setOnboardingDone(true)
@@ -162,10 +185,72 @@ fun OnboardingScreen(
                             style = MaterialTheme.typography.titleMedium
                         )
                         Text(
-                            "Paso ${step + 1} de $totalSteps",
+                            stringResource(R.string.onboard_step_of, step + 1, totalSteps),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                    }
+                },
+                actions = {
+                    Box {
+                        Surface(
+                            onClick = { showLanguageMenu = true },
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.padding(end = 12.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = MIcons.Rounded.Language,
+                                    contentDescription = stringResource(R.string.lang_app_title),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = if (isEnglish) "EN" else "ES",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                        DropdownMenu(
+                            expanded = showLanguageMenu,
+                            onDismissRequest = { showLanguageMenu = false }
+                        ) {
+                            val options = listOf(
+                                "" to stringResource(R.string.lang_app_system),
+                                AppLocale.SPANISH to stringResource(R.string.lang_app_spanish),
+                                AppLocale.ENGLISH to stringResource(R.string.lang_app_english)
+                            )
+                            options.forEach { (tag, label) ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            text = label,
+                                            fontWeight = if (appLocale == tag) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (appLocale == tag) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                        )
+                                    },
+                                    onClick = {
+                                        showLanguageMenu = false
+                                        if (tag != appLocale) {
+                                            appLocale = tag
+                                            scope.launch {
+                                                prefs.setAppLocale(tag)
+                                                (context as? android.app.Activity)?.let { AppLocale.applyAndRecreate(it, tag) }
+                                            }
+                                        }
+                                    },
+                                    leadingIcon = if (appLocale == tag) {
+                                        { Icon(MIcons.Rounded.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp)) }
+                                    } else null
+                                )
+                            }
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -182,13 +267,13 @@ fun OnboardingScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 if (step > 0) {
-                    OutlinedButton(onClick = { step-- }) { Text("Atrás") }
+                    OutlinedButton(onClick = { step-- }) { Text(stringResource(R.string.common_back)) }
                 } else {
                     Spacer(Modifier.width(1.dp))
                 }
 
-                val canAdvance = selectedTopics.size >= 3 || step != 0
-                val nextLabel = if (step == totalSteps - 1) "Finalizar" else "Siguiente"
+                val canAdvance = if (step == 0) selectedTopics.size >= 3 else true
+                val nextLabel = if (step == totalSteps - 1) stringResource(R.string.common_finish) else stringResource(R.string.common_next)
                 FilledTonalButton(
                     onClick = { if (step == totalSteps - 1) finish() else step++ },
                     enabled = canAdvance
@@ -220,12 +305,15 @@ fun OnboardingScreen(
         ) { current ->
             when (current) {
                 0 -> InterestsStep(
+                    isEnglish = isEnglish,
                     selectedTopics = selectedTopics,
                     onToggle = { topic ->
-                        selectedTopics = if (selectedTopics.contains(topic))
-                            selectedTopics - topic
-                        else
-                            selectedTopics + topic
+                        val canonical = TSukiTopicCatalog.getCanonicalTopic(topic)
+                        selectedTopics = if (selectedTopics.contains(topic) || selectedTopics.contains(canonical)) {
+                            selectedTopics.filterNot { it.equals(topic, true) || it.equals(canonical, true) }.toSet()
+                        } else {
+                            selectedTopics + canonical
+                        }
                     }
                 )
                 1 -> ChannelsStep(
@@ -273,8 +361,8 @@ fun OnboardingScreen(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun InterestsStep(selectedTopics: Set<String>, onToggle: (String) -> Unit) {
-    val categories    = TSukiTopicCatalog.TOPIC_CATEGORIES
+private fun InterestsStep(isEnglish: Boolean, selectedTopics: Set<String>, onToggle: (String) -> Unit) {
+    val categories    = remember(isEnglish) { TSukiTopicCatalog.getCategories(isEnglish) }
     val remaining     = (3 - selectedTopics.size).coerceAtLeast(0)
 
     LazyColumn(
@@ -285,15 +373,15 @@ private fun InterestsStep(selectedTopics: Set<String>, onToggle: (String) -> Uni
         item {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
-                    "¿Qué te gusta ver?",
+                    stringResource(R.string.onboard_interests_title),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold
                 )
                 Text(
                     if (remaining > 0)
-                        "Elige al menos 3 intereses ($remaining más)"
+                        stringResource(R.string.onboard_pick_more, remaining)
                     else
-                        "¡Listo! Tu feed va a aprender de esto",
+                        stringResource(R.string.onboard_ready),
                     style = MaterialTheme.typography.bodyMedium,
                     color  = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -314,7 +402,9 @@ private fun InterestsStep(selectedTopics: Set<String>, onToggle: (String) -> Uni
                         letterSpacing = 1.2.sp,
                         color  = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    val count = category.topics.count { selectedTopics.contains(it) }
+                    val count = category.topics.count { t ->
+                        selectedTopics.contains(t) || selectedTopics.contains(TSukiTopicCatalog.getCanonicalTopic(t))
+                    }
                     if (count > 0) {
                         Text(
                             count.toString(),
@@ -333,7 +423,8 @@ private fun InterestsStep(selectedTopics: Set<String>, onToggle: (String) -> Uni
                     verticalArrangement   = Arrangement.spacedBy(8.dp)
                 ) {
                     category.topics.forEach { topic ->
-                        val selected = selectedTopics.contains(topic)
+                        val canonical = TSukiTopicCatalog.getCanonicalTopic(topic)
+                        val selected = selectedTopics.contains(topic) || selectedTopics.contains(canonical)
                         FilterChip(
                             selected  = selected,
                             onClick   = { onToggle(topic) },
@@ -380,12 +471,12 @@ private fun ChannelsStep(
             .padding(top = 8.dp)
     ) {
         Text(
-            "¿A quién sigues?",
+            stringResource(R.string.onboard_channels_title),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold
         )
         Text(
-            "Busca creadores, artistas o canales. Opcional — tu Feed aprende también sin esto.",
+            stringResource(R.string.onboard_channels_sub),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -394,7 +485,7 @@ private fun ChannelsStep(
             value       = searchQuery,
             onValueChange = onQueryChange,
             modifier    = Modifier.fillMaxWidth().focusRequester(focusRequester),
-            placeholder = { Text("Buscar canales…") },
+            placeholder = { Text(stringResource(R.string.onboard_channels_hint)) },
             leadingIcon = { Icon(MIcons.Outlined.Search, contentDescription = null) },
             trailingIcon = if (isSearching) {
                 { CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp) }
@@ -425,7 +516,7 @@ private fun ChannelsStep(
                             )
                             Spacer(Modifier.height(8.dp))
                             Text(
-                                "Escribe para buscar en YouTube",
+                                stringResource(R.string.onboard_search_hint_empty),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                             )
@@ -435,7 +526,7 @@ private fun ChannelsStep(
             } else if (searchResults.isEmpty() && !isSearching) {
                 item {
                     Text(
-                        "Sin resultados para \"$searchQuery\"",
+                        stringResource(R.string.home_no_results, searchQuery),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                         modifier = Modifier.padding(top = 24.dp)
@@ -476,7 +567,7 @@ private fun ChannelsStep(
                         ) {
                             Icon(MIcons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text("Siguiendo")
+                            Text(stringResource(R.string.onboard_following))
                         }
                     } else {
                         OutlinedButton(
@@ -486,7 +577,7 @@ private fun ChannelsStep(
                         ) {
                             Icon(MIcons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(4.dp))
-                            Text("Seguir")
+                            Text(stringResource(R.string.onboard_follow))
                         }
                     }
                 }
@@ -494,7 +585,7 @@ private fun ChannelsStep(
             if (subscribed.isNotEmpty()) {
                 item {
                     Text(
-                        "${subscribed.size} añadidos ✓",
+                        stringResource(R.string.onboard_added, subscribed.size),
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.primary,

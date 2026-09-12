@@ -27,6 +27,7 @@ data class SettingsUiState(
     val preferredLyricsProvider: String = PlayerPreferences.LYRICS_PROVIDER_AUTO,
     val availableLyricsProviders: List<String> = emptyList(),
     val homeLayoutMode: HomeLayoutMode = HomeLayoutMode.IMMERSIVE,
+    val appLocaleTag: String = "",
     val contentLanguageTag: String = "es",
     val contentCountry: String = "ES",
     val cacheSizeMb: Int = PlayerPreferences.CACHE_SIZE_DEFAULT_MB,
@@ -69,6 +70,7 @@ private data class AudioDataSettingsData(
 
 private data class HomeSettingsData(
     val homeLayoutMode: HomeLayoutMode,
+    val appLocaleTag: String,
     val contentLanguageTag: String,
     val contentCountry: String
 )
@@ -132,11 +134,13 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     private val homeSettings = combine(
         homePrefs.homeLayoutMode,
+        homePrefs.appLocaleTag,
         homePrefs.contentLanguageTag,
         homePrefs.contentCountry
-    ) { homeLayoutMode, contentLanguageTag, contentCountry ->
+    ) { homeLayoutMode, appLocaleTag, contentLanguageTag, contentCountry ->
         HomeSettingsData(
             homeLayoutMode = homeLayoutMode,
+            appLocaleTag = appLocaleTag,
             contentLanguageTag = contentLanguageTag,
             contentCountry = contentCountry
         )
@@ -224,6 +228,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             preferredLyricsProvider = p.preferredLyricsProvider,
             availableLyricsProviders = listOf(PlayerPreferences.LYRICS_PROVIDER_AUTO) + lyricsHelper.availableProviderNames,
             homeLayoutMode = h.homeLayoutMode,
+            appLocaleTag = h.appLocaleTag,
             contentLanguageTag = h.contentLanguageTag,
             contentCountry = h.contentCountry,
             cacheSizeMb = a.cacheSizeMb,
@@ -352,6 +357,20 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun setHomeLayoutMode(mode: HomeLayoutMode) {
         viewModelScope.launch {
             homePrefs.setHomeLayoutMode(mode)
+        }
+    }
+
+    fun setAppLocale(tag: String) {
+        viewModelScope.launch {
+            homePrefs.setAppLocale(tag)
+            val resolved = com.example.tsuki.util.AppLocale.resolveTag(tag)
+            val contentLang = if (resolved == com.example.tsuki.util.AppLocale.ENGLISH) "en" else "es"
+            val contentCountry = if (resolved == com.example.tsuki.util.AppLocale.ENGLISH) "US" else "ES"
+            com.example.tsuki.network.TSukiContentLocale.languageTag = contentLang
+            com.example.tsuki.network.TSukiContentLocale.countryCode = contentCountry
+            try {
+                java.io.File(getApplication<Application>().cacheDir, "tsuki_home_feed_cache.json").delete()
+            } catch (_: Exception) {}
         }
     }
 

@@ -51,10 +51,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.example.tsuki.R
 import kotlinx.coroutines.launch
 import com.example.tsuki.domain.model.MediaTrack
 import com.example.tsuki.network.TSukiInnerTubeClient
@@ -143,7 +145,7 @@ fun ChannelScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Atrás")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -265,7 +267,7 @@ fun ChannelScreen(
                             ),
                             shape = RoundedCornerShape(50)
                         ) {
-                            Text(if (isSubscribed) "Suscrito" else "Suscribirse", style = MaterialTheme.typography.labelLarge)
+                            Text(if (isSubscribed) stringResource(R.string.vid_subscribed) else stringResource(R.string.vid_subscribe), style = MaterialTheme.typography.labelLarge)
                         }
                     }
                 }
@@ -278,10 +280,10 @@ fun ChannelScreen(
                     contentColor = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.offset(y = (-12).dp)
                 ) {
-                    Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("Inicio") })
-                    Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text("Videos") })
-                    Tab(selected = selectedTab == 2, onClick = { selectedTab = 2 }, text = { Text("Playlists") })
-                    Tab(selected = selectedTab == 3, onClick = { selectedTab = 3 }, text = { Text("Acerca de") })
+                    Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text(stringResource(R.string.chan_home)) })
+                    Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text(stringResource(R.string.chan_videos)) })
+                    Tab(selected = selectedTab == 2, onClick = { selectedTab = 2 }, text = { Text(stringResource(R.string.chan_playlists)) })
+                    Tab(selected = selectedTab == 3, onClick = { selectedTab = 3 }, text = { Text(stringResource(R.string.chan_about)) })
                 }
             }
 
@@ -312,7 +314,7 @@ fun ChannelScreen(
                         androidx.compose.material3.OutlinedTextField(
                             value = channelSearchQuery,
                             onValueChange = { channelSearchQuery = it },
-                            placeholder = { Text("Buscar en los videos del canal", style = MaterialTheme.typography.bodySmall) },
+                            placeholder = { Text(stringResource(R.string.chan_search), style = MaterialTheme.typography.bodySmall) },
                             leadingIcon = {
                                 androidx.compose.material3.Icon(
                                     androidx.compose.material.icons.Icons.Rounded.Search,
@@ -325,7 +327,7 @@ fun ChannelScreen(
                                     IconButton(onClick = { channelSearchQuery = "" }) {
                                         androidx.compose.material3.Icon(
                                             androidx.compose.material.icons.Icons.Rounded.Close,
-                                            contentDescription = "Limpiar",
+                                            contentDescription = stringResource(R.string.common_clear),
                                             modifier = Modifier.size(18.dp)
                                         )
                                     }
@@ -350,7 +352,7 @@ fun ChannelScreen(
                     } else if (videos.isEmpty()) {
                         item(key = "empty") {
                             Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                                Text("No hay videos disponibles", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(stringResource(R.string.chan_empty), color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     } else if (filteredVideos.isEmpty()) {
@@ -411,7 +413,7 @@ fun ChannelScreen(
                     } else if (playlists.isEmpty()) {
                         item(key = "playlists_empty") {
                             Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                                Text("Este canal no tiene listas públicas", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(stringResource(R.string.chan_no_lists), color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     } else {
@@ -461,9 +463,9 @@ fun ChannelScreen(
                             verticalArrangement = Arrangement.spacedBy(12.dp),
                             modifier = Modifier.fillMaxWidth().padding(16.dp)
                         ) {
-                            AboutBlock("Descripción", metadata?.description ?: "Sin descripción disponible")
-                            if (effectiveSubs.isNotBlank()) AboutBlock("Suscriptores", effectiveSubs)
-                            if (!metadata?.videoCountText.isNullOrBlank()) AboutBlock("Videos", metadata?.videoCountText ?: "")
+                            AboutBlock(stringResource(R.string.chan_description), metadata?.description ?: stringResource(R.string.chan_no_desc))
+                            if (effectiveSubs.isNotBlank()) AboutBlock(stringResource(R.string.chan_subscribers), effectiveSubs)
+                            if (!metadata?.videoCountText.isNullOrBlank()) AboutBlock(stringResource(R.string.chan_videos_stat), metadata?.videoCountText ?: "")
                         }
                     }
                 }
@@ -529,7 +531,7 @@ private fun ChannelPlaylistSheet(
                 }
             } else if (tracks.isEmpty()) {
                 Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-                    Text("No se pudieron cargar los videos", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(stringResource(R.string.chan_fail), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             } else {
                 LazyColumn(

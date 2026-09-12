@@ -80,6 +80,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -90,7 +91,9 @@ import com.example.tsuki.R
 import com.example.tsuki.auth.YouTubeAuthManager
 import com.example.tsuki.data.local.HomeLayoutMode
 import com.example.tsuki.data.local.HomePreferences
+import com.example.tsuki.data.recommendation.TSukiTopicCatalog
 import com.example.tsuki.domain.model.MediaTrack
+import com.example.tsuki.network.TSukiContentLocale
 import com.example.tsuki.network.YouTubeExtractor
 import com.example.tsuki.ui.components.M3MotionTokens
 import com.example.tsuki.ui.components.OfflineBanner
@@ -177,10 +180,11 @@ private fun HomeSectionHeader(
 }
 
 @Composable
-private fun RevealMoreButton(revealed: Int, total: Int, onReveal: () -> Unit, label: String = "Mostrar más") {
+private fun RevealMoreButton(revealed: Int, total: Int, onReveal: () -> Unit, label: String? = null) {
+    val moreLabel = label ?: stringResource(R.string.home_show_more)
     Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
         FilledTonalButton(onClick = onReveal, shape = RoundedCornerShape(20.dp)) {
-            Text(text = "$label  •  $revealed / $total", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold))
+            Text(text = "$moreLabel  •  $revealed / $total", style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold))
         }
     }
 }
@@ -196,6 +200,10 @@ fun HomeScreen(
     onLoginClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val currentConfig = androidx.compose.ui.platform.LocalConfiguration.current
+    val isEnglish = currentConfig.locales[0].language.startsWith("en") ||
+        com.example.tsuki.util.AppLocale.resolveTag(com.example.tsuki.util.AppLocale.readStored(context)) == com.example.tsuki.util.AppLocale.ENGLISH ||
+        com.example.tsuki.network.TSukiContentLocale.hl().startsWith("en")
     val haptic = LocalHapticFeedback.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val connectivity = remember { ConnectivityObserver.getInstance(context) }
@@ -275,7 +283,7 @@ fun HomeScreen(
                                 searchChannels = emptyList()
                                 focusManager.clearFocus()
                             }) {
-                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Cerrar búsqueda")
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.home_close_search))
                             }
                             OutlinedTextField(
                                 value = searchQuery,
@@ -318,7 +326,7 @@ fun HomeScreen(
                                         }
                                     }
                                 },
-                                placeholder = { Text("Buscar videos y creadores", style = MaterialTheme.typography.bodyMedium) },
+                                placeholder = { Text(stringResource(R.string.home_search_placeholder), style = MaterialTheme.typography.bodyMedium) },
                                 leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
                                 trailingIcon = {
                                     when {
@@ -326,7 +334,7 @@ fun HomeScreen(
                                             androidx.compose.material3.CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                                         }
                                         searchQuery.isNotEmpty() -> IconButton(onClick = { searchQuery = ""; searchResults = emptyList(); searchChannels = emptyList() }) {
-                                            Icon(Icons.Rounded.Close, contentDescription = "Limpiar")
+                                            Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.common_clear))
                                         }
                                     }
                                 },
@@ -401,7 +409,7 @@ fun HomeScreen(
                             }
                             Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
                                 IconButton(onClick = { isSearchActive = true }) {
-                                    Icon(Icons.Rounded.Search, contentDescription = "Buscar", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Icon(Icons.Rounded.Search, contentDescription = stringResource(R.string.common_search), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 IconButton(onClick = {
                                     haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -426,7 +434,7 @@ fun HomeScreen(
                                                 HomeLayoutMode.GRID -> Icons.Rounded.GridView
                                                 HomeLayoutMode.COMPACT -> Icons.AutoMirrored.Rounded.ViewList
                                             },
-                                            contentDescription = "Cambiar vista",
+                                            contentDescription = stringResource(R.string.home_change_view),
                                             tint = MaterialTheme.colorScheme.primary
                                         )
                                     }
@@ -443,7 +451,7 @@ fun HomeScreen(
                                         if (!accountInfo?.avatarUrl.isNullOrBlank()) {
                                             AsyncImage(
                                                 model = accountInfo?.avatarUrl,
-                                                contentDescription = "Cuenta",
+                                                contentDescription = stringResource(R.string.home_account),
                                                 contentScale = ContentScale.Crop,
                                                 modifier = Modifier.fillMaxSize()
                                             )
@@ -458,7 +466,7 @@ fun HomeScreen(
                                     }
                                 } else {
                                     IconButton(onClick = onLoginClick) {
-                                        Icon(Icons.Rounded.AccountCircle, contentDescription = "Conectar cuenta", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Icon(Icons.Rounded.AccountCircle, contentDescription = stringResource(R.string.home_connect_account), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                 }
                             }
@@ -485,9 +493,9 @@ fun HomeScreen(
                                     Icon(Icons.Rounded.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(28.dp))
                                 }
                             }
-                            Text("Sin resultados para \"$searchQuery\"", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold), color = MaterialTheme.colorScheme.onSurface)
+                            Text(stringResource(R.string.home_no_results, searchQuery), style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold), color = MaterialTheme.colorScheme.onSurface)
                             Text(
-                                if (!isOnline) "Sin conexión, revisa tu red" else "Prueba con otras palabras clave",
+                                if (!isOnline) stringResource(R.string.home_no_results_offline) else stringResource(R.string.home_no_results_hint),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -498,7 +506,7 @@ fun HomeScreen(
                     LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(top = 8.dp, bottom = 140.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         if (searchChannels.isNotEmpty()) {
                             item(key = "search_channels_header") {
-                                HomeSectionHeader(title = "Canales", subtitle = "BÚSQUEDA", count = searchChannels.size)
+                                HomeSectionHeader(title = stringResource(R.string.home_channels_title), subtitle = stringResource(R.string.home_sub_search), count = searchChannels.size)
                             }
                         }
                         items(searchChannels, key = { it.channelId }) { channel ->
@@ -506,7 +514,7 @@ fun HomeScreen(
                         }
                         if (searchResults.isNotEmpty()) {
                             item(key = "search_header") {
-                                HomeSectionHeader(title = "Videos", subtitle = "RESULTADOS", count = searchResults.size)
+                                HomeSectionHeader(title = stringResource(R.string.home_videos_title), subtitle = stringResource(R.string.home_sub_results), count = searchResults.size)
                             }
                         }
                         items(searchResults, key = { it.id }) { track ->
@@ -515,7 +523,7 @@ fun HomeScreen(
                                 onClick = {
                                     viewModel.onTrackClicked(track)
                                     if (!isOnline) {
-                                        android.widget.Toast.makeText(context, "Sin conexión", android.widget.Toast.LENGTH_SHORT).show()
+                                        android.widget.Toast.makeText(context, context.getString(R.string.common_no_connection), android.widget.Toast.LENGTH_SHORT).show()
                                     } else if (playerController != null) {
                                         playerController.playWithRadio(track, playAsVideo = true)
                                         onExpandPlayer()
@@ -525,7 +533,7 @@ fun HomeScreen(
                                 onPlayNext = { item -> playerController?.playNext(item) },
                                 onPlayRadio = { item ->
                                     if (!isOnline) {
-                                        android.widget.Toast.makeText(context, "Sin conexión", android.widget.Toast.LENGTH_SHORT).show()
+                                        android.widget.Toast.makeText(context, context.getString(R.string.common_no_connection), android.widget.Toast.LENGTH_SHORT).show()
                                     } else {
                                         playerController?.playWithRadio(item)
                                     }
@@ -542,10 +550,10 @@ fun HomeScreen(
                                     Icon(Icons.Rounded.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.size(32.dp))
                                 }
                             }
-                            Text("Explora TSuki", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)
-                            Text("Busca videos, artistas y canales", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f))
+                            Text(stringResource(R.string.home_explore), style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)
+                            Text(stringResource(R.string.home_explore_sub), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f))
                             Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh, shape = RoundedCornerShape(16.dp)) {
-                                Text("Tip: pega un link de YouTube para reproducirlo", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp))
+                                Text(stringResource(R.string.home_explore_tip), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp))
                             }
                         }
                     }
@@ -565,9 +573,9 @@ fun HomeScreen(
                                 Icon(Icons.Rounded.WifiOff, contentDescription = null, tint = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.size(26.dp))
                             }
                         }
-                        Text("No se pudo cargar el feed", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)
-                        Text(uiState.errorMessage ?: "Error desconocido", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        FilledTonalButton(onClick = { viewModel.loadFeed() }, shape = RoundedCornerShape(20.dp)) { Text("Reintentar") }
+                        Text(stringResource(R.string.home_feed_error), style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)
+                        Text(uiState.errorMessage ?: stringResource(R.string.home_unknown_error), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        FilledTonalButton(onClick = { viewModel.loadFeed() }, shape = RoundedCornerShape(20.dp)) { Text(stringResource(R.string.common_retry)) }
                     }
                 }
             }
@@ -580,9 +588,9 @@ fun HomeScreen(
                                 Icon(Icons.Rounded.SmartDisplay, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.size(28.dp))
                             }
                         }
-                        Text("Preparando tu feed", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
-                        Text("Estamos personalizando tus recomendaciones", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        FilledTonalButton(onClick = { viewModel.loadFeed() }, shape = RoundedCornerShape(20.dp)) { Text("Actualizar Feed") }
+                        Text(stringResource(R.string.home_preparing), style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+                        Text(stringResource(R.string.home_preparing_sub), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        FilledTonalButton(onClick = { viewModel.loadFeed() }, shape = RoundedCornerShape(20.dp)) { Text(stringResource(R.string.home_refresh)) }
                     }
                 }
             }
@@ -631,7 +639,7 @@ fun HomeScreen(
                     if (resumeItems.isNotEmpty()) {
                         item(key = "resume_watching_shelf") {
                             Column(modifier = Modifier.fillMaxWidth()) {
-                                HomeSectionHeader(title = "Seguir viendo", subtitle = "CONTINUAR", count = resumeItems.size)
+                                HomeSectionHeader(title = stringResource(R.string.home_section_resume), subtitle = stringResource(R.string.home_sub_continue), count = resumeItems.size)
                                 Spacer(Modifier.height(6.dp))
                                 LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                     items(resumeItems, key = { it.first.videoId }, contentType = { "resume_card" }) { (entry, track) ->
@@ -656,7 +664,7 @@ fun HomeScreen(
                     displayedSections.forEachIndexed { sIndex, section ->
                         val isShortsShelf = section.title.lowercase().contains("shorts")
                         val isMainVerticalShelf = section.title.lowercase().let { t ->
-                            t.contains("para ti") || t.contains("descubrimiento") || t.contains("descargas") || t.contains("tendencias") || t.contains("suscripciones") || t.contains("canales que sigues")
+                            t.contains("para ti") || t.contains("for you") || t.contains("descubrimiento") || t.contains("discover") || t.contains("descargas") || t.contains("downloads") || t.contains("tendencias") || t.contains("trending") || t.contains("suscripciones") || t.contains("subscriptions") || t.contains("canales que sigues")
                         }
                         if (isShortsShelf) {
                             item(key = "shorts_${section.title}_$sIndex") {
@@ -668,15 +676,26 @@ fun HomeScreen(
                             }
                         } else if (isMainVerticalShelf) {
                             item(key = "header_${section.title}_$sIndex") {
+                                val titleLower = section.title.lowercase()
+                                val localizedTitle = when {
+                                    titleLower.contains("para ti") || titleLower.contains("for you") -> stringResource(R.string.music_for_you)
+                                    titleLower.contains("tendencias") || titleLower.contains("trending") -> stringResource(R.string.home_section_trending)
+                                    titleLower.contains("suscripciones") || titleLower.contains("subscriptions") -> stringResource(R.string.home_section_subscriptions)
+                                    titleLower.contains("canales que sigues") || titleLower.contains("channels you follow") -> stringResource(R.string.home_section_channels_followed)
+                                    titleLower.contains("descubrimiento") || titleLower.contains("discover") -> stringResource(R.string.home_section_discover)
+                                    titleLower.contains("descargas") || titleLower.contains("downloads") -> stringResource(R.string.home_section_downloads)
+                                    else -> TSukiTopicCatalog.getLocalizedTopic(section.title, isEnglish)
+                                }
                                 val subtitle = when {
-                                    section.title.lowercase().contains("para ti") -> "RECOMENDADO PARA TI"
-                                    section.title.lowercase().contains("tendencias") -> "POPULAR AHORA"
-                                    section.title.lowercase().contains("suscripciones") -> "DE TUS CANALES"
-                                    section.title.lowercase().contains("descubrimiento") -> "DESCUBRE ALGO NUEVO"
-                                    section.title.lowercase().contains("descargas") -> "DISPONIBLE SIN CONEXIÓN"
+                                    titleLower.contains("para ti") || titleLower.contains("for you") -> stringResource(R.string.home_sub_for_you)
+                                    titleLower.contains("tendencias") || titleLower.contains("trending") -> stringResource(R.string.home_sub_trending)
+                                    titleLower.contains("suscripciones") || titleLower.contains("subscriptions") -> stringResource(R.string.home_sub_subs)
+                                    titleLower.contains("canales que sigues") || titleLower.contains("channels you follow") -> stringResource(R.string.home_sub_channels_followed)
+                                    titleLower.contains("descubrimiento") || titleLower.contains("discover") -> stringResource(R.string.home_sub_discover)
+                                    titleLower.contains("descargas") || titleLower.contains("downloads") -> stringResource(R.string.home_sub_offline)
                                     else -> null
                                 }
-                                HomeSectionHeader(title = section.title, subtitle = subtitle, count = section.tracks.size)
+                                HomeSectionHeader(title = localizedTitle, subtitle = subtitle, count = section.tracks.size)
                             }
                             when (layoutMode) {
                                 HomeLayoutMode.IMMERSIVE -> {
@@ -790,7 +809,17 @@ fun HomeScreen(
                             }
                         } else {
                             item(key = "hrow_${section.title}_$sIndex") {
-                                HorizontalMediaRow(title = section.title, tracks = section.tracks, isScrolling = isFeedScrolling, onTrackClick = { track ->
+                                val rowTitleLower = section.title.lowercase()
+                                val localizedRowTitle = when {
+                                    rowTitleLower.contains("para ti") || rowTitleLower.contains("for you") -> stringResource(R.string.music_for_you)
+                                    rowTitleLower.contains("tendencias") || rowTitleLower.contains("trending") -> stringResource(R.string.home_section_trending)
+                                    rowTitleLower.contains("suscripciones") || rowTitleLower.contains("subscriptions") -> stringResource(R.string.home_section_subscriptions)
+                                    rowTitleLower.contains("canales que sigues") || rowTitleLower.contains("channels you follow") -> stringResource(R.string.home_section_channels_followed)
+                                    rowTitleLower.contains("descubrimiento") || rowTitleLower.contains("discover") -> stringResource(R.string.home_section_discover)
+                                    rowTitleLower.contains("descargas") || rowTitleLower.contains("downloads") -> stringResource(R.string.home_section_downloads)
+                                    else -> TSukiTopicCatalog.getLocalizedTopic(section.title, isEnglish)
+                                }
+                                HorizontalMediaRow(title = localizedRowTitle, tracks = section.tracks, isScrolling = isFeedScrolling, onTrackClick = { track ->
                                     viewModel.onTrackClicked(track)
                                     val idx = section.tracks.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
                                     playerController?.playQueue(section.tracks, idx, playAsVideo = true)
@@ -812,15 +841,15 @@ fun HomeScreen(
         if (showAccountDialog && accountInfo != null) {
             AlertDialog(
                 onDismissRequest = { showAccountDialog = false },
-                title = { Text(accountInfo?.name ?: "Cuenta de Google") },
+                title = { Text(accountInfo?.name ?: stringResource(R.string.home_google_account)) },
                 text = {
                     Column {
                         accountInfo?.email?.takeIf { it.isNotBlank() }?.let {
-                            Text("Email: $it", style = MaterialTheme.typography.bodyMedium)
+                            Text(stringResource(R.string.home_email, it), style = MaterialTheme.typography.bodyMedium)
                             Spacer(Modifier.height(4.dp))
                         }
                         accountInfo?.channelHandle?.takeIf { it.isNotBlank() }?.let {
-                            Text("Canal: $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(stringResource(R.string.home_channel, it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 },
@@ -828,10 +857,10 @@ fun HomeScreen(
                     TextButton(onClick = {
                         showAccountDialog = false
                         scope.launch { authManager.logout(); viewModel.loadFeed() }
-                    }) { Text("Cerrar sesión", color = MaterialTheme.colorScheme.error) }
+                    }) { Text(stringResource(R.string.home_sign_out), color = MaterialTheme.colorScheme.error) }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showAccountDialog = false }) { Text("Cerrar") }
+                    TextButton(onClick = { showAccountDialog = false }) { Text(stringResource(R.string.common_close)) }
                 }
             )
         }
@@ -920,7 +949,7 @@ private fun ChannelSearchRow(channel: YouTubeExtractor.ChannelResult, onClick: (
 @Composable
 private fun ShortsShelf(tracks: List<MediaTrack>, isScrolling: Boolean = false, onTrackClick: (MediaTrack) -> Unit) {
     Column(modifier = Modifier.fillMaxWidth()) {
-        HomeSectionHeader(title = "Shorts", subtitle = "VÍDEOS CORTOS", count = tracks.size)
+        HomeSectionHeader(title = stringResource(R.string.home_section_shorts_title), subtitle = stringResource(R.string.home_sub_shorts), count = tracks.size)
         Spacer(Modifier.height(6.dp))
         LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             items(tracks, key = { it.id }, contentType = { "short_card" }) { track -> VideoCardShort(track = track, isScrolling = isScrolling, onClick = { onTrackClick(track) }) }
@@ -931,7 +960,7 @@ private fun ShortsShelf(tracks: List<MediaTrack>, isScrolling: Boolean = false, 
 @Composable
 private fun HorizontalMediaRow(title: String, tracks: List<MediaTrack>, isScrolling: Boolean = false, onTrackClick: (MediaTrack) -> Unit) {
     Column(modifier = Modifier.fillMaxWidth()) {
-        HomeSectionHeader(title = title, subtitle = "COLECCIÓN", count = tracks.size)
+        HomeSectionHeader(title = title, subtitle = stringResource(R.string.home_sub_collection), count = tracks.size)
         Spacer(Modifier.height(6.dp))
         val rowState = androidx.compose.foundation.lazy.rememberLazyListState()
         val isRowScrolling by remember { androidx.compose.runtime.derivedStateOf { rowState.isScrollInProgress } }

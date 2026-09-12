@@ -104,6 +104,9 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import com.example.tsuki.R
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -133,11 +136,11 @@ import kotlinx.coroutines.withContext
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
-private enum class PlaylistSort(val label: String) {
-    RECENT("Orden original"),
-    TITLE("Título"),
-    ARTIST("Artista"),
-    DURATION("Duración")
+private enum class PlaylistSort(val labelRes: Int) {
+    RECENT(R.string.pld_sort_recent),
+    TITLE(R.string.pld_sort_title),
+    ARTIST(R.string.pld_sort_artist),
+    DURATION(R.string.pld_sort_duration)
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -196,7 +199,7 @@ fun PlaylistDetailScreen(
                         } != null
                     }.getOrDefault(false)
                 }
-                android.widget.Toast.makeText(context, if (ok) "Playlist exportada (M3U)" else "No se pudo exportar", android.widget.Toast.LENGTH_SHORT).show()
+                android.widget.Toast.makeText(context, if (ok) context.getString(R.string.pld_exported_m3u) else context.getString(R.string.pld_export_failed), android.widget.Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -210,7 +213,7 @@ fun PlaylistDetailScreen(
                         } != null
                     }.getOrDefault(false)
                 }
-                android.widget.Toast.makeText(context, if (ok) "Playlist exportada (CSV)" else "No se pudo exportar", android.widget.Toast.LENGTH_SHORT).show()
+                android.widget.Toast.makeText(context, if (ok) context.getString(R.string.pld_exported_csv) else context.getString(R.string.pld_export_failed), android.widget.Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -242,9 +245,9 @@ fun PlaylistDetailScreen(
                 }
                 if (saved != null) {
                     coverFile = saved
-                    android.widget.Toast.makeText(context, "Portada actualizada", android.widget.Toast.LENGTH_SHORT).show()
+                    android.widget.Toast.makeText(context, context.getString(R.string.pld_cover_updated), android.widget.Toast.LENGTH_SHORT).show()
                 } else {
-                    android.widget.Toast.makeText(context, "No se pudo guardar la imagen", android.widget.Toast.LENGTH_SHORT).show()
+                    android.widget.Toast.makeText(context, context.getString(R.string.pld_cover_save_failed), android.widget.Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -490,7 +493,7 @@ fun PlaylistDetailScreen(
                                 )
                                 Spacer(Modifier.size(4.dp))
                                 Text(
-                                    if (tracks.isEmpty()) "YouTube Music" else "${tracks.size} canciones" + if (totalDurationText.isNotBlank()) " • $totalDurationText" else "",
+                                    if (tracks.isEmpty()) "YouTube Music" else pluralStringResource(R.plurals.songs_count, tracks.size, tracks.size) + if (totalDurationText.isNotBlank()) " • $totalDurationText" else "",
                                     style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.primary
                                 )
@@ -524,34 +527,34 @@ fun PlaylistDetailScreen(
                             ) {
                                 Icon(Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.size(22.dp))
                                 Spacer(Modifier.size(8.dp))
-                                Text("Reproducir")
+                                Text(stringResource(R.string.common_play))
                             }
                             FilledTonalIconButton(
                                 onClick = { startPlayback(tracks, 0, shuffle = true) },
                                 enabled = tracks.isNotEmpty(),
                                 modifier = Modifier.size(56.dp)
                             ) {
-                                Icon(Icons.Rounded.Shuffle, contentDescription = "Aleatorio", modifier = Modifier.size(22.dp))
+                                Icon(Icons.Rounded.Shuffle, contentDescription = stringResource(R.string.common_shuffle), modifier = Modifier.size(22.dp))
                             }
                                     val allDownloaded = tracks.isNotEmpty() && tracks.all { downloadEngine.isDownloaded(it.videoId ?: it.id) }
                                     FilledTonalIconButton(
                                         onClick = {
                                             if (allDownloaded) {
-                                                android.widget.Toast.makeText(context, "Todas las canciones ya están descargadas", android.widget.Toast.LENGTH_SHORT).show()
+                                                android.widget.Toast.makeText(context, context.getString(R.string.pld_all_downloaded), android.widget.Toast.LENGTH_SHORT).show()
                                             } else if (isBatchDownloading) {
                                                 batchJob?.cancel()
                                             } else {
                                                 batchJob = scope.launch {
                                                     isBatchDownloading = true
-                                                    android.widget.Toast.makeText(context, "Descargando lista completa...", android.widget.Toast.LENGTH_SHORT).show()
+                                                    android.widget.Toast.makeText(context, context.getString(R.string.pld_downloading_all), android.widget.Toast.LENGTH_SHORT).show()
                                                     try {
                                                         val result = downloadEngine.downloadTracksBatch(tracks) { cur, tot, title ->
                                                             batchProgressText = "$cur/$tot • $title"
                                                         }
                                                         if (result.failed > 0) {
-                                                            android.widget.Toast.makeText(context, "Completadas: ${result.success} | Fallidas: ${result.failed}", android.widget.Toast.LENGTH_LONG).show()
+                                                            android.widget.Toast.makeText(context, context.getString(R.string.pld_batch_done, result.success, result.failed), android.widget.Toast.LENGTH_LONG).show()
                                                         } else {
-                                                            android.widget.Toast.makeText(context, "Descarga completada: ${result.success} canciones guardadas", android.widget.Toast.LENGTH_LONG).show()
+                                                            android.widget.Toast.makeText(context, context.getString(R.string.pld_batch_done_ok, result.success), android.widget.Toast.LENGTH_LONG).show()
                                                         }
                                                     } finally {
                                                         isBatchDownloading = false
@@ -569,7 +572,7 @@ fun PlaylistDetailScreen(
                                         } else {
                                             Icon(
                                                 imageVector = if (allDownloaded) Icons.Rounded.DownloadDone else Icons.Rounded.Download,
-                                                contentDescription = if (allDownloaded) "Playlist descargada" else "Descargar playlist",
+                                                contentDescription = if (allDownloaded) stringResource(R.string.pld_playlist_downloaded) else stringResource(R.string.pld_download_playlist),
                                                 tint = if (allDownloaded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                                             )
                                         }
@@ -580,7 +583,7 @@ fun PlaylistDetailScreen(
                                             enabled = tracks.isNotEmpty(),
                                             modifier = Modifier.size(56.dp)
                                         ) {
-                                            Icon(Icons.Rounded.MoreVert, contentDescription = "Más opciones")
+                                            Icon(Icons.Rounded.MoreVert, contentDescription = stringResource(R.string.common_more_options))
                                         }
                                         if (showDockMenu) {
                                             val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -607,33 +610,33 @@ fun PlaylistDetailScreen(
                                                     SoundSheetCard {
                                                         SoundSheetRow(
                                                             icon = Icons.Rounded.Radio,
-                                                            title = "Iniciar radio de la playlist",
+                                                            title = stringResource(R.string.pld_start_radio_playlist),
                                                             onClick = {
                                                                 showDockMenu = false
                                                                 val first = tracks.firstOrNull()
                                                                 if (first != null) {
                                                                     if (!isOnline) {
-                                                                        android.widget.Toast.makeText(context, "Sin conexión", android.widget.Toast.LENGTH_SHORT).show()
+                                                                        android.widget.Toast.makeText(context, context.getString(R.string.common_no_connection), android.widget.Toast.LENGTH_SHORT).show()
                                                                     } else {
                                                                         playerController?.playWithRadio(first, false)
                                                                         onExpandPlayer()
-                                                                        android.widget.Toast.makeText(context, "Iniciando radio...", android.widget.Toast.LENGTH_SHORT).show()
+                                                                        android.widget.Toast.makeText(context, context.getString(R.string.pld_starting_radio), android.widget.Toast.LENGTH_SHORT).show()
                                                                     }
                                                                 }
                                                             }
                                                         )
                                                         SoundSheetRow(
                                                             icon = Icons.AutoMirrored.Rounded.QueueMusic,
-                                                            title = "Añadir todo a la cola",
+                                                            title = stringResource(R.string.pld_add_all),
                                                             onClick = {
                                                                 showDockMenu = false
                                                                 tracks.forEach { playerController?.addToQueue(it) }
-                                                                android.widget.Toast.makeText(context, "${tracks.size} canciones añadidas a la cola", android.widget.Toast.LENGTH_SHORT).show()
+                                                                android.widget.Toast.makeText(context, context.getString(R.string.pld_added_count, context.resources.getQuantityString(R.plurals.songs_count, tracks.size, tracks.size)), android.widget.Toast.LENGTH_SHORT).show()
                                                             }
                                                         )
                                                         SoundSheetRow(
                                                             icon = Icons.Rounded.Share,
-                                                            title = "Compartir",
+                                                            title = stringResource(R.string.pld_share),
                                                             onClick = {
                                                                 showDockMenu = false
                                                                 sharePlaylist()
@@ -641,7 +644,7 @@ fun PlaylistDetailScreen(
                                                         )
                                                         SoundSheetRow(
                                                             icon = Icons.AutoMirrored.Rounded.PlaylistAdd,
-                                                            title = "Exportar M3U",
+                                                            title = stringResource(R.string.pld_export_m3u),
                                                             onClick = {
                                                                 showDockMenu = false
                                                                 exportM3uLauncher.launch("${displayTitle}.m3u")
@@ -649,7 +652,7 @@ fun PlaylistDetailScreen(
                                                         )
                                                         SoundSheetRow(
                                                             icon = Icons.Rounded.TableChart,
-                                                            title = "Exportar CSV",
+                                                            title = stringResource(R.string.pld_export_csv),
                                                             onClick = {
                                                                 showDockMenu = false
                                                                 exportCsvLauncher.launch("${displayTitle}.csv")
@@ -657,7 +660,7 @@ fun PlaylistDetailScreen(
                                                         )
                                                         SoundSheetRow(
                                                             icon = Icons.Rounded.AddPhotoAlternate,
-                                                            title = "Cambiar portada",
+                                                            title = stringResource(R.string.pld_change_cover),
                                                             onClick = {
                                                                 showDockMenu = false
                                                                 pickCover.launch("image/*")
@@ -666,7 +669,7 @@ fun PlaylistDetailScreen(
                                                         if (coverFile != null) {
                                                             SoundSheetRow(
                                                                 icon = Icons.Rounded.Close,
-                                                                title = "Quitar foto personalizada",
+                                                                title = stringResource(R.string.pld_remove_cover),
                                                                 onClick = {
                                                                     showDockMenu = false
                                                                     scope.launch {
@@ -674,7 +677,7 @@ fun PlaylistDetailScreen(
                                                                             runCatching { coverFile?.delete() }
                                                                         }
                                                                         coverFile = null
-                                                                        android.widget.Toast.makeText(context, "Portada restablecida", android.widget.Toast.LENGTH_SHORT).show()
+                                                                        android.widget.Toast.makeText(context, context.getString(R.string.pld_cover_reset), android.widget.Toast.LENGTH_SHORT).show()
                                                                     }
                                                                 }
                                                             )
@@ -682,7 +685,7 @@ fun PlaylistDetailScreen(
                                                         if (!isLocalPlaylist && playlist.id != "LM" && !playlist.id.startsWith("mood:")) {
                                                             SoundSheetRow(
                                                                 icon = Icons.AutoMirrored.Rounded.OpenInNew,
-                                                                title = "Abrir en YouTube Music",
+                                                                title = stringResource(R.string.pld_open_ytm),
                                                                 onClick = {
                                                                     showDockMenu = false
                                                                     openInYtm()
@@ -692,7 +695,7 @@ fun PlaylistDetailScreen(
                                                         if (isLocalPlaylist) {
                                                             SoundSheetRow(
                                                                 icon = Icons.Rounded.Edit,
-                                                                title = "Renombrar",
+                                                                title = stringResource(R.string.pld_rename),
                                                                 onClick = {
                                                                     showDockMenu = false
                                                                     renameText = displayTitle
@@ -701,7 +704,7 @@ fun PlaylistDetailScreen(
                                                             )
                                                             SoundSheetRow(
                                                                 icon = Icons.Rounded.Delete,
-                                                                title = "Eliminar playlist",
+                                                                title = stringResource(R.string.lib_delete_playlist),
                                                                 onClick = {
                                                                     showDockMenu = false
                                                                     showDeleteConfirm = true
@@ -716,7 +719,7 @@ fun PlaylistDetailScreen(
                                 }
                                 if (batchProgressText.isNotBlank()) {
                                     Text(
-                                        text = "Descargando: $batchProgressText",
+                                        text = stringResource(R.string.pld_downloading_progress, batchProgressText),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.primary,
                                         maxLines = 1,
@@ -742,12 +745,12 @@ fun PlaylistDetailScreen(
                                 TextField(
                                     value = query,
                                     onValueChange = { query = it },
-                                    placeholder = { Text("Buscar en la playlist") },
+                                    placeholder = { Text(stringResource(R.string.pld_search_hint)) },
                                     leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
                                     trailingIcon = {
                                         if (query.isNotEmpty()) {
                                             IconButton(onClick = { query = "" }) {
-                                                Icon(Icons.Rounded.Close, contentDescription = "Limpiar búsqueda")
+                                                Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.pld_clear_search))
                                             }
                                         }
                                     },
@@ -771,7 +774,7 @@ fun PlaylistDetailScreen(
                                         onClick = { showSortMenu = true },
                                         modifier = Modifier.size(48.dp)
                                     ) {
-                                        Icon(Icons.AutoMirrored.Rounded.Sort, contentDescription = "Ordenar")
+                                        Icon(Icons.AutoMirrored.Rounded.Sort, contentDescription = stringResource(R.string.common_sort))
                                     }
                                     DropdownMenu(
                                         expanded = showSortMenu,
@@ -782,7 +785,7 @@ fun PlaylistDetailScreen(
                                     ) {
                                         PlaylistSort.entries.forEach { mode ->
                                             DropdownMenuItem(
-                                                text = { Text(mode.label) },
+                                                text = { Text(stringResource(mode.labelRes)) },
                                                 leadingIcon = {
                                                     if (sortMode == mode) Icon(Icons.Rounded.Check, contentDescription = null)
                                                 },
@@ -815,12 +818,12 @@ fun PlaylistDetailScreen(
                             verticalArrangement = Arrangement.Center
                         ) {
                             Text(
-                                "No se pudo cargar la playlist",
+                                stringResource(R.string.pld_load_failed),
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Spacer(Modifier.height(8.dp))
-                            TextButton(onClick = { retryKey++ }) { Text("Reintentar") }
+                            TextButton(onClick = { retryKey++ }) { Text(stringResource(R.string.common_retry)) }
                         }
                     }
                     tracks.isEmpty() -> item(key = "empty") {
@@ -831,7 +834,7 @@ fun PlaylistDetailScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                "Esta playlist está vacía",
+                                stringResource(R.string.pld_empty),
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -845,7 +848,7 @@ fun PlaylistDetailScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                "Sin resultados para \"$query\"",
+                                stringResource(R.string.home_no_results, query),
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -864,7 +867,7 @@ fun PlaylistDetailScreen(
                                     pendingDeleteTrack = track
                                 } else {
                                     playerController?.addToQueue(track)
-                                    android.widget.Toast.makeText(context, "Añadido a la cola", android.widget.Toast.LENGTH_SHORT).show()
+                                    android.widget.Toast.makeText(context, context.getString(R.string.pld_added), android.widget.Toast.LENGTH_SHORT).show()
                                 }
                                 dismissState.snapTo(SwipeToDismissBoxValue.Settled)
                             }
@@ -957,7 +960,7 @@ fun PlaylistDetailScreen(
                                         if (isCurrent) {
                                             Icon(
                                                 imageVector = Icons.Rounded.GraphicEq,
-                                                contentDescription = "Sonando",
+                                                contentDescription = stringResource(R.string.pld_now_playing),
                                                 tint = MaterialTheme.colorScheme.primary,
                                                 modifier = Modifier.size(16.dp)
                                             )
@@ -1019,7 +1022,7 @@ fun PlaylistDetailScreen(
                                         if (trackDownloaded) {
                                             Icon(
                                                 imageVector = Icons.Rounded.DownloadDone,
-                                                contentDescription = "Descargado",
+                                                contentDescription = stringResource(R.string.pld_downloaded),
                                                 tint = MaterialTheme.colorScheme.primary,
                                                 modifier = Modifier.size(14.dp)
                                             )
@@ -1040,7 +1043,7 @@ fun PlaylistDetailScreen(
                                     ) {
                                         Icon(
                                             imageVector = Icons.Rounded.DragHandle,
-                                            contentDescription = "Arrastrar para reordenar",
+                                            contentDescription = stringResource(R.string.pld_drag_reorder),
                                             tint = if (isDragging) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                             modifier = Modifier.size(22.dp)
                                         )
@@ -1076,7 +1079,7 @@ fun PlaylistDetailScreen(
                         IconButton(onClick = onBack) {
                             Icon(
                                 Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Volver",
+                                contentDescription = stringResource(R.string.common_back),
                                 tint = if (showBar) MaterialTheme.colorScheme.onSurface else Color.White
                             )
                         }
@@ -1109,7 +1112,7 @@ fun PlaylistDetailScreen(
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            if (tracks.isEmpty()) "Playlist" else "${tracks.size} canciones",
+                            if (tracks.isEmpty()) stringResource(R.string.pld_playlist_word) else pluralStringResource(R.plurals.songs_count, tracks.size, tracks.size),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1119,7 +1122,7 @@ fun PlaylistDetailScreen(
                         enabled = tracks.isNotEmpty(),
                         modifier = Modifier.size(44.dp)
                     ) {
-                        Icon(Icons.Rounded.PlayArrow, contentDescription = "Reproducir")
+                        Icon(Icons.Rounded.PlayArrow, contentDescription = stringResource(R.string.common_play))
                     }
                         }
                     }
@@ -1154,7 +1157,7 @@ fun PlaylistDetailScreen(
                             .statusBarsPadding()
                             .padding(16.dp)
                     ) {
-                        Icon(Icons.Rounded.Close, contentDescription = "Cerrar")
+                        Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.common_close))
                     }
                 }
             }
@@ -1219,51 +1222,51 @@ fun PlaylistDetailScreen(
                             )
                         }
                         IconButton(onClick = { longPressedTrack = null }) {
-                            Icon(Icons.Rounded.Close, contentDescription = "Cerrar")
+                            Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.common_close))
                         }
                     }
                     PlaylistSheetRow(
                         icon = Icons.Rounded.Radio,
-                        label = "Iniciar radio",
+                        label = stringResource(R.string.pld_start_radio),
                         onClick = {
                             longPressedTrack = null
                             if (!isOnline) {
-                                android.widget.Toast.makeText(context, "Sin conexión", android.widget.Toast.LENGTH_SHORT).show()
+                                android.widget.Toast.makeText(context, context.getString(R.string.common_no_connection), android.widget.Toast.LENGTH_SHORT).show()
                             } else {
                                 playerController?.playWithRadio(sheetTrack, false)
                                 onExpandPlayer()
-                                android.widget.Toast.makeText(context, "Iniciando radio de ${sheetTrack.artist}...", android.widget.Toast.LENGTH_SHORT).show()
+                                android.widget.Toast.makeText(context, context.getString(R.string.pld_starting_radio_artist, sheetTrack.artist), android.widget.Toast.LENGTH_SHORT).show()
                             }
                         }
                     )
                     PlaylistSheetRow(
                         icon = Icons.AutoMirrored.Rounded.QueueMusic,
-                        label = "Reproducir a continuación",
+                        label = stringResource(R.string.pld_play_next),
                         onClick = {
                             longPressedTrack = null
                             playerController?.playNext(sheetTrack)
-                            android.widget.Toast.makeText(context, "Se reproducirá a continuación", android.widget.Toast.LENGTH_SHORT).show()
+                            android.widget.Toast.makeText(context, context.getString(R.string.pld_will_play_next), android.widget.Toast.LENGTH_SHORT).show()
                         }
                     )
                     PlaylistSheetRow(
                         icon = Icons.AutoMirrored.Rounded.PlaylistAdd,
-                        label = "Añadir a la cola",
+                        label = stringResource(R.string.pld_add_queue),
                         onClick = {
                             longPressedTrack = null
                             playerController?.addToQueue(sheetTrack)
-                            android.widget.Toast.makeText(context, "Añadido a la cola", android.widget.Toast.LENGTH_SHORT).show()
+                            android.widget.Toast.makeText(context, context.getString(R.string.pld_added), android.widget.Toast.LENGTH_SHORT).show()
                         }
                     )
                     PlaylistSheetRow(
                         icon = Icons.Rounded.Favorite,
-                        label = "Me gusta",
+                        label = stringResource(R.string.pld_liked),
                         onClick = {
                             longPressedTrack = null
                             scope.launch {
                                 val added = favoritesManager.toggleFavorite(sheetTrack)
                                 android.widget.Toast.makeText(
                                     context,
-                                    if (added) "Añadido a Me gusta" else "Quitado de Me gusta",
+                                    if (added) context.getString(R.string.pld_added_like) else context.getString(R.string.pld_removed_like),
                                     android.widget.Toast.LENGTH_SHORT
                                 ).show()
                             }
@@ -1271,15 +1274,15 @@ fun PlaylistDetailScreen(
                     )
                     PlaylistSheetRow(
                         icon = if (sheetDownloaded) Icons.Rounded.DownloadDone else Icons.Rounded.Download,
-                        label = if (sheetDownloaded) "Eliminar descarga" else "Descargar",
+                        label = if (sheetDownloaded) stringResource(R.string.pld_remove_download) else stringResource(R.string.common_download),
                         onClick = {
                             longPressedTrack = null
                             if (sheetDownloaded) {
                                 downloadEngine.deleteDownloadedTrack(sheetKey)
-                                android.widget.Toast.makeText(context, "Canción eliminada de descargas", android.widget.Toast.LENGTH_SHORT).show()
+                                android.widget.Toast.makeText(context, context.getString(R.string.pld_track_removed_dl), android.widget.Toast.LENGTH_SHORT).show()
                             } else {
                                 scope.launch { downloadEngine.downloadTrack(sheetTrack) }
-                                android.widget.Toast.makeText(context, "Descargando pista", android.widget.Toast.LENGTH_SHORT).show()
+                                android.widget.Toast.makeText(context, context.getString(R.string.pld_downloading_track), android.widget.Toast.LENGTH_SHORT).show()
                             }
                         }
                     )
@@ -1291,8 +1294,8 @@ fun PlaylistDetailScreen(
         if (trackToDelete != null) {
             AlertDialog(
                 onDismissRequest = { pendingDeleteTrack = null },
-                title = { Text("Quitar de la playlist") },
-                text = { Text("¿Seguro que quieres eliminar \"${trackToDelete.title}\" de la playlist?") },
+                title = { Text(stringResource(R.string.pld_remove_title)) },
+                text = { Text(stringResource(R.string.pld_remove_confirm, trackToDelete.title)) },
                 confirmButton = {
                     TextButton(
                         onClick = {
@@ -1305,15 +1308,15 @@ fun PlaylistDetailScreen(
                                     if (pos >= 0) {
                                         localManager.removeTrack(lid, pos)
                                         tracks = tracks.toMutableList().apply { removeAt(pos) }
-                                        android.widget.Toast.makeText(context, "Canción eliminada", android.widget.Toast.LENGTH_SHORT).show()
+                                        android.widget.Toast.makeText(context, context.getString(R.string.pld_track_removed), android.widget.Toast.LENGTH_SHORT).show()
                                     }
                                 }
                             }
                         }
-                    ) { Text("Eliminar") }
+                    ) { Text(stringResource(R.string.common_delete)) }
                 },
                 dismissButton = {
-                    TextButton(onClick = { pendingDeleteTrack = null }) { Text("Cancelar") }
+                    TextButton(onClick = { pendingDeleteTrack = null }) { Text(stringResource(R.string.common_cancel)) }
                 }
             )
         }
@@ -1321,7 +1324,7 @@ fun PlaylistDetailScreen(
         if (showRename) {
             AlertDialog(
                 onDismissRequest = { showRename = false },
-                title = { Text("Renombrar playlist") },
+                title = { Text(stringResource(R.string.pld_rename_title)) },
                 text = {
                     TextField(
                         value = renameText,
@@ -1348,10 +1351,10 @@ fun PlaylistDetailScreen(
                             }
                             showRename = false
                         }
-                    ) { Text("Guardar") }
+                    ) { Text(stringResource(R.string.common_save)) }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showRename = false }) { Text("Cancelar") }
+                    TextButton(onClick = { showRename = false }) { Text(stringResource(R.string.common_cancel)) }
                 }
             )
         }
@@ -1359,8 +1362,8 @@ fun PlaylistDetailScreen(
         if (showDeleteConfirm) {
             AlertDialog(
                 onDismissRequest = { showDeleteConfirm = false },
-                title = { Text("Eliminar playlist") },
-                text = { Text("Se eliminará \"$displayTitle\" de tus playlists locales. Esta acción no se puede deshacer.") },
+                title = { Text(stringResource(R.string.lib_delete_playlist)) },
+                text = { Text(stringResource(R.string.pld_delete_confirm, displayTitle)) },
                 confirmButton = {
                     TextButton(
                         onClick = {
@@ -1369,15 +1372,15 @@ fun PlaylistDetailScreen(
                             if (lid != null) {
                                 scope.launch {
                                     localManager.deletePlaylist(lid)
-                                    android.widget.Toast.makeText(context, "Playlist eliminada", android.widget.Toast.LENGTH_SHORT).show()
+                                    android.widget.Toast.makeText(context, context.getString(R.string.pld_deleted), android.widget.Toast.LENGTH_SHORT).show()
                                     onBack()
                                 }
                             }
                         }
-                    ) { Text("Eliminar") }
+                    ) { Text(stringResource(R.string.common_delete)) }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showDeleteConfirm = false }) { Text("Cancelar") }
+                    TextButton(onClick = { showDeleteConfirm = false }) { Text(stringResource(R.string.common_cancel)) }
                 }
             )
         }

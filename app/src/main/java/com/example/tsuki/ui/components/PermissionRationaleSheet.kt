@@ -30,9 +30,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.example.tsuki.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -108,7 +110,7 @@ fun PermissionRationaleSheet(
                     .height(52.dp)
             ) {
                 Text(
-                    "Continuar",
+                    stringResource(R.string.common_continue),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -118,7 +120,7 @@ fun PermissionRationaleSheet(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
-                    "Ahora no",
+                    stringResource(R.string.common_not_now),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

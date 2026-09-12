@@ -22,10 +22,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.example.tsuki.R
 import com.example.tsuki.data.local.LocalPlaylistManager
 import com.example.tsuki.domain.model.MediaTrack
 import kotlinx.coroutines.launch
@@ -65,7 +68,7 @@ fun AddToPlaylistSheet(
                 .padding(bottom = 32.dp)
         ) {
             Text(
-                text = "Añadir a playlist",
+                text = stringResource(R.string.player_add_to_playlist),
                 style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(bottom = 12.dp)
@@ -134,7 +137,7 @@ fun AddToPlaylistSheet(
                         )
                         Spacer(modifier = Modifier.width(14.dp))
                         Text(
-                            text = "Etiquetar canción",
+                            text = stringResource(R.string.tag_title),
                             style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
                             color = MaterialTheme.colorScheme.primary
                         )
@@ -164,12 +167,12 @@ fun AddToPlaylistSheet(
                             ) {
                                 Icon(
                                     imageVector = Icons.Rounded.Add,
-                                    contentDescription = "Nueva playlist"
+                                    contentDescription = stringResource(R.string.sheet_new_cd)
                                 )
                             }
                             Spacer(modifier = Modifier.width(14.dp))
                             Text(
-                                text = "Nueva playlist",
+                                text = stringResource(R.string.lib_new_playlist),
                                 style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Medium),
                                 color = MaterialTheme.colorScheme.primary
                             )
@@ -179,7 +182,7 @@ fun AddToPlaylistSheet(
                             OutlinedTextField(
                                 value = newPlaylistName,
                                 onValueChange = { newPlaylistName = it },
-                                label = { Text("Nombre de la playlist") },
+                                label = { Text(stringResource(R.string.lib_playlist_name)) },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(12.dp)
@@ -193,7 +196,7 @@ fun AddToPlaylistSheet(
                                     isCreatingNew = false
                                     newPlaylistName = ""
                                 }) {
-                                    Text("Cancelar")
+                                    Text(stringResource(R.string.common_cancel))
                                 }
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Button(
@@ -201,14 +204,14 @@ fun AddToPlaylistSheet(
                                         if (newPlaylistName.isNotBlank()) {
                                             scope.launch {
                                                 playlistManager.createPlaylist(newPlaylistName.trim(), listOf(track))
-                                                Toast.makeText(context, "Playlist \"${newPlaylistName.trim()}\" creada", Toast.LENGTH_SHORT).show()
+                                                Toast.makeText(context, context.getString(R.string.sheet_created, newPlaylistName.trim()), Toast.LENGTH_SHORT).show()
                                                 onDismiss()
                                             }
                                         }
                                     },
                                     enabled = newPlaylistName.isNotBlank()
                                 ) {
-                                    Text("Crear y añadir")
+                                    Text(stringResource(R.string.sheet_create_add))
                                 }
                             }
                         }
@@ -225,7 +228,7 @@ fun AddToPlaylistSheet(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "No tienes playlists locales aún",
+                        text = stringResource(R.string.sheet_empty),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -247,9 +250,9 @@ fun AddToPlaylistSheet(
                                     scope.launch {
                                         val added = playlistManager.addTrackIfNotExists(pl.id, track)
                                         if (added) {
-                                            Toast.makeText(context, "Añadida a ${pl.name}", Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(context, context.getString(R.string.sheet_added, pl.name), Toast.LENGTH_SHORT).show()
                                         } else {
-                                            Toast.makeText(context, "Ya está en ${pl.name}", Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(context, context.getString(R.string.sheet_exists, pl.name), Toast.LENGTH_SHORT).show()
                                         }
                                         onDismiss()
                                     }
@@ -276,7 +279,7 @@ fun AddToPlaylistSheet(
                                         overflow = TextOverflow.Ellipsis
                                     )
                                     Text(
-                                        text = if (pl.trackCount == 0) "Vacía" else "${pl.trackCount} canciones",
+                                        text = if (pl.trackCount == 0) stringResource(R.string.player_queue_empty) else pluralStringResource(R.plurals.songs_count, pl.trackCount, pl.trackCount),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )

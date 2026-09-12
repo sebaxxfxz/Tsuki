@@ -23,6 +23,8 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
+import com.example.tsuki.R
 import androidx.compose.ui.unit.dp
 import com.example.tsuki.domain.model.LyricsEntry
 import com.example.tsuki.ui.player.lyrics.KaraokeLyricRow
@@ -47,7 +49,7 @@ fun SyncedLyricsView(
 ) {
     if (lyrics.isEmpty()) {
         Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text(text = "No hay letras disponibles", color = Color.Gray)
+            Text(text = stringResource(R.string.player_no_lyrics), color = Color.Gray)
         }
         return
     }

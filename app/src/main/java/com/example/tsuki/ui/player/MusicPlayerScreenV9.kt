@@ -80,6 +80,9 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.unit.roundToIntSize
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import com.example.tsuki.R
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -170,16 +173,16 @@ fun MusicPlayerScreenV9(
                 android.widget.Toast.makeText(
                     context,
                     when {
-                        ok && nowFavorite -> "Añadido a Me gusta de YouTube Music"
-                        ok -> "Quitado de Me gusta de YouTube Music"
-                        else -> "Guardado solo en el dispositivo"
+                        ok && nowFavorite -> context.getString(R.string.player_yt_added)
+                        ok -> context.getString(R.string.player_yt_removed)
+                        else -> context.getString(R.string.player_local_only)
                     },
                     android.widget.Toast.LENGTH_SHORT
                 ).show()
             } else {
                 android.widget.Toast.makeText(
                     context,
-                    if (nowFavorite) "Añadido a Me gusta local" else "Quitado de Me gusta local",
+                    if (nowFavorite) context.getString(R.string.player_local_added) else context.getString(R.string.player_local_removed),
                     android.widget.Toast.LENGTH_SHORT
                 ).show()
             }
@@ -194,7 +197,7 @@ fun MusicPlayerScreenV9(
                 "${track.title} • ${track.artist}\nhttps://music.youtube.com/watch?v=${track.videoId ?: track.id}"
             )
         }
-        context.startActivity(android.content.Intent.createChooser(sendIntent, "Compartir"))
+        context.startActivity(android.content.Intent.createChooser(sendIntent, context.getString(R.string.player_share_chooser)))
     }
     val shareTrack: () -> Unit = { showShareCard = true }
     var shareCardBounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
@@ -215,11 +218,11 @@ fun MusicPlayerScreenV9(
                         putExtra(android.content.Intent.EXTRA_STREAM, uri)
                         addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     }
-                    context.startActivity(android.content.Intent.createChooser(sendIntent, "Compartir"))
+                    context.startActivity(android.content.Intent.createChooser(sendIntent, context.getString(R.string.player_share_chooser)))
                     true
                 }.getOrDefault(false)
             }
-            if (!ok) android.widget.Toast.makeText(context, "No se pudo generar la imagen", android.widget.Toast.LENGTH_SHORT).show()
+            if (!ok) android.widget.Toast.makeText(context, context.getString(R.string.player_image_fail), android.widget.Toast.LENGTH_SHORT).show()
         }
     }
     val shareCardImage: () -> Unit = {
@@ -267,9 +270,9 @@ fun MusicPlayerScreenV9(
             val removed = downloadEngine.deleteDownloadedTrack(vid)
             if (removed) {
                 isDownloaded = false
-                android.widget.Toast.makeText(context, "Canción eliminada de descargas", android.widget.Toast.LENGTH_SHORT).show()
+                android.widget.Toast.makeText(context, context.getString(R.string.player_dl_removed), android.widget.Toast.LENGTH_SHORT).show()
             } else {
-                android.widget.Toast.makeText(context, "Esta canción ya está guardada en tu biblioteca", android.widget.Toast.LENGTH_SHORT).show()
+                android.widget.Toast.makeText(context, context.getString(R.string.player_dl_exists), android.widget.Toast.LENGTH_SHORT).show()
             }
         } else {
             if (!isDownloading) {
@@ -285,7 +288,7 @@ fun MusicPlayerScreenV9(
                     downloadProgress = null
                     android.widget.Toast.makeText(
                         context,
-                        if (done != null) "Descargado en tu biblioteca sin conexión" else "No se pudo descargar",
+                        if (done != null) context.getString(R.string.player_dl_saved) else context.getString(R.string.player_dl_fail),
                         android.widget.Toast.LENGTH_SHORT
                     ).show()
                 }
@@ -647,7 +650,7 @@ fun MusicPlayerScreenV9(
                     if (shareLyrics.isNotEmpty()) {
                         Column {
                             Text(
-                                text = "Letra (hasta 5 líneas)",
+                                text = stringResource(R.string.player_lyrics_pick),
                                 style = MaterialTheme.typography.labelLarge,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(bottom = 6.dp)
@@ -716,7 +719,7 @@ fun MusicPlayerScreenV9(
                                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                                 modifier = Modifier.weight(1f)
                             ) {
-                                Text("Cancelar", maxLines = 1)
+                                Text(stringResource(R.string.common_cancel), maxLines = 1)
                             }
                             FilledTonalButton(
                                 onClick = shareTrackText,
@@ -724,7 +727,7 @@ fun MusicPlayerScreenV9(
                                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                                 modifier = Modifier.weight(1f)
                             ) {
-                                Text("Solo enlace", maxLines = 1)
+                                Text(stringResource(R.string.player_link_only), maxLines = 1)
                             }
                         }
                         Button(
@@ -733,7 +736,7 @@ fun MusicPlayerScreenV9(
                             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("Compartir imagen", maxLines = 1)
+                            Text(stringResource(R.string.player_share_image), maxLines = 1)
                         }
                     }
                 }
@@ -765,7 +768,7 @@ private fun TopBarV9(
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Icon(
                     imageVector = Icons.Rounded.KeyboardArrowDown,
-                    contentDescription = "Cerrar",
+                    contentDescription = stringResource(R.string.common_close),
                     tint = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.size(28.dp)
                 )
@@ -773,7 +776,7 @@ private fun TopBarV9(
         }
 
         Text(
-            text = "Reproduciendo ahora",
+            text = stringResource(R.string.player_now_playing),
             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
             color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
@@ -798,7 +801,7 @@ private fun TopBarV9(
                     Box(modifier = Modifier.padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
                         Icon(
                             imageVector = Icons.Rounded.Group,
-                            contentDescription = "Escuchar juntos",
+                            contentDescription = stringResource(R.string.set_tool_together),
                             tint = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.size(22.dp)
                         )
@@ -814,7 +817,7 @@ private fun TopBarV9(
                 Box(modifier = Modifier.padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
                     Icon(
                         imageVector = Icons.Rounded.Lyrics,
-                        contentDescription = "Letras",
+                        contentDescription = stringResource(R.string.player_lyrics_label),
                         tint = if (isLyricsActive) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.size(22.dp)
                     )
@@ -830,7 +833,7 @@ private fun TopBarV9(
                 Box(modifier = Modifier.padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Rounded.FormatListBulleted,
-                        contentDescription = "Cola",
+                        contentDescription = stringResource(R.string.common_queue),
                         tint = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.size(22.dp)
                     )
@@ -864,7 +867,7 @@ private fun LyricsTabV9(
         } else {
             Column(modifier = Modifier.fillMaxSize()) {
                 Text(
-                    text = "Letras: ${playerState.lyricsProvider}",
+                    text = stringResource(R.string.player_lyrics_from, playerState.lyricsProvider),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier
@@ -947,14 +950,14 @@ private fun V9PlaybackModesRowV9(
         AnimatedToggleIconV9(
             active = shuffleEnabled,
             icon = Icons.Rounded.Shuffle,
-            contentDescription = "Aleatorio",
+            contentDescription = stringResource(R.string.common_shuffle),
             accentColor = accentColor,
             onClick = onShuffle
         )
         androidx.compose.material3.IconButton(onClick = onAodClick) {
             Icon(
                 imageVector = Icons.Rounded.Bedtime,
-                contentDescription = "Modo AOD",
+                contentDescription = stringResource(R.string.player_aod),
                 tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                 modifier = Modifier.size(26.dp)
             )
@@ -962,7 +965,7 @@ private fun V9PlaybackModesRowV9(
         AnimatedToggleIconV9(
             active = repeatMode != androidx.media3.common.Player.REPEAT_MODE_OFF,
             icon = if (repeatMode == androidx.media3.common.Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
-            contentDescription = "Repetir",
+            contentDescription = stringResource(R.string.player_repeat),
             accentColor = accentColor,
             onClick = onRepeat
         )
@@ -999,7 +1002,7 @@ private fun V9UtilityRowV9(
                 Box(modifier = Modifier.padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
                     Text(
                         text = when {
-                            sleepActive -> "Timer activo"
+                            sleepActive -> stringResource(R.string.player_timer_active)
                             !qualityLabel.isNullOrBlank() -> qualityLabel
                             else -> " "
                         },
@@ -1029,7 +1032,7 @@ private fun V9UtilityRowV9(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "Sonido",
+                    text = stringResource(R.string.player_sound),
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -1037,7 +1040,7 @@ private fun V9UtilityRowV9(
             IconButton(onClick = onShare) {
                 Icon(
                     imageVector = Icons.Rounded.Share,
-                    contentDescription = "Compartir",
+                    contentDescription = stringResource(R.string.common_share),
                     tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
                     modifier = Modifier.size(22.dp)
                 )
@@ -1069,7 +1072,7 @@ private fun V9UtilityRowV9(
                 AnimatedToggleIconV9(
                     active = isDownloaded,
                     icon = if (isDownloaded) Icons.Rounded.DownloadDone else Icons.Rounded.Download,
-                    contentDescription = if (isDownloaded) "Descargado (toca para eliminar)" else "Descargar",
+                    contentDescription = if (isDownloaded) stringResource(R.string.player_downloaded_tap) else stringResource(R.string.common_download),
                     accentColor = MaterialTheme.colorScheme.primary,
                     onClick = onDownload,
                     iconSize = 22.dp
@@ -1108,7 +1111,7 @@ private fun V9SoundSheetV9(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text(
-                text = "Sonido y reproducción",
+                text = stringResource(R.string.player_sheet_title),
                 style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(start = 4.dp, bottom = 2.dp)
@@ -1121,15 +1124,15 @@ private fun V9SoundSheetV9(
                 playerController.uiState.value.currentTrack?.let { currentTrack ->
                     SoundSheetRow(
                         icon = Icons.Rounded.Radio,
-                        title = "Iniciar Radio",
-                        support = "Música similar infinita a partir de este tema",
+                        title = stringResource(R.string.player_radio),
+                        support = stringResource(R.string.player_radio_sub),
                         onClick = {
                             onDismiss()
                             if (!isOnline) {
-                                android.widget.Toast.makeText(context, "Sin conexión", android.widget.Toast.LENGTH_SHORT).show()
+                                android.widget.Toast.makeText(context, context.getString(R.string.common_no_connection), android.widget.Toast.LENGTH_SHORT).show()
                             } else {
                                 playerController.startRadio(currentTrack)
-                                android.widget.Toast.makeText(context, "Iniciando radio de ${currentTrack.artist}...", android.widget.Toast.LENGTH_SHORT).show()
+                                android.widget.Toast.makeText(context, context.getString(R.string.pld_starting_radio_artist, currentTrack.artist), android.widget.Toast.LENGTH_SHORT).show()
                             }
                         }
                     )
@@ -1139,8 +1142,8 @@ private fun V9SoundSheetV9(
             SoundSheetCard {
                 SoundSheetRow(
                     icon = Icons.Rounded.Equalizer,
-                    title = "Ecualizador",
-                    support = "Graves, medios y agudos",
+                    title = stringResource(R.string.player_eq),
+                    support = stringResource(R.string.player_eq_sub),
                     onClick = {
                         onDismiss()
                         onOpenEqualizer()
@@ -1151,8 +1154,8 @@ private fun V9SoundSheetV9(
             SoundSheetCard {
                 SoundSheetRow(
                     icon = Icons.Rounded.Speed,
-                    title = "Velocidad",
-                    support = if (playbackSpeed != 1f) "${playbackSpeed}x" else "Normal",
+                    title = stringResource(R.string.player_speed),
+                    support = if (playbackSpeed != 1f) "${playbackSpeed}x" else stringResource(R.string.player_speed_normal),
                     supportActive = playbackSpeed != 1f
                 )
                 androidx.compose.foundation.lazy.LazyRow(
@@ -1172,16 +1175,16 @@ private fun V9SoundSheetV9(
             SoundSheetCard {
                 SoundSheetRow(
                     icon = Icons.Rounded.Bedtime,
-                    title = "Timer de sueño",
+                    title = stringResource(R.string.player_sleep),
                     support = when {
-                        sleepActive && sleepRemainingMs < 0 -> "Se pausará al terminar esta canción"
-                        sleepActive -> "Se pausa en ${sleepRemainingMs / 60000}:${String.format("%02d", (sleepRemainingMs % 60000) / 1000)}"
-                        else -> "Apaga la música automáticamente"
+                        sleepActive && sleepRemainingMs < 0 -> stringResource(R.string.player_sleep_end)
+                        sleepActive -> stringResource(R.string.player_sleep_in, (sleepRemainingMs / 60000).toInt(), ((sleepRemainingMs % 60000) / 1000).toInt())
+                        else -> stringResource(R.string.player_sleep_off)
                     },
                     supportActive = sleepActive,
                     trailing = if (sleepActive) ({
                         androidx.compose.material3.TextButton(onClick = { playerController.setSleepTimer(null) }) {
-                            Text("Detener")
+                            Text(stringResource(R.string.player_stop))
                         }
                     }) else null
                 )
@@ -1199,7 +1202,7 @@ private fun V9SoundSheetV9(
                                     playerController.setSleepTimerEndOfSong()
                                 }
                             },
-                            label = { Text("Al terminar canción") }
+                            label = { Text(stringResource(R.string.player_stop_at_end)) }
                         )
                     }
                     items(listOf(5, 15, 30, 45, 60)) { minutes ->
@@ -1212,7 +1215,7 @@ private fun V9SoundSheetV9(
                                     playerController.setSleepTimer(minutes)
                                 }
                             },
-                            label = { Text("$minutes min") }
+                            label = { Text(stringResource(R.string.player_minutes, minutes)) }
                         )
                     }
                 }
@@ -1221,8 +1224,8 @@ private fun V9SoundSheetV9(
             SoundSheetCard {
                 SoundSheetRow(
                     icon = Icons.Rounded.BlurOn,
-                    title = "Crossfade",
-                    support = "Transición suave entre pistas",
+                    title = stringResource(R.string.player_crossfade),
+                    support = stringResource(R.string.player_crossfade_sub),
                     supportActive = crossfadeEnabled,
                     trailing = {
                         androidx.compose.material3.Switch(
@@ -1251,8 +1254,8 @@ private fun V9SoundSheetV9(
             SoundSheetCard {
                 SoundSheetRow(
                     icon = Icons.Rounded.GraphicEq,
-                    title = "Normalizar volumen",
-                    support = if (volumeNorm) "Uniforma el volumen entre canciones" else "Desactivado",
+                    title = stringResource(R.string.player_norm),
+                    support = if (volumeNorm) stringResource(R.string.player_norm_on) else stringResource(R.string.player_norm_off),
                     supportActive = volumeNorm,
                     trailing = {
                         androidx.compose.material3.Switch(
@@ -1266,8 +1269,8 @@ private fun V9SoundSheetV9(
             SoundSheetCard {
                 SoundSheetRow(
                     icon = Icons.Rounded.Tune,
-                    title = "Calidad de audio",
-                    support = qualityLabel ?: "Automática"
+                    title = stringResource(R.string.player_quality),
+                    support = qualityLabel ?: stringResource(R.string.player_quality_auto)
                 )
             }
         }
@@ -1369,12 +1372,12 @@ private fun QueueSheetV9Content(playerController: PlayerController, onDismiss: (
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Cola de reproducción",
+                            text = stringResource(R.string.player_queue_title),
                             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = if (queueList.isEmpty()) "Vacía" else "${queueList.size} canciones",
+                            text = if (queueList.isEmpty()) stringResource(R.string.player_queue_empty) else pluralStringResource(R.plurals.songs_count, queueList.size, queueList.size),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1389,7 +1392,7 @@ private fun QueueSheetV9Content(playerController: PlayerController, onDismiss: (
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.Shuffle,
-                            contentDescription = "Aleatorio",
+                            contentDescription = stringResource(R.string.common_shuffle),
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -1400,7 +1403,7 @@ private fun QueueSheetV9Content(playerController: PlayerController, onDismiss: (
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.DeleteSweep,
-                            contentDescription = "Limpiar",
+                            contentDescription = stringResource(R.string.common_clear),
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -1430,12 +1433,12 @@ private fun QueueSheetV9Content(playerController: PlayerController, onDismiss: (
                             }
                             Spacer(modifier = Modifier.height(14.dp))
                             Text(
-                                text = "Nada en la cola todavía",
+                                text = stringResource(R.string.player_queue_hint),
                                 style = MaterialTheme.typography.bodyLarge,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "Reproduce algo para llenarla",
+                                text = stringResource(R.string.player_queue_hint_sub),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )

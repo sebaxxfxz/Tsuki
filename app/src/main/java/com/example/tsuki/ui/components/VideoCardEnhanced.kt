@@ -58,11 +58,13 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import com.example.tsuki.R
 import com.example.tsuki.data.local.FavoritesManager
 import com.example.tsuki.data.local.HomePreferences
 import com.example.tsuki.data.local.WatchHistoryManager
@@ -128,7 +130,7 @@ fun DownloadQualityDialog(
                     tint = MaterialTheme.colorScheme.primary
                 )
                 Text(
-                    text = "Descargar Contenido",
+                    text = stringResource(R.string.video_dl_content),
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold
                 )
@@ -154,14 +156,14 @@ fun DownloadQualityDialog(
                             modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp))
                         )
                         Text(
-                            text = "Descargando... $progressPercent%",
+                            text = stringResource(R.string.video_dl_progress, progressPercent),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.primary
                         )
                     }
                 } else {
                     Text(
-                        text = "Selecciona el formato y calidad:",
+                        text = stringResource(R.string.video_format_title),
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.SemiBold
                     )
@@ -169,14 +171,14 @@ fun DownloadQualityDialog(
                     Surface(
                         onClick = {
                             isDownloading = true
-                            onDownloadStarted("Iniciando descarga de Audio HQ...")
+                            onDownloadStarted(context.getString(R.string.video_dl_audio))
                             scope.launch {
                                 val res = downloadEngine.downloadTrack(track) { p -> progressPercent = p }
                                 isDownloading = false
                                 if (res != null) {
-                                    Toast.makeText(context, "Audio descargado correctamente", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, context.getString(R.string.video_audio_ok), Toast.LENGTH_SHORT).show()
                                 } else {
-                                    Toast.makeText(context, "Error al descargar audio", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, context.getString(R.string.video_audio_fail), Toast.LENGTH_SHORT).show()
                                 }
                                 onDismiss()
                             }
@@ -192,8 +194,8 @@ fun DownloadQualityDialog(
                         ) {
                             Icon(Icons.Rounded.Audiotrack, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                             Column(modifier = Modifier.weight(1f)) {
-                                Text("Audio HQ (M4A)", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
-                                Text("Máxima fidelidad • Menor tamaño de archivo", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(stringResource(R.string.video_audio_hq), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                                Text(stringResource(R.string.video_audio_hq_sub), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
@@ -201,14 +203,14 @@ fun DownloadQualityDialog(
                     Surface(
                         onClick = {
                             isDownloading = true
-                            onDownloadStarted("Iniciando descarga de Video 1080p...")
+                            onDownloadStarted(context.getString(R.string.video_dl_1080))
                             scope.launch {
                                 val res = downloadEngine.downloadVideo(track, quality = "1080p") { p -> progressPercent = p }
                                 isDownloading = false
                                 if (res != null) {
-                                    Toast.makeText(context, "Video descargado correctamente", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, context.getString(R.string.video_video_ok), Toast.LENGTH_SHORT).show()
                                 } else {
-                                    Toast.makeText(context, "Error al descargar video", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, context.getString(R.string.video_video_fail), Toast.LENGTH_SHORT).show()
                                 }
                                 onDismiss()
                             }
@@ -224,8 +226,8 @@ fun DownloadQualityDialog(
                         ) {
                             Icon(Icons.Rounded.Hd, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
                             Column(modifier = Modifier.weight(1f)) {
-                                Text("Video 1080p Full HD", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
-                                Text("Excelente calidad visual para pantallas grandes", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(stringResource(R.string.video_1080), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                                Text(stringResource(R.string.video_1080_sub), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
@@ -233,14 +235,14 @@ fun DownloadQualityDialog(
                     Surface(
                         onClick = {
                             isDownloading = true
-                            onDownloadStarted("Iniciando descarga de Video 720p...")
+                            onDownloadStarted(context.getString(R.string.video_dl_720))
                             scope.launch {
                                 val res = downloadEngine.downloadVideo(track, quality = "720p") { p -> progressPercent = p }
                                 isDownloading = false
                                 if (res != null) {
-                                    Toast.makeText(context, "Video 720p descargado", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, context.getString(R.string.video_720_ok), Toast.LENGTH_SHORT).show()
                                 } else {
-                                    Toast.makeText(context, "Error al descargar video", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, context.getString(R.string.video_video_fail), Toast.LENGTH_SHORT).show()
                                 }
                                 onDismiss()
                             }
@@ -256,8 +258,8 @@ fun DownloadQualityDialog(
                         ) {
                             Icon(Icons.Rounded.Movie, contentDescription = null, tint = MaterialTheme.colorScheme.tertiary)
                             Column(modifier = Modifier.weight(1f)) {
-                                Text("Video 720p HD", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
-                                Text("Ahorro de almacenamiento y datos", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(stringResource(R.string.video_720), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                                Text(stringResource(R.string.video_720_sub), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
@@ -267,7 +269,7 @@ fun DownloadQualityDialog(
         confirmButton = {
             if (!isDownloading) {
                 TextButton(onClick = onDismiss) {
-                    Text("Cancelar")
+                    Text(stringResource(R.string.common_cancel))
                 }
             }
         }
@@ -341,7 +343,7 @@ fun MixArtworkPlaceholder(modifier: Modifier = Modifier) {
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                text = "Mix sin portada",
+                text = stringResource(R.string.video_mix_noart),
                 style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 1.sp),
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
             )
@@ -377,7 +379,7 @@ private fun QuickAddToQueueButton(
         Box(contentAlignment = Alignment.Center) {
             Icon(
                 imageVector = Icons.AutoMirrored.Rounded.PlaylistAdd,
-                contentDescription = "Añadir a la cola",
+                contentDescription = stringResource(R.string.pld_add_queue),
                 tint = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.size(16.dp)
             )
@@ -498,7 +500,7 @@ fun VideoCardEnhanced(
                         shape = RoundedCornerShape(6.dp)
                     ) {
                         Text(
-                            text = "PRÓXIMAMENTE",
+                            text = stringResource(R.string.video_soon),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSecondaryContainer,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
@@ -518,7 +520,7 @@ fun VideoCardEnhanced(
                         ) {
                             PulsingLiveDot()
                             Text(
-                                text = "EN VIVO",
+                                text = stringResource(R.string.video_live),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onErrorContainer,
                                 fontWeight = FontWeight.Black,
@@ -550,7 +552,7 @@ fun VideoCardEnhanced(
                         .padding(8.dp),
                     onClick = {
                         onAddToQueue.invoke(video)
-                        Toast.makeText(context, "Añadido a la cola", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, context.getString(R.string.pld_added), Toast.LENGTH_SHORT).show()
                     }
                 )
             }
@@ -664,13 +666,14 @@ fun VideoCardEnhanced(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
+                val viewsSuffix = stringResource(R.string.video_views)
                 Text(
                     text = buildString {
                         append(video.artist)
                         if (video.viewCount > 0) {
                             append(" • ")
                             append(formatViewCount(video.viewCount))
-                            append(" vistas")
+                            append(viewsSuffix)
                         }
                         if (!video.publishedTimeText.isNullOrBlank()) {
                             append(" • ")
@@ -691,7 +694,7 @@ fun VideoCardEnhanced(
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.MoreVert,
-                        contentDescription = "Más opciones",
+                        contentDescription = stringResource(R.string.common_more_options),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(18.dp)
                     )
@@ -701,7 +704,7 @@ fun VideoCardEnhanced(
                     onDismissRequest = { showMenu = false }
                 ) {
                     DropdownMenuItem(
-                        text = { Text(if (isFavorite) "Favorito" else "Añadir a favoritos") },
+                        text = { Text(if (isFavorite) stringResource(R.string.common_favorite) else stringResource(R.string.player_add_fav)) },
                         leadingIcon = {
                             Icon(
                                 imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
@@ -719,43 +722,43 @@ fun VideoCardEnhanced(
                     )
                     if (onPlayRadio != null) {
                         DropdownMenuItem(
-                            text = { Text("Iniciar radio") },
+                            text = { Text(stringResource(R.string.pld_start_radio)) },
                             leadingIcon = {
                                 Icon(Icons.Rounded.Radio, contentDescription = null)
                             },
                             onClick = {
                                 showMenu = false
                                 onPlayRadio.invoke(video)
-                                Toast.makeText(context, "Iniciando radio de ${video.artist}...", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, context.getString(R.string.pld_starting_radio_artist, video.artist), Toast.LENGTH_SHORT).show()
                             }
                         )
                     }
                     DropdownMenuItem(
-                        text = { Text("Reproducir a continuación") },
+                        text = { Text(stringResource(R.string.pld_play_next)) },
                         leadingIcon = {
                             Icon(Icons.AutoMirrored.Rounded.QueueMusic, contentDescription = null)
                         },
                         onClick = {
                             showMenu = false
                             onPlayNext?.invoke(video)
-                            Toast.makeText(context, "Se reproducirá a continuación", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, context.getString(R.string.pld_will_play_next), Toast.LENGTH_SHORT).show()
                         }
                     )
                     DropdownMenuItem(
-                        text = { Text("Añadir a la cola") },
+                        text = { Text(stringResource(R.string.pld_add_queue)) },
                         leadingIcon = {
                             Icon(Icons.AutoMirrored.Rounded.PlaylistAdd, contentDescription = null)
                         },
                         onClick = {
                             showMenu = false
                             onAddToQueue?.invoke(video)
-                            Toast.makeText(context, "Añadido a la cola", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, context.getString(R.string.pld_added), Toast.LENGTH_SHORT).show()
                         }
                     )
                     val downloadEngine = remember { DownloadEngine.getInstance(context) }
                     val isDownloaded = remember(video.id) { downloadEngine.isDownloaded(video.videoId ?: video.id) }
                     DropdownMenuItem(
-                        text = { Text(if (isDownloaded) "Descargado (Guardado)" else "Descargar") },
+                        text = { Text(if (isDownloaded) stringResource(R.string.video_downloaded_saved) else stringResource(R.string.common_download)) },
                         leadingIcon = {
                             Icon(
                                 if (isDownloaded) Icons.Rounded.DownloadDone else Icons.Rounded.Download,
@@ -767,14 +770,14 @@ fun VideoCardEnhanced(
                             showMenu = false
                             if (isDownloaded) {
                                 downloadEngine.deleteDownloadedTrack(video.videoId ?: video.id)
-                                Toast.makeText(context, "Eliminado de descargas", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, context.getString(R.string.pld_track_removed_dl), Toast.LENGTH_SHORT).show()
                             } else {
                                 showDownloadDialog = true
                             }
                         }
                     )
                     DropdownMenuItem(
-                        text = { Text("Más opciones") },
+                        text = { Text(stringResource(R.string.common_more_options)) },
                         leadingIcon = { Icon(Icons.Rounded.MoreVert, contentDescription = null) },
                         onClick = {
                             showMenu = false
@@ -890,7 +893,7 @@ fun VideoCardCompact(
         ) {
             Icon(
                 imageVector = Icons.Default.MoreVert,
-                contentDescription = "Opciones",
+                contentDescription = stringResource(R.string.common_options),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(18.dp)
             )
@@ -959,7 +962,7 @@ fun CompactVideoCard(
                         .padding(6.dp),
                     onClick = {
                         onAddToQueue.invoke(video)
-                        Toast.makeText(context, "Añadido a la cola", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, context.getString(R.string.pld_added), Toast.LENGTH_SHORT).show()
                     }
                 )
             }
@@ -1037,7 +1040,7 @@ fun VideoCardGrid(
                         .padding(6.dp)
                 ) {
                     Text(
-                        text = if (video.isLive) "EN VIVO" else formatDuration(video.durationSeconds),
+                        text = if (video.isLive) stringResource(R.string.video_live) else formatDuration(video.durationSeconds),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontWeight = FontWeight.SemiBold,
@@ -1133,7 +1136,7 @@ fun VideoQuickActionsSheetTSuki(
             ) {
                 Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Icon(Icons.Filled.Favorite, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
-                    Text("Me gusta • Recomendar más videos así", style = MaterialTheme.typography.bodyLarge)
+                    Text(stringResource(R.string.video_like_hint), style = MaterialTheme.typography.bodyLarge)
                 }
             }
 
@@ -1150,7 +1153,7 @@ fun VideoQuickActionsSheetTSuki(
             ) {
                 Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Icon(Icons.Outlined.Visibility, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(22.dp))
-                    Text("Marcar como visto", style = MaterialTheme.typography.bodyLarge)
+                    Text(stringResource(R.string.video_seen), style = MaterialTheme.typography.bodyLarge)
                 }
             }
 
@@ -1168,7 +1171,7 @@ fun VideoQuickActionsSheetTSuki(
             ) {
                 Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Icon(Icons.Default.MoreVert, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(22.dp))
-                    Text("No me interesa • Ocultar de mi feed", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(R.string.video_hide), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.error)
                 }
             }
 
@@ -1184,7 +1187,7 @@ fun VideoQuickActionsSheetTSuki(
                 ) {
                     Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Icon(Icons.Rounded.VideoLibrary, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(22.dp))
-                        Text("Ir al canal de ${video.artist}", style = MaterialTheme.typography.bodyLarge)
+                        Text(stringResource(R.string.video_go_channel, video.artist), style = MaterialTheme.typography.bodyLarge)
                     }
                 }
             }
@@ -1195,7 +1198,7 @@ fun VideoQuickActionsSheetTSuki(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(14.dp)
             ) {
-                Text("Cerrar")
+                Text(stringResource(R.string.common_close))
             }
         }
     }

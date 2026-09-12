@@ -212,7 +212,7 @@ fun QuickResumeLayout(
             if (hasTrack && bitmap != null) {
                 Image(
                     provider = ImageProvider(bitmap),
-                    contentDescription = "TSuki Cover",
+                    contentDescription = context.getString(R.string.common_cover),
                     modifier = GlanceModifier.fillMaxSize().cornerRadius(18.dp)
                 )
                 Box(
@@ -264,7 +264,7 @@ fun QuickResumeLayout(
                 ) {
                     Image(
                         provider = ImageProvider(if (isPlaying) R.drawable.widget_ic_pause else R.drawable.widget_ic_play),
-                        contentDescription = if (isPlaying) "Pausar" else "Reproducir",
+                        contentDescription = if (isPlaying) context.getString(R.string.player_pause) else context.getString(R.string.common_play),
                         modifier = GlanceModifier.size(16.dp),
                         colorFilter = ColorFilter.tint(TSukiGlancePalette.background())
                     )
@@ -308,7 +308,7 @@ fun SquarePlayerLayout(
                 if (bitmap != null) {
                     Image(
                         provider = ImageProvider(bitmap),
-                        contentDescription = "Portada",
+                        contentDescription = context.getString(R.string.common_cover),
                         modifier = GlanceModifier.fillMaxSize().cornerRadius(16.dp)
                     )
                 } else {
@@ -374,7 +374,7 @@ fun SquarePlayerLayout(
                     ) {
                         Image(
                             provider = ImageProvider(if (isFavorite) R.drawable.widget_ic_favorite else R.drawable.widget_ic_favorite_border),
-                            contentDescription = "Favorito",
+                            contentDescription = context.getString(R.string.common_favorite),
                             modifier = GlanceModifier.size(16.dp),
                             colorFilter = ColorFilter.tint(
                                 if (isFavorite) TSukiGlancePalette.HeartRed else TSukiGlancePalette.textSub()
@@ -399,7 +399,7 @@ fun SquarePlayerLayout(
                     )
                 )
                 Text(
-                    text = if (hasTrack) artist.ifBlank { "Toca para abrir" } else "Toca para reproducir",
+                    text = if (hasTrack) artist.ifBlank { context.getString(R.string.wd_tap_open) } else context.getString(R.string.wd_tap_play),
                     maxLines = 1,
                     style = TextStyle(
                         color = GlanceTheme.colors.onSurfaceVariant,
@@ -454,7 +454,7 @@ fun SquarePlayerLayout(
                 ) {
                     Image(
                         provider = ImageProvider(R.drawable.widget_ic_shuffle),
-                        contentDescription = "Aleatorio",
+                        contentDescription = context.getString(R.string.common_shuffle),
                         modifier = GlanceModifier.size(17.dp),
                         colorFilter = ColorFilter.tint(
                             if (shuffle) primaryColor else GlanceTheme.colors.onSurfaceVariant
@@ -468,7 +468,7 @@ fun SquarePlayerLayout(
                 ) {
                     Image(
                         provider = ImageProvider(R.drawable.widget_ic_prev),
-                        contentDescription = "Anterior",
+                        contentDescription = context.getString(R.string.player_previous),
                         modifier = GlanceModifier.size(19.dp),
                         colorFilter = ColorFilter.tint(GlanceTheme.colors.onSurface)
                     )
@@ -480,7 +480,7 @@ fun SquarePlayerLayout(
                 ) {
                     Image(
                         provider = ImageProvider(if (isPlaying) R.drawable.widget_ic_pause else R.drawable.widget_ic_play),
-                        contentDescription = if (isPlaying) "Pausar" else "Reproducir",
+                        contentDescription = if (isPlaying) context.getString(R.string.player_pause) else context.getString(R.string.common_play),
                         modifier = GlanceModifier.size(20.dp),
                         colorFilter = ColorFilter.tint(TSukiGlancePalette.background())
                     )
@@ -492,7 +492,7 @@ fun SquarePlayerLayout(
                 ) {
                     Image(
                         provider = ImageProvider(R.drawable.widget_ic_next),
-                        contentDescription = "Siguiente",
+                        contentDescription = context.getString(R.string.common_next),
                         modifier = GlanceModifier.size(19.dp),
                         colorFilter = ColorFilter.tint(GlanceTheme.colors.onSurface)
                     )
@@ -535,7 +535,7 @@ fun MiniPlayerLayout(
                 if (bitmap != null) {
                     Image(
                         provider = ImageProvider(bitmap),
-                        contentDescription = "Portada",
+                        contentDescription = context.getString(R.string.common_cover),
                         modifier = GlanceModifier.fillMaxSize().cornerRadius(14.dp)
                     )
                 } else {
@@ -578,7 +578,7 @@ fun MiniPlayerLayout(
                     )
                 }
                 Text(
-                    text = if (hasTrack) artist.ifBlank { "Toca para abrir" } else "Toca para reproducir",
+                    text = if (hasTrack) artist.ifBlank { context.getString(R.string.wd_tap_open) } else context.getString(R.string.wd_tap_play),
                     maxLines = 1,
                     style = TextStyle(
                         color = GlanceTheme.colors.onSurfaceVariant,
@@ -604,7 +604,7 @@ fun MiniPlayerLayout(
             ) {
                 Image(
                     provider = ImageProvider(if (isFavorite) R.drawable.widget_ic_favorite else R.drawable.widget_ic_favorite_border),
-                    contentDescription = "Favorito",
+                    contentDescription = context.getString(R.string.common_favorite),
                     modifier = GlanceModifier.size(17.dp),
                     colorFilter = ColorFilter.tint(
                         if (isFavorite) TSukiGlancePalette.HeartRed else GlanceTheme.colors.onSurfaceVariant
@@ -618,7 +618,7 @@ fun MiniPlayerLayout(
             ) {
                 Image(
                     provider = ImageProvider(R.drawable.widget_ic_prev),
-                    contentDescription = "Anterior",
+                    contentDescription = context.getString(R.string.player_previous),
                     modifier = GlanceModifier.size(19.dp),
                     colorFilter = ColorFilter.tint(GlanceTheme.colors.onSurface)
                 )
@@ -630,7 +630,7 @@ fun MiniPlayerLayout(
             ) {
                 Image(
                     provider = ImageProvider(if (isPlaying) R.drawable.widget_ic_pause else R.drawable.widget_ic_play),
-                    contentDescription = if (isPlaying) "Pausar" else "Reproducir",
+                    contentDescription = if (isPlaying) context.getString(R.string.player_pause) else context.getString(R.string.common_play),
                     modifier = GlanceModifier.size(20.dp),
                     colorFilter = ColorFilter.tint(TSukiGlancePalette.background())
                 )
@@ -642,7 +642,7 @@ fun MiniPlayerLayout(
             ) {
                 Image(
                     provider = ImageProvider(R.drawable.widget_ic_next),
-                    contentDescription = "Siguiente",
+                    contentDescription = context.getString(R.string.common_next),
                     modifier = GlanceModifier.size(19.dp),
                     colorFilter = ColorFilter.tint(GlanceTheme.colors.onSurface)
                 )
@@ -688,7 +688,7 @@ fun NowPlayingLayout(
                 if (artwork != null) {
                     Image(
                         provider = ImageProvider(artwork),
-                        contentDescription = "Portada",
+                        contentDescription = context.getString(R.string.common_cover),
                         modifier = GlanceModifier.fillMaxSize().cornerRadius(18.dp)
                     )
                 } else {
@@ -746,7 +746,7 @@ fun NowPlayingLayout(
                             )
                             Spacer(modifier = GlanceModifier.width(3.dp))
                             Text(
-                                text = if (isPlaying) "TSuki • En reproducción" else "TSuki • En pausa",
+                                text = if (isPlaying) context.getString(R.string.wd_playing) else context.getString(R.string.wd_paused),
                                 style = TextStyle(
                                     color = primaryColor,
                                     fontSize = 10.sp,
@@ -764,7 +764,7 @@ fun NowPlayingLayout(
                             )
                         )
                         Text(
-                            text = if (hasTrack) artist.ifBlank { "Toca para abrir" } else "Toca para reproducir",
+                            text = if (hasTrack) artist.ifBlank { context.getString(R.string.wd_tap_open) } else context.getString(R.string.wd_tap_play),
                             maxLines = 1,
                             style = TextStyle(
                                 color = GlanceTheme.colors.onSurfaceVariant,
@@ -782,7 +782,7 @@ fun NowPlayingLayout(
                     ) {
                         Image(
                             provider = ImageProvider(if (isFavorite) R.drawable.widget_ic_favorite else R.drawable.widget_ic_favorite_border),
-                            contentDescription = "Favorito",
+                            contentDescription = context.getString(R.string.common_favorite),
                             modifier = GlanceModifier.size(19.dp),
                             colorFilter = ColorFilter.tint(
                                 if (isFavorite) TSukiGlancePalette.HeartRed else GlanceTheme.colors.onSurfaceVariant
@@ -836,7 +836,7 @@ fun NowPlayingLayout(
                     ) {
                         Image(
                             provider = ImageProvider(R.drawable.widget_ic_shuffle),
-                            contentDescription = "Aleatorio",
+                            contentDescription = context.getString(R.string.common_shuffle),
                             modifier = GlanceModifier.size(18.dp),
                             colorFilter = ColorFilter.tint(
                                 if (shuffle) primaryColor else GlanceTheme.colors.onSurfaceVariant
@@ -850,7 +850,7 @@ fun NowPlayingLayout(
                     ) {
                         Image(
                             provider = ImageProvider(R.drawable.widget_ic_prev),
-                            contentDescription = "Anterior",
+                            contentDescription = context.getString(R.string.player_previous),
                             modifier = GlanceModifier.size(20.dp),
                             colorFilter = ColorFilter.tint(GlanceTheme.colors.onSurface)
                         )
@@ -862,7 +862,7 @@ fun NowPlayingLayout(
                     ) {
                         Image(
                             provider = ImageProvider(if (isPlaying) R.drawable.widget_ic_pause else R.drawable.widget_ic_play),
-                            contentDescription = if (isPlaying) "Pausar" else "Reproducir",
+                            contentDescription = if (isPlaying) context.getString(R.string.player_pause) else context.getString(R.string.common_play),
                             modifier = GlanceModifier.size(22.dp),
                             colorFilter = ColorFilter.tint(TSukiGlancePalette.background())
                         )
@@ -874,7 +874,7 @@ fun NowPlayingLayout(
                     ) {
                         Image(
                             provider = ImageProvider(R.drawable.widget_ic_next),
-                            contentDescription = "Siguiente",
+                            contentDescription = context.getString(R.string.common_next),
                             modifier = GlanceModifier.size(20.dp),
                             colorFilter = ColorFilter.tint(GlanceTheme.colors.onSurface)
                         )
@@ -886,7 +886,7 @@ fun NowPlayingLayout(
                     ) {
                         Image(
                             provider = ImageProvider(R.drawable.widget_ic_repeat),
-                            contentDescription = "Repetir",
+                            contentDescription = context.getString(R.string.player_repeat),
                             modifier = GlanceModifier.size(18.dp),
                             colorFilter = ColorFilter.tint(
                                 if (repeatMode != 0) primaryColor else GlanceTheme.colors.onSurfaceVariant
@@ -940,7 +940,7 @@ fun LibraryHeroLayout(
                     if (artwork != null) {
                         Image(
                             provider = ImageProvider(artwork),
-                            contentDescription = "Portada",
+                            contentDescription = context.getString(R.string.common_cover),
                             modifier = GlanceModifier.fillMaxSize().cornerRadius(18.dp)
                         )
                     } else {
@@ -987,7 +987,7 @@ fun LibraryHeroLayout(
                         )
                         Spacer(modifier = GlanceModifier.width(4.dp))
                         Text(
-                            text = if (isPlaying) "TSuki • En reproducción" else "TSuki • Dashboard",
+                            text = if (isPlaying) context.getString(R.string.wd_playing) else context.getString(R.string.wd_dashboard),
                             style = TextStyle(
                                 color = primaryColor,
                                 fontSize = 11.sp,
@@ -1005,7 +1005,7 @@ fun LibraryHeroLayout(
                         )
                     )
                     Text(
-                        text = if (hasTrack) artist.ifBlank { "Toca para abrir" } else "Música en alta fidelidad",
+                        text = if (hasTrack) artist.ifBlank { context.getString(R.string.wd_tap_open) } else context.getString(R.string.wd_hifi),
                         maxLines = 1,
                         style = TextStyle(
                             color = GlanceTheme.colors.onSurfaceVariant,
@@ -1022,7 +1022,7 @@ fun LibraryHeroLayout(
                         ) {
                             Image(
                                 provider = ImageProvider(if (isPlaying) R.drawable.widget_ic_pause else R.drawable.widget_ic_play),
-                                contentDescription = if (isPlaying) "Pausar" else "Reproducir",
+                                contentDescription = if (isPlaying) context.getString(R.string.player_pause) else context.getString(R.string.common_play),
                                 modifier = GlanceModifier.size(20.dp),
                                 colorFilter = ColorFilter.tint(TSukiGlancePalette.background())
                             )
@@ -1034,7 +1034,7 @@ fun LibraryHeroLayout(
                         ) {
                             Image(
                                 provider = ImageProvider(R.drawable.widget_ic_prev),
-                                contentDescription = "Anterior",
+                                contentDescription = context.getString(R.string.player_previous),
                                 modifier = GlanceModifier.size(19.dp),
                                 colorFilter = ColorFilter.tint(GlanceTheme.colors.onSurface)
                             )
@@ -1045,7 +1045,7 @@ fun LibraryHeroLayout(
                         ) {
                             Image(
                                 provider = ImageProvider(R.drawable.widget_ic_next),
-                                contentDescription = "Siguiente",
+                                contentDescription = context.getString(R.string.common_next),
                                 modifier = GlanceModifier.size(19.dp),
                                 colorFilter = ColorFilter.tint(GlanceTheme.colors.onSurface)
                             )
@@ -1057,7 +1057,7 @@ fun LibraryHeroLayout(
                         ) {
                             Image(
                                 provider = ImageProvider(if (isFavorite) R.drawable.widget_ic_favorite else R.drawable.widget_ic_favorite_border),
-                                contentDescription = "Favorito",
+                                contentDescription = context.getString(R.string.common_favorite),
                                 modifier = GlanceModifier.size(18.dp),
                                 colorFilter = ColorFilter.tint(
                                     if (isFavorite) TSukiGlancePalette.HeartRed else GlanceTheme.colors.onSurfaceVariant
@@ -1070,7 +1070,7 @@ fun LibraryHeroLayout(
                         ) {
                             Image(
                                 provider = ImageProvider(R.drawable.widget_ic_shuffle),
-                                contentDescription = "Aleatorio",
+                                contentDescription = context.getString(R.string.common_shuffle),
                                 modifier = GlanceModifier.size(17.dp),
                                 colorFilter = ColorFilter.tint(
                                     if (shuffle) primaryColor else GlanceTheme.colors.onSurfaceVariant
@@ -1130,13 +1130,13 @@ fun LibraryHeroLayout(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Image(
                             provider = ImageProvider(R.drawable.widget_ic_favorite),
-                            contentDescription = "Likes",
+                            contentDescription = context.getString(R.string.common_likes),
                             modifier = GlanceModifier.size(14.dp),
                             colorFilter = ColorFilter.tint(TSukiGlancePalette.HeartRed)
                         )
                         Spacer(modifier = GlanceModifier.width(4.dp))
                         Text(
-                            text = "Likes",
+                            text = context.getString(R.string.common_likes),
                             style = TextStyle(
                                 color = GlanceTheme.colors.onSurface,
                                 fontSize = 11.sp,
@@ -1160,13 +1160,13 @@ fun LibraryHeroLayout(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Image(
                             provider = ImageProvider(R.drawable.widget_ic_library),
-                            contentDescription = "Biblioteca",
+                            contentDescription = context.getString(R.string.lib_title),
                             modifier = GlanceModifier.size(14.dp),
                             colorFilter = ColorFilter.tint(primaryColor)
                         )
                         Spacer(modifier = GlanceModifier.width(4.dp))
                         Text(
-                            text = "Biblioteca",
+                            text = context.getString(R.string.lib_title),
                             style = TextStyle(
                                 color = GlanceTheme.colors.onSurface,
                                 fontSize = 11.sp,
@@ -1190,13 +1190,13 @@ fun LibraryHeroLayout(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Image(
                             provider = ImageProvider(R.drawable.widget_ic_search),
-                            contentDescription = "Buscar",
+                            contentDescription = context.getString(R.string.common_search),
                             modifier = GlanceModifier.size(14.dp),
                             colorFilter = ColorFilter.tint(GlanceTheme.colors.onSurfaceVariant)
                         )
                         Spacer(modifier = GlanceModifier.width(4.dp))
                         Text(
-                            text = "Buscar",
+                            text = context.getString(R.string.common_search),
                             style = TextStyle(
                                 color = GlanceTheme.colors.onSurface,
                                 fontSize = 11.sp,

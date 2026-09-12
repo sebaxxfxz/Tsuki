@@ -64,9 +64,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.tsuki.R
 import com.example.tsuki.together.MusicTogetherConnectionMode
 import com.example.tsuki.together.MusicTogetherPreferences
 import com.example.tsuki.together.MusicTogetherRepository
@@ -107,8 +109,8 @@ fun TogetherScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Escuchar juntos", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Atrás") } },
+                title = { Text(stringResource(R.string.set_tool_together), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back)) } },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background, titleContentColor = MaterialTheme.colorScheme.onBackground)
             )
         },
@@ -125,18 +127,18 @@ fun TogetherScreen(
                         shareText = s.joinLink, localAddressHint = s.localAddressHint, port = s.port, settings = s.settings,
                         participants = s.roomState?.participants ?: emptyList(),
                         onCopy = { clipboard.setText(AnnotatedString(s.joinLink)) },
-                        onShare = { shareText(context, "Únete a mi sesión: ${s.joinLink}") },
+                        onShare = { shareText(context, context.getString(R.string.tog_join_link, s.joinLink)) },
                         onUpdateSettings = { repository.updateSettings(it) }, onLeave = { repository.leaveSession() }
                     )
                 }
                 is TogetherSessionState.HostingOnline -> item {
                     OnlineHostingCard(code = s.code, settings = s.settings, participants = s.roomState?.participants ?: emptyList(),
-                        onCopy = { clipboard.setText(AnnotatedString(s.code)) }, onShare = { shareText(context, "Únete con el código ${s.code}") },
+                        onCopy = { clipboard.setText(AnnotatedString(s.code)) }, onShare = { shareText(context, context.getString(R.string.tog_join_code, s.code)) },
                         onUpdateSettings = { repository.updateSettings(it) }, onKick = { repository.kickParticipant(it) }, onBan = { repository.banParticipant(it) },
                         onTransfer = { repository.transferHostOwnership(it) }, onApprove = { id, ok -> repository.approveParticipant(id, ok) }, onLeave = { repository.leaveSession() })
                 }
-                is TogetherSessionState.Joining -> item { JoiningCard("Conectando por LAN…", onLeave = { repository.leaveSession() }) }
-                is TogetherSessionState.JoiningOnline -> item { JoiningCard("Conectando…", onLeave = { repository.leaveSession() }) }
+                is TogetherSessionState.Joining -> item { JoiningCard(stringResource(R.string.tog_joining_lan), onLeave = { repository.leaveSession() }) }
+                is TogetherSessionState.JoiningOnline -> item { JoiningCard(stringResource(R.string.tog_connecting), onLeave = { repository.leaveSession() }) }
                 is TogetherSessionState.Joined -> item { JoinedCard(state = s, onApprove = { id, ok -> repository.approveParticipant(id, ok) }, onLeave = { repository.leaveSession() }) }
                 is TogetherSessionState.Error -> item { ErrorCard(s.message) }
                 TogetherSessionState.Idle -> item { HeroCard() }
@@ -171,25 +173,25 @@ fun TogetherScreen(
         var input by remember(showJoinDialog) { mutableStateOf(joinPrefill) }
         AlertDialog(
             onDismissRequest = { showJoinDialog = false },
-            title = { Text(if (joinMode == MusicTogetherConnectionMode.LAN) "Unirse por LAN" else "Unirse online") },
+            title = { Text(if (joinMode == MusicTogetherConnectionMode.LAN) stringResource(R.string.tog_join_lan) else stringResource(R.string.tog_join_online)) },
             text = {
                 Column {
-                    Text(if (joinMode == MusicTogetherConnectionMode.LAN) "Pega el enlace tsuki://together del anfitrión" else "Introduce el código de sala", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(if (joinMode == MusicTogetherConnectionMode.LAN) stringResource(R.string.tog_paste_link) else stringResource(R.string.tog_enter_code), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(12.dp))
                     OutlinedTextField(value = input, onValueChange = { input = it }, singleLine = true, modifier = Modifier.fillMaxWidth(), placeholder = { Text(if (joinMode == MusicTogetherConnectionMode.LAN) "tsuki://together?host=..." else "ABC123") })
                 }
             },
             confirmButton = {
-                Button(onClick = { scope.launch { repository.joinSession(joinMode, input.trim(), repository.currentDisplayName()) }; showJoinDialog = false }, enabled = input.isNotBlank()) { Text("Unirse") }
+                Button(onClick = { scope.launch { repository.joinSession(joinMode, input.trim(), repository.currentDisplayName()) }; showJoinDialog = false }, enabled = input.isNotBlank()) { Text(stringResource(R.string.tog_join)) }
             },
-            dismissButton = { TextButton(onClick = { showJoinDialog = false }) { Text("Cancelar") } }
+            dismissButton = { TextButton(onClick = { showJoinDialog = false }) { Text(stringResource(R.string.common_cancel)) } }
         )
     }
 }
 
 private fun shareText(context: android.content.Context, text: String) {
     val intent = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, text) }
-    context.startActivity(Intent.createChooser(intent, "Compartir"))
+    context.startActivity(Intent.createChooser(intent, context.getString(R.string.common_share)))
 }
 
 @Composable
@@ -206,13 +208,13 @@ private fun HeroCard() {
             ) { Icon(Icons.Rounded.Group, null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(32.dp)) }
             Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
-                Text("Música sincronizada", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                Text(stringResource(R.string.tog_synced), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onPrimaryContainer)
                 Spacer(Modifier.height(4.dp))
-                Text("Crea una sala LAN y escuchad la misma cola al milisegundo.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.82f))
+                Text(stringResource(R.string.tog_synced_sub), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.82f))
                 Spacer(Modifier.height(10.dp))
                 AssistChip(
                     onClick = {},
-                    label = { Text("Sin internet · Solo WiFi") },
+                    label = { Text(stringResource(R.string.tog_no_internet)) },
                     leadingIcon = { Icon(Icons.Rounded.Wifi, null, Modifier.size(14.dp)) },
                     colors = AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.12f), labelColor = MaterialTheme.colorScheme.onPrimaryContainer)
                 )
@@ -253,8 +255,8 @@ private fun ModeCard(
         shape = RoundedCornerShape(24.dp)
     ) {
         Column(Modifier.padding(18.dp)) {
-            Text("Nueva sesión", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Text("Elige cómo quieres conectar", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.tog_new_session), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(stringResource(R.string.tog_choose_how), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(14.dp))
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                 SegmentedButton(
@@ -284,7 +286,7 @@ private fun ModeCard(
                     modifier = Modifier.weight(1f).height(48.dp),
                     enabled = selected == MusicTogetherConnectionMode.LAN,
                     shape = RoundedCornerShape(14.dp)
-                ) { Text(if (selected == MusicTogetherConnectionMode.ONLINE) "Coming soon" else "Ser anfitrión", fontWeight = FontWeight.SemiBold) }
+                ) { Text(if (selected == MusicTogetherConnectionMode.ONLINE) "Coming soon" else stringResource(R.string.tog_host), fontWeight = FontWeight.SemiBold) }
                 FilledTonalButton(
                     onClick = { if (selected == MusicTogetherConnectionMode.LAN) onJoin(selected) },
                     modifier = Modifier.weight(1f).height(48.dp),
@@ -293,11 +295,11 @@ private fun ModeCard(
                 ) {
                     Icon(Icons.Rounded.PersonAdd, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text(if (selected == MusicTogetherConnectionMode.ONLINE) "Coming soon" else "Unirse", fontWeight = FontWeight.SemiBold)
+                    Text(if (selected == MusicTogetherConnectionMode.ONLINE) "Coming soon" else stringResource(R.string.tog_join), fontWeight = FontWeight.SemiBold)
                 }
             }
             Spacer(Modifier.height(8.dp))
-            Text("Funciona sin datos · todos en la misma WiFi", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.tog_host_sub), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -317,15 +319,15 @@ private fun IdentityCard(prefs: MusicTogetherPreferences, onChange: (String) -> 
                 }
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("Tu nombre", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Text("Así te verán los demás", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(stringResource(R.string.tog_name), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(R.string.tog_name_sub), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             Spacer(Modifier.height(14.dp))
             OutlinedTextField(
                 value = name, onValueChange = { name = it }, singleLine = true, modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Ej. Seba") },
-                trailingIcon = { TextButton(onClick = { onChange(name) }, enabled = name.isNotBlank() && name != prefs.displayName) { Text("Guardar") } },
+                placeholder = { Text(stringResource(R.string.tog_name_hint)) },
+                trailingIcon = { TextButton(onClick = { onChange(name) }, enabled = name.isNotBlank() && name != prefs.displayName) { Text(stringResource(R.string.common_save)) } },
                 shape = RoundedCornerShape(14.dp)
             )
         }
@@ -347,23 +349,23 @@ private fun HostPrefsCard(
         shape = RoundedCornerShape(24.dp)
     ) {
         Column(Modifier.padding(18.dp)) {
-            Text("Preferencias de anfitrión", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            Text("Se aplican al crear la sala", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.tog_host_prefs), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(stringResource(R.string.tog_host_prefs_sub), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(14.dp))
             OutlinedTextField(
                 value = port, onValueChange = { port = it.filter(Char::isDigit).take(5) }, singleLine = true, modifier = Modifier.fillMaxWidth(),
-                label = { Text("Puerto LAN") }, supportingText = { Text("Actual: ${prefs.port} · 1024—65535") },
+                label = { Text(stringResource(R.string.tog_port)) }, supportingText = { Text(stringResource(R.string.tog_port_current, prefs.port)) },
                 trailingIcon = {
-                    FilledTonalButton(onClick = { onPortChange(port) }, enabled = port.toIntOrNull()?.let { it in 1024..65535 && it != prefs.port } == true, shape = RoundedCornerShape(10.dp)) { Text("Aplicar") }
+                    FilledTonalButton(onClick = { onPortChange(port) }, enabled = port.toIntOrNull()?.let { it in 1024..65535 && it != prefs.port } == true, shape = RoundedCornerShape(10.dp)) { Text(stringResource(R.string.tog_apply)) }
                 },
                 shape = RoundedCornerShape(14.dp)
             )
             Spacer(Modifier.height(6.dp))
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
             Spacer(Modifier.height(6.dp))
-            ToggleRow("Añadir canciones", "Invitados pueden encolar", prefs.allowGuestsToAddTracks, onToggleAdd)
-            ToggleRow("Controlar reproducción", "Play / pause / skip", prefs.allowGuestsToControlPlayback, onToggleControl)
-            ToggleRow("Aprobar invitados", "Anfitrión acepta cada unión", prefs.requireHostApprovalToJoin, onToggleApproval)
+            ToggleRow(stringResource(R.string.tog_add_songs), stringResource(R.string.tog_guests_queue), prefs.allowGuestsToAddTracks, onToggleAdd)
+            ToggleRow(stringResource(R.string.tog_control), stringResource(R.string.tog_control_sub), prefs.allowGuestsToControlPlayback, onToggleControl)
+            ToggleRow(stringResource(R.string.tog_approve), stringResource(R.string.tog_approve_sub), prefs.requireHostApprovalToJoin, onToggleApproval)
         }
     }
 }
@@ -385,9 +387,9 @@ private fun ShareRow(text: String, masked: String?, onCopy: () -> Unit, onShare:
         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(masked ?: text, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, maxLines = 2, modifier = Modifier.weight(1f))
             Spacer(Modifier.width(8.dp))
-            IconButton(onClick = onCopy, modifier = Modifier.size(36.dp).clip(CircleShape).background(MaterialTheme.colorScheme.secondaryContainer)) { Icon(Icons.Rounded.ContentCopy, "Copiar", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer) }
+            IconButton(onClick = onCopy, modifier = Modifier.size(36.dp).clip(CircleShape).background(MaterialTheme.colorScheme.secondaryContainer)) { Icon(Icons.Rounded.ContentCopy, stringResource(R.string.common_copy), modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer) }
             Spacer(Modifier.width(6.dp))
-            IconButton(onClick = onShare, modifier = Modifier.size(36.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary)) { Icon(Icons.Rounded.Share, "Compartir", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onPrimary) }
+            IconButton(onClick = onShare, modifier = Modifier.size(36.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary)) { Icon(Icons.Rounded.Share, stringResource(R.string.common_share), modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onPrimary) }
         }
     }
 }
@@ -416,26 +418,26 @@ private fun HostingCard(
                 }
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("Sala LAN activa", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Text(localAddressHint?.let { "$it:$port" } ?: "Esperando invitados…", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(stringResource(R.string.tog_room_active), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(localAddressHint?.let { "$it:$port" } ?: stringResource(R.string.tog_waiting), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Surface(color = MaterialTheme.colorScheme.tertiaryContainer, shape = CircleShape) { Text("${participants.size} conectados", modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onTertiaryContainer) }
+                Surface(color = MaterialTheme.colorScheme.tertiaryContainer, shape = CircleShape) { Text(stringResource(R.string.tog_connected_count, participants.size), modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onTertiaryContainer) }
             }
             Spacer(Modifier.height(14.dp))
             ShareRow(shareText, null, onCopy, onShare)
             Spacer(Modifier.height(6.dp))
-            Text("Comparte este enlace con la misma WiFi", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.tog_share_link), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(14.dp))
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
             Spacer(Modifier.height(12.dp))
-            Text("Permisos", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+            Text(stringResource(R.string.tog_permissions), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.height(6.dp))
-            ToggleRow("Añadir canciones", "Encolar", settings.allowGuestsToAddTracks) { onUpdateSettings(settings.copy(allowGuestsToAddTracks = it)) }
-            ToggleRow("Controlar reproducción", "Play/pause/skip", settings.allowGuestsToControlPlayback) { onUpdateSettings(settings.copy(allowGuestsToControlPlayback = it)) }
-            ToggleRow("Aprobar invitados", "Aceptar manualmente", settings.requireHostApprovalToJoin) { onUpdateSettings(settings.copy(requireHostApprovalToJoin = it)) }
+            ToggleRow(stringResource(R.string.tog_add_songs), stringResource(R.string.tog_queue_verb), settings.allowGuestsToAddTracks) { onUpdateSettings(settings.copy(allowGuestsToAddTracks = it)) }
+            ToggleRow(stringResource(R.string.tog_control), "Play/pause/skip", settings.allowGuestsToControlPlayback) { onUpdateSettings(settings.copy(allowGuestsToControlPlayback = it)) }
+            ToggleRow(stringResource(R.string.tog_approve), stringResource(R.string.tog_manual_approval), settings.requireHostApprovalToJoin) { onUpdateSettings(settings.copy(requireHostApprovalToJoin = it)) }
             if (participants.isNotEmpty()) {
                 Spacer(Modifier.height(12.dp))
-                Text("Participantes", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                Text(stringResource(R.string.tog_participants), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(8.dp))
                 participants.forEach { p ->
                     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -445,14 +447,14 @@ private fun HostingCard(
                         Spacer(Modifier.width(10.dp))
                         Column(Modifier.weight(1f)) {
                             Text(p.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-                            Text(if (p.isHost) "Anfitrión" else if (p.isPending) "Pendiente" else "Invitado", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(if (p.isHost) stringResource(R.string.tog_role_host) else if (p.isPending) stringResource(R.string.tog_role_pending) else stringResource(R.string.tog_role_guest), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         if (p.isHost) Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(8.dp)) { Text("HOST", modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onPrimaryContainer) }
                     }
                 }
             }
             Spacer(Modifier.height(14.dp))
-            FilledTonalButton(onClick = onLeave, modifier = Modifier.fillMaxWidth().height(44.dp), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.filledTonalButtonColors(containerColor = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer)) { Text("Cerrar sala", fontWeight = FontWeight.SemiBold) }
+            FilledTonalButton(onClick = onLeave, modifier = Modifier.fillMaxWidth().height(44.dp), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.filledTonalButtonColors(containerColor = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer)) { Text(stringResource(R.string.tog_close_room), fontWeight = FontWeight.SemiBold) }
         }
     }
 }
@@ -473,36 +475,36 @@ private fun OnlineHostingCard(
 ) {
     Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh), shape = RoundedCornerShape(24.dp)) {
         Column(Modifier.padding(18.dp)) {
-            Text("Sala online", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(stringResource(R.string.tog_online_room), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(8.dp))
             Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(16.dp)) {
                 Column(Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Código", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    Text(stringResource(R.string.tog_code), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
                     Text(code, style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onPrimaryContainer, letterSpacing = androidx.compose.ui.unit.TextUnit.Unspecified)
                 }
             }
             Spacer(Modifier.height(10.dp))
             ShareRow("", code, onCopy, onShare)
             Spacer(Modifier.height(12.dp))
-            ToggleRow("Añadir canciones", "Encolar", settings.allowGuestsToAddTracks) { onUpdateSettings(settings.copy(allowGuestsToAddTracks = it)) }
-            ToggleRow("Controlar reproducción", "Play/pause", settings.allowGuestsToControlPlayback) { onUpdateSettings(settings.copy(allowGuestsToControlPlayback = it)) }
+            ToggleRow(stringResource(R.string.tog_add_songs), stringResource(R.string.tog_queue_verb), settings.allowGuestsToAddTracks) { onUpdateSettings(settings.copy(allowGuestsToAddTracks = it)) }
+            ToggleRow(stringResource(R.string.tog_control), "Play/pause", settings.allowGuestsToControlPlayback) { onUpdateSettings(settings.copy(allowGuestsToControlPlayback = it)) }
             if (participants.isNotEmpty()) {
                 Spacer(Modifier.height(10.dp))
                 participants.forEach { p ->
                     if (p.isPending) Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("${p.name} quiere unirse", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                        TextButton(onClick = { onApprove(p.id, true) }) { Text("Aceptar") }
-                        TextButton(onClick = { onApprove(p.id, false) }) { Text("Rechazar") }
+                        Text(stringResource(R.string.tog_wants_join, p.name), modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                        TextButton(onClick = { onApprove(p.id, true) }) { Text(stringResource(R.string.tog_accept)) }
+                        TextButton(onClick = { onApprove(p.id, false) }) { Text(stringResource(R.string.tog_reject)) }
                     } else if (!p.isHost) Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(p.name, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                        TextButton(onClick = { onTransfer(p.id) }) { Text("Ceder") }
-                        TextButton(onClick = { onKick(p.id) }) { Text("Expulsar") }
-                        TextButton(onClick = { onBan(p.id) }) { Text("Bloquear") }
+                        TextButton(onClick = { onTransfer(p.id) }) { Text(stringResource(R.string.tog_hand_over)) }
+                        TextButton(onClick = { onKick(p.id) }) { Text(stringResource(R.string.tog_kick)) }
+                        TextButton(onClick = { onBan(p.id) }) { Text(stringResource(R.string.tog_block)) }
                     }
                 }
             }
             Spacer(Modifier.height(12.dp))
-            FilledTonalButton(onClick = onLeave, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) { Text("Cerrar sala") }
+            FilledTonalButton(onClick = onLeave, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) { Text(stringResource(R.string.tog_close_room)) }
         }
     }
 }
@@ -514,7 +516,7 @@ private fun JoiningCard(message: String, onLeave: () -> Unit) {
             CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.5.dp)
             Spacer(Modifier.width(14.dp))
             Text(message, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-            TextButton(onClick = onLeave) { Text("Cancelar") }
+            TextButton(onClick = onLeave) { Text(stringResource(R.string.common_cancel)) }
         }
     }
 }
@@ -523,7 +525,7 @@ private fun JoiningCard(message: String, onLeave: () -> Unit) {
 private fun ErrorCard(message: String) {
     Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer), shape = RoundedCornerShape(24.dp)) {
         Column(Modifier.padding(18.dp)) {
-            Text("No se pudo conectar", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer)
+            Text(stringResource(R.string.tog_connect_fail), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer)
             Spacer(Modifier.height(4.dp))
             Text(message, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.85f))
         }
@@ -532,7 +534,7 @@ private fun ErrorCard(message: String) {
 
 @Composable
 private fun JoinedCard(state: TogetherSessionState.Joined, onApprove: (String, Boolean) -> Unit, onLeave: () -> Unit) {
-    val roleLabel = if (state.role is com.example.tsuki.together.TogetherRole.Host) "Anfitrión" else "Invitado"
+    val roleLabel = if (state.role is com.example.tsuki.together.TogetherRole.Host) stringResource(R.string.tog_role_host) else stringResource(R.string.tog_role_guest)
     Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh), shape = RoundedCornerShape(24.dp)) {
         Column(Modifier.padding(18.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -541,7 +543,7 @@ private fun JoinedCard(state: TogetherSessionState.Joined, onApprove: (String, B
                 }
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("Conectado", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.tog_connected), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Text(roleLabel, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Surface(color = MaterialTheme.colorScheme.primary, shape = CircleShape) { Text("${state.roomState.queue.size}", modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary) }
@@ -549,7 +551,7 @@ private fun JoinedCard(state: TogetherSessionState.Joined, onApprove: (String, B
             Spacer(Modifier.height(12.dp))
             Surface(color = MaterialTheme.colorScheme.surfaceContainerHighest, shape = RoundedCornerShape(14.dp)) {
                 Column(Modifier.fillMaxWidth().padding(14.dp)) {
-                    Text("Sonando", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(stringResource(R.string.pld_now_playing), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(state.roomState.queue.getOrNull(state.roomState.currentIndex)?.title ?: "—", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, maxLines = 2)
                 }
             }
@@ -560,9 +562,9 @@ private fun JoinedCard(state: TogetherSessionState.Joined, onApprove: (String, B
                 state.roomState.participants.forEach { p ->
                     if (p.isPending && state.role is com.example.tsuki.together.TogetherRole.Host) {
                         Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text("${p.name} (pendiente)", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                            TextButton(onClick = { onApprove(p.id, true) }) { Text("Aceptar") }
-                            TextButton(onClick = { onApprove(p.id, false) }) { Text("Rechazar") }
+                            Text(stringResource(R.string.tog_pending_name, p.name), modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                            TextButton(onClick = { onApprove(p.id, true) }) { Text(stringResource(R.string.tog_accept)) }
+                            TextButton(onClick = { onApprove(p.id, false) }) { Text(stringResource(R.string.tog_reject)) }
                         }
                     } else {
                         Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -576,7 +578,7 @@ private fun JoinedCard(state: TogetherSessionState.Joined, onApprove: (String, B
                 }
             }
             Spacer(Modifier.height(14.dp))
-            FilledTonalButton(onClick = onLeave, modifier = Modifier.fillMaxWidth().height(44.dp), shape = RoundedCornerShape(12.dp)) { Text("Salir", fontWeight = FontWeight.SemiBold) }
+            FilledTonalButton(onClick = onLeave, modifier = Modifier.fillMaxWidth().height(44.dp), shape = RoundedCornerShape(12.dp)) { Text(stringResource(R.string.tog_leave), fontWeight = FontWeight.SemiBold) }
         }
     }
 }

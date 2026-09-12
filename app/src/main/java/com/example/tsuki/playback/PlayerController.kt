@@ -13,6 +13,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
+import com.example.tsuki.R
 import com.example.tsuki.data.local.WatchHistoryManager
 import com.example.tsuki.domain.model.MediaTrack
 import com.example.tsuki.domain.model.PlayerMode
@@ -76,7 +77,7 @@ class PlayerController private constructor(private val context: Context) {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val _playbackTick = MutableStateFlow(PlaybackTick())
     val playbackTick: StateFlow<PlaybackTick> = _playbackTick.asStateFlow()
-    private val youtubeExtractor = YouTubeExtractor()
+    private val youtubeExtractor = YouTubeExtractor(context)
     private val historyManager = WatchHistoryManager.getInstance(context)
     private val sponsorBlockClient = SponsorBlockClient.getInstance()
     private val rydClient = ReturnYouTubeDislikeClient()
@@ -158,8 +159,14 @@ class PlayerController private constructor(private val context: Context) {
     }
 
     private var controllerFuture: ListenableFuture<MediaController>? = null
+    private val _mediaControllerFlow = MutableStateFlow<MediaController?>(null)
+    val mediaControllerFlow: StateFlow<MediaController?> = _mediaControllerFlow.asStateFlow()
+
     var mediaController: MediaController? = null
-        private set
+        private set(value) {
+            field = value
+            _mediaControllerFlow.value = value
+        }
 
     private val _uiState = MutableStateFlow(PlayerUiState())
     val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
@@ -445,7 +452,7 @@ class PlayerController private constructor(private val context: Context) {
                 Log.e("PlayerController", "Playback error: ${error.errorCodeName} code=${error.errorCode}", error)
                 val mediaId = mediaController?.currentMediaItem?.mediaId ?: _uiState.value.currentTrack?.id
                 if (mediaId == null) {
-                    _uiState.update { it.copy(isBuffering = false, errorMessage = error.message ?: "Error de reproducción") }
+                    _uiState.update { it.copy(isBuffering = false, errorMessage = error.message ?: context.getString(R.string.pc_playback_error)) }
                     return
                 }
                 lastErrorAtMap[mediaId] = System.currentTimeMillis()
@@ -464,7 +471,7 @@ class PlayerController private constructor(private val context: Context) {
                 val code = getHttpResponseCode(error)
                 when {
                     isNetworkError(error) -> {
-                        _uiState.update { it.copy(errorMessage = "Sin conexión, reintentando...") }
+                        _uiState.update { it.copy(errorMessage = context.getString(R.string.pc_offline_retry)) }
                         scheduleRetry(mediaId, currentRetry, 1.5)
                     }
                     code == 403 -> {
@@ -476,7 +483,7 @@ class PlayerController private constructor(private val context: Context) {
                         scheduleRetry(mediaId, currentRetry, 0.8)
                     }
                     else -> {
-                        _uiState.update { it.copy(isBuffering = true, errorMessage = "Reintentando reproducción (${currentRetry+1}/$MAX_RETRY_PER_SONG)...") }
+                        _uiState.update { it.copy(isBuffering = true, errorMessage = context.getString(R.string.pc_retrying, currentRetry + 1, MAX_RETRY_PER_SONG)) }
                         scheduleRetry(mediaId, currentRetry, 1.0)
                     }
                 }
@@ -813,6 +820,18 @@ class PlayerController private constructor(private val context: Context) {
             playJob = null
             pendingRetryJob?.cancel()
             pendingRetryJob = null
+            _uiState.update {
+                it.copy(
+                    queue = tracks,
+                    queueIndex = safeIndex,
+                    currentTrack = track,
+                    playerMode = if (isVideo) PlayerMode.VideoExpanded else PlayerMode.AudioOnly,
+                    isBuffering = if (silentSwap) it.isBuffering else true,
+                    errorMessage = null,
+                    dislikesData = null,
+                    sponsorSegments = emptyList()
+                )
+            }
         }
         if (!isRetry && !startMuted) {
             if (crossfadeController.isActive) crossfadeController.abortHard("new playback requested")

@@ -54,9 +54,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.example.tsuki.R
 import com.example.tsuki.domain.model.MediaTrack
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
@@ -267,12 +269,18 @@ fun MiniPlayer(
                         ) {
                             Icon(
                                 imageVector = Icons.Rounded.Movie,
-                                contentDescription = "Cambiar a video",
+                                contentDescription = stringResource(R.string.player_switch_video),
                                 modifier = Modifier.size(22.dp),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
+
+                    val miniPlayPauseRotation by androidx.compose.animation.core.animateFloatAsState(
+                        targetValue = if (isPlaying) 90f else 0f,
+                        animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.58f, stiffness = 420f),
+                        label = "miniPlayPauseRotation"
+                    )
 
                     FilledIconButton(
                         onClick = onPlayPauseClick,
@@ -292,15 +300,27 @@ fun MiniPlayer(
                             androidx.compose.animation.AnimatedContent(
                                 targetState = isPlaying,
                                 transitionSpec = {
-                                    (androidx.compose.animation.scaleIn(animationSpec = M3MotionTokens.expressiveBouncy()) + androidx.compose.animation.fadeIn())
-                                        .togetherWith(androidx.compose.animation.scaleOut(animationSpec = M3MotionTokens.expressiveFast()) + androidx.compose.animation.fadeOut())
+                                    (androidx.compose.animation.scaleIn(
+                                        animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.55f, stiffness = 480f),
+                                        initialScale = 0.65f
+                                    ) + androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(140)))
+                                        .togetherWith(
+                                            androidx.compose.animation.scaleOut(
+                                                animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.75f, stiffness = 650f),
+                                                targetScale = 0.65f
+                                            ) + androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(100))
+                                        )
                                 },
                                 label = "MiniPlayPauseAnim"
                             ) { playing ->
                                 Icon(
                                     imageVector = if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                                    contentDescription = if (playing) "Pausar" else "Reproducir",
-                                    modifier = Modifier.size(22.dp)
+                                    contentDescription = if (playing) stringResource(R.string.player_pause) else stringResource(R.string.common_play),
+                                    modifier = Modifier
+                                        .size(22.dp)
+                                        .graphicsLayer {
+                                            rotationZ = if (playing) (miniPlayPauseRotation - 90f) else miniPlayPauseRotation
+                                        }
                                 )
                             }
                         }
@@ -312,7 +332,7 @@ fun MiniPlayer(
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.SkipNext,
-                            contentDescription = "Siguiente",
+                            contentDescription = stringResource(R.string.common_next),
                             modifier = Modifier.size(24.dp),
                             tint = MaterialTheme.colorScheme.onSurface
                         )

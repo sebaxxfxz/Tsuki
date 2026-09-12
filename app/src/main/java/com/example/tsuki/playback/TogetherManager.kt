@@ -7,6 +7,7 @@ import android.os.SystemClock
 import android.util.Log
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import com.example.tsuki.R
 import com.example.tsuki.domain.model.MediaTrack
 import com.example.tsuki.together.AddTrackMode
 import com.example.tsuki.together.ControlAction
@@ -144,16 +145,16 @@ class TogetherManager(private val context: Context, private val controller: Play
         if (t is TogetherOnlineApiException) {
             val code = t.statusCode
             return when {
-                code == 404 -> "Sesión no encontrada"
+                code == 404 -> context.getString(R.string.tm_session_gone)
                 code != null && code in 500..599 -> "Error del servidor"
-                else -> t.message ?: "Red no disponible"
+                else -> t.message ?: context.getString(R.string.tm_no_network)
             }
         }
         return when (t) {
             is java.net.UnknownHostException -> "Servidor no accesible"
             is java.net.ConnectException -> "Servidor no accesible"
-            is java.net.SocketTimeoutException -> "Tiempo de conexión agotado"
-            else -> t.message ?: "Red no disponible"
+            is java.net.SocketTimeoutException -> context.getString(R.string.tm_timeout)
+            else -> t.message ?: context.getString(R.string.tm_no_network)
         }
     }
 
@@ -299,7 +300,7 @@ class TogetherManager(private val context: Context, private val controller: Play
 
             val wsUrl = TogetherOnlineEndpoint.onlineWebSocketUrlOrNull(created.wsUrl, baseUrl)
             if (wsUrl == null) {
-                sessionState.value = TogetherSessionState.Error("URL de websocket inválida", true)
+                sessionState.value = TogetherSessionState.Error(context.getString(R.string.tm_bad_ws), true)
                 ioScope.launch { stopInternal() }
                 return@launch
             }
@@ -346,7 +347,7 @@ class TogetherManager(private val context: Context, private val controller: Play
     fun joinTogether(rawLink: String, displayName: String) {
         val joinInfo = TogetherLink.decode(rawLink)
         if (joinInfo == null) {
-            sessionState.value = TogetherSessionState.Error("Enlace inválido", true)
+            sessionState.value = TogetherSessionState.Error(context.getString(R.string.tm_bad_link), true)
             return
         }
 
@@ -372,7 +373,7 @@ class TogetherManager(private val context: Context, private val controller: Play
     fun joinTogetherOnline(code: String, displayName: String) {
         val trimmedCode = code.trim()
         if (trimmedCode.isBlank()) {
-            sessionState.value = TogetherSessionState.Error("Código inválido", true)
+            sessionState.value = TogetherSessionState.Error(context.getString(R.string.tm_bad_code), true)
             return
         }
 
@@ -413,7 +414,7 @@ class TogetherManager(private val context: Context, private val controller: Play
 
             val wsUrl = TogetherOnlineEndpoint.onlineWebSocketUrlOrNull(resolved.wsUrl, baseUrl)
             if (wsUrl == null) {
-                sessionState.value = TogetherSessionState.Error("URL de websocket inválida", true)
+                sessionState.value = TogetherSessionState.Error(context.getString(R.string.tm_bad_ws), true)
                 ioScope.launch { stopInternal() }
                 return@launch
             }
@@ -501,7 +502,7 @@ class TogetherManager(private val context: Context, private val controller: Play
             is TogetherClientEvent.ServerIssue -> {
                 when (event.code) {
                     "GUEST_CONTROL_DISABLED" -> {
-                        showNotice(event.message, "GUEST_CONTROL_DISABLED")
+                        showNotice(context.getString(R.string.tm_guest_control), "GUEST_CONTROL_DISABLED")
                         val joined = sessionState.value as? TogetherSessionState.Joined
                         if (joined?.role is TogetherRole.Guest) {
                             pendingGuestControl = null
@@ -510,9 +511,9 @@ class TogetherManager(private val context: Context, private val controller: Play
                         }
                     }
 
-                    "GUEST_ADD_DISABLED" -> showNotice(event.message, "GUEST_ADD_DISABLED")
+                    "GUEST_ADD_DISABLED" -> showNotice(context.getString(R.string.tm_guest_add), "GUEST_ADD_DISABLED")
 
-                    "HOST_OFFLINE" -> showNotice(event.message, "HOST_OFFLINE")
+                    "HOST_OFFLINE" -> showNotice(context.getString(R.string.tm_host_left), "HOST_OFFLINE")
 
                     else -> {
                         sessionState.value = TogetherSessionState.Error(event.message, true)
@@ -538,7 +539,7 @@ class TogetherManager(private val context: Context, private val controller: Play
             TogetherClientEvent.Disconnected -> {
                 if (sessionState.value is TogetherSessionState.Idle) return
                 sessionState.value = TogetherSessionState.Error(
-                    message = if (isGuest()) "El anfitrión abandonó la sesión" else "Red no disponible",
+                    message = if (isGuest()) context.getString(R.string.tm_host_left) else context.getString(R.string.tm_no_network),
                     recoverable = true,
                 )
                 ioScope.launch { stopInternal() }
@@ -613,7 +614,7 @@ class TogetherManager(private val context: Context, private val controller: Play
         val state = sessionState.value as? TogetherSessionState.Joined ?: return
         if (state.role !is TogetherRole.Guest) return
         if (!state.roomState.settings.allowGuestsToControlPlayback) {
-            showNotice("El anfitrión no permite control remoto", "GUEST_CONTROL_DISABLED_LOCAL")
+            showNotice(context.getString(R.string.tm_guest_control), "GUEST_CONTROL_DISABLED_LOCAL")
             return
         }
         val now = SystemClock.elapsedRealtime()
@@ -639,7 +640,7 @@ class TogetherManager(private val context: Context, private val controller: Play
         val state = sessionState.value as? TogetherSessionState.Joined ?: return
         if (state.role !is TogetherRole.Guest) return
         if (!state.roomState.settings.allowGuestsToAddTracks) {
-            showNotice("El anfitrión no permite añadir canciones", "GUEST_ADD_DISABLED_LOCAL")
+            showNotice(context.getString(R.string.tm_guest_add), "GUEST_ADD_DISABLED_LOCAL")
             return
         }
         c.requestAddTrack(state.sessionId, track, mode)
@@ -664,13 +665,13 @@ class TogetherManager(private val context: Context, private val controller: Play
                 val participant = event.participant
                 if (!participant.isHost && !participant.isPending) {
                     participantNames[participant.id] = participant.name
-                    showNotice("${participant.name} se unió", "JOIN_${participant.id}")
+                    showNotice(context.getString(R.string.tm_joined, participant.name), "JOIN_${participant.id}")
                 }
             }
 
             is TogetherServerEvent.ParticipantLeft -> {
                 val name = participantNames.remove(event.participantId) ?: return
-                showNotice("$name salió", "LEAVE_${event.participantId}")
+                showNotice(context.getString(R.string.tm_left, name), "LEAVE_${event.participantId}")
             }
 
             is TogetherServerEvent.HostTransferred -> handleHostTransferred(event.participantId)
@@ -857,7 +858,7 @@ class TogetherManager(private val context: Context, private val controller: Play
                     now - pending.requestedAtElapsedMs >= 1200L &&
                     mismatch
                 ) {
-                    showNotice("No se pudo cambiar de canción", "GUEST_SEEK_TIMEOUT")
+                    showNotice(context.getString(R.string.tm_seek_fail), "GUEST_SEEK_TIMEOUT")
                 }
                 pendingGuestControl = null
             } else {

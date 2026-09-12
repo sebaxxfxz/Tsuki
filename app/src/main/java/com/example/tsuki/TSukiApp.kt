@@ -3,6 +3,7 @@ package com.example.tsuki
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.Context
 import android.os.Build
 import android.util.Log
 import coil3.ImageLoader
@@ -24,12 +25,19 @@ import kotlinx.coroutines.withTimeoutOrNull
 
 class TSukiApp : Application(), SingletonImageLoader.Factory {
 
+    override fun attachBaseContext(base: Context) {
+        super.attachBaseContext(com.example.tsuki.util.AppLocale.wrap(base, com.example.tsuki.util.AppLocale.readStored(base)))
+    }
+
     override fun onCreate() {
         super.onCreate()
         createNotificationChannels()
         com.example.tsuki.ui.player.canvas.CanvasDiskCache.init(this)
         val homePrefs = com.example.tsuki.data.local.HomePreferences(this)
-        applyContentLocale("es", "ES")
+        val initialAppLocale = com.example.tsuki.util.AppLocale.resolveTag(com.example.tsuki.util.AppLocale.readStored(this))
+        val initialLang = if (initialAppLocale == com.example.tsuki.util.AppLocale.ENGLISH) "en" else "es"
+        val initialCountry = if (initialLang == "en") "US" else "ES"
+        applyContentLocale(initialLang, initialCountry)
         MainScope().launch(Dispatchers.IO) {
             combine(homePrefs.contentLanguageTag, homePrefs.contentCountry) { lang, country -> lang to country }
                 .collect { (lang, country) -> applyContentLocale(lang, country) }

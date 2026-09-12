@@ -38,7 +38,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.viewinterop.AndroidView
+import com.example.tsuki.R
 import com.example.tsuki.auth.YouTubeAuthManager
 import com.example.tsuki.network.TSukiInnerTubeClient
 import kotlinx.coroutines.Dispatchers
@@ -142,12 +144,12 @@ fun LoginScreen(
             .statusBarsPadding()
     ) {
         TopAppBar(
-            title = { Text("Conectar cuenta de Google") },
+            title = { Text(stringResource(R.string.login_title)) },
             navigationIcon = {
                 IconButton(onClick = onBack) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Volver"
+                        contentDescription = stringResource(R.string.common_back)
                     )
                 }
             },
@@ -169,7 +171,7 @@ fun LoginScreen(
                 }) {
                     Icon(
                         imageVector = Icons.Default.Check,
-                        contentDescription = "Confirmar",
+                        contentDescription = stringResource(R.string.common_confirm),
                         tint = MaterialTheme.colorScheme.primary
                     )
                 }
@@ -257,7 +259,7 @@ fun LoginScreen(
                         CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                         if (isAuthenticating) {
                             Text(
-                                text = "Sincronizando biblioteca y recomendaciones...",
+                                text = stringResource(R.string.login_syncing),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onBackground,
                                 modifier = Modifier.statusBarsPadding()

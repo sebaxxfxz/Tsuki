@@ -67,6 +67,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
+import com.example.tsuki.R
 import com.example.tsuki.auth.YouTubeAuthManager
 import com.example.tsuki.domain.model.MediaTrack
 import com.example.tsuki.network.TSukiInnerTubeClient
@@ -188,7 +191,7 @@ fun LibraryScreen(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = "Biblioteca",
+                        text = stringResource(R.string.lib_title),
                         style = MaterialTheme.typography.headlineLarge,
                         fontWeight = FontWeight.Black,
                         color = MaterialTheme.colorScheme.onBackground
@@ -211,7 +214,7 @@ fun LibraryScreen(
                     }
                     item {
                         LibraryFilterChip(
-                            title = "Me Gusta",
+                            title = stringResource(R.string.common_likes),
                             count = if (isLoadingLiked) -1 else likedTracks.size,
                             icon = Icons.Filled.Favorite,
                             selected = selectedSection == LibrarySection.LIKED,
@@ -220,7 +223,7 @@ fun LibraryScreen(
                     }
                     item {
                         LibraryFilterChip(
-                            title = "Descargas",
+                            title = stringResource(R.string.lib_downloads),
                             count = downloadedTracks.size,
                             icon = if (selectedSection == LibrarySection.DOWNLOADS || downloadedTracks.isNotEmpty()) Icons.Filled.DownloadDone else Icons.Filled.Download,
                             selected = selectedSection == LibrarySection.DOWNLOADS,
@@ -257,7 +260,7 @@ fun LibraryScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "Playlists locales",
+                            text = stringResource(R.string.lib_local_playlists),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onBackground
@@ -268,14 +271,14 @@ fun LibraryScreen(
                         ) {
                             Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("Crear Playlist")
+                            Text(stringResource(R.string.lib_create_playlist))
                         }
                     }
 
                     if (moodGroups.isNotEmpty()) {
                         Column(modifier = Modifier.padding(bottom = 4.dp)) {
                             Text(
-                                text = "Por tu mood",
+                                text = stringResource(R.string.lib_by_mood),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onBackground,
@@ -297,7 +300,7 @@ fun LibraryScreen(
                                             selectedPlaylistForDetail = TSukiPlaylist(
                                                 id = "mood:${mood.lowercase()}",
                                                 title = mood,
-                                                subtitle = "Tus etiquetas • ${tracks.size} canciones",
+                                                subtitle = context.getString(R.string.lib_tags_subtitle, tracks.size),
                                                 thumbnailUrl = tracks.firstOrNull()?.artworkUrl
                                             )
                                         }
@@ -329,14 +332,14 @@ fun LibraryScreen(
                             }
                             Spacer(modifier = Modifier.height(24.dp))
                             Text(
-                                text = "Sin Playlists",
+                                text = stringResource(R.string.lib_empty),
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onBackground
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = "Crea tu primera playlist con el botón de arriba.",
+                                text = stringResource(R.string.lib_empty_hint),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = TextAlign.Center
@@ -356,7 +359,7 @@ fun LibraryScreen(
                                             selectedPlaylistForDetail = TSukiPlaylist(
                                                 id = pl.id.toString(),
                                                 title = pl.name,
-                                                subtitle = "Local • ${pl.trackCount} canciones",
+                                                subtitle = context.getString(R.string.lib_local_subtitle, pl.trackCount),
                                                 thumbnailUrl = pl.firstTrackThumbnail
                                             )
                                         }
@@ -396,18 +399,18 @@ fun LibraryScreen(
                                             maxLines = 1
                                         )
                                         Text(
-                                            text = "${pl.trackCount} canciones",
+                                            text = pluralStringResource(R.plurals.songs_count, pl.trackCount, pl.trackCount),
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
                                     Box {
                                         IconButton(onClick = { showMenu = true }) {
-                                            Icon(Icons.Filled.MoreVert, contentDescription = "Opciones")
+                                            Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.common_options))
                                         }
                                         DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
                                             DropdownMenuItem(
-                                                text = { Text("Eliminar playlist") },
+                                                text = { Text(stringResource(R.string.lib_delete_playlist)) },
                                                 leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
                                                 onClick = {
                                                     showMenu = false
@@ -437,16 +440,16 @@ fun LibraryScreen(
                         LibrarySection.LOCAL -> Icons.Filled.Folder
                     }
                     val emptyTitle = when (section) {
-                        LibrarySection.PLAYLISTS -> "Sin Playlists"
-                        LibrarySection.LIKED -> if (isLoadingLiked) "Sincronizando..." else "Sin Me Gusta"
-                        LibrarySection.DOWNLOADS -> "Sin Descargas"
-                        LibrarySection.LOCAL -> "Sin Música Local"
+                        LibrarySection.PLAYLISTS -> stringResource(R.string.lib_empty)
+                        LibrarySection.LIKED -> if (isLoadingLiked) stringResource(R.string.lib_syncing) else stringResource(R.string.lib_empty_no_likes)
+                        LibrarySection.DOWNLOADS -> stringResource(R.string.lib_empty_no_downloads)
+                        LibrarySection.LOCAL -> stringResource(R.string.lib_empty_no_local)
                     }
                     val emptyDesc = when (section) {
-                        LibrarySection.PLAYLISTS -> "Crea una playlist para verla aquí."
-                        LibrarySection.LIKED -> if (isLoadingLiked) "Obteniendo biblioteca de la nube..." else if (!isLoggedIn) "Conecta tu cuenta de YouTube Music en Configuración para ver tus canciones favoritas." else "Tus canciones favoritas aparecerán aquí."
-                        LibrarySection.DOWNLOADS -> "Las canciones y videos que descargues para escuchar sin conexión aparecerán aquí."
-                        LibrarySection.LOCAL -> "La música guardada en tu dispositivo aparecerá aquí."
+                        LibrarySection.PLAYLISTS -> stringResource(R.string.lib_empty_playlists_hint)
+                        LibrarySection.LIKED -> if (isLoadingLiked) stringResource(R.string.lib_syncing_desc) else if (!isLoggedIn) stringResource(R.string.lib_login_likes) else stringResource(R.string.lib_likes_hint)
+                        LibrarySection.DOWNLOADS -> stringResource(R.string.lib_downloads_hint)
+                        LibrarySection.LOCAL -> stringResource(R.string.lib_local_hint)
                     }
 
                     Column(
@@ -507,12 +510,12 @@ fun LibraryScreen(
                                 ) {
                                     Column {
                                         Text(
-                                            text = "Música sin conexión",
+                                            text = stringResource(R.string.lib_offline),
                                             style = MaterialTheme.typography.titleMedium,
                                             fontWeight = FontWeight.Bold
                                         )
                                         Text(
-                                            text = "${downloadedTracks.size} canciones • ${downloadEngine.getDownloadStorageSizeMb().toInt()} MB ocupados",
+                                            text = stringResource(R.string.lib_offline_storage, pluralStringResource(R.plurals.songs_count, downloadedTracks.size, downloadedTracks.size), downloadEngine.getDownloadStorageSizeMb().toInt()),
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.primary
                                         )
@@ -527,7 +530,7 @@ fun LibraryScreen(
                                     ) {
                                         Icon(Icons.Filled.Shuffle, contentDescription = null, modifier = Modifier.size(16.dp))
                                         Spacer(Modifier.width(4.dp))
-                                        Text("Aleatorio")
+                                        Text(stringResource(R.string.common_shuffle))
                                     }
                                 }
                             }
@@ -551,12 +554,12 @@ fun LibraryScreen(
                 showCreatePlaylistDialog = false
                 newPlaylistName = ""
             },
-            title = { Text("Nueva Playlist") },
+            title = { Text(stringResource(R.string.lib_new_playlist)) },
             text = {
                 OutlinedTextField(
                     value = newPlaylistName,
                     onValueChange = { newPlaylistName = it },
-                    label = { Text("Nombre de la playlist") },
+                    label = { Text(stringResource(R.string.lib_playlist_name)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -575,7 +578,7 @@ fun LibraryScreen(
                     },
                     enabled = newPlaylistName.isNotBlank()
                 ) {
-                    Text("Crear")
+                    Text(stringResource(R.string.common_create))
                 }
             },
             dismissButton = {
@@ -583,7 +586,7 @@ fun LibraryScreen(
                     showCreatePlaylistDialog = false
                     newPlaylistName = ""
                 }) {
-                    Text("Cancelar")
+                    Text(stringResource(R.string.common_cancel))
                 }
             }
         )
@@ -592,8 +595,8 @@ fun LibraryScreen(
     playlistToDelete?.let { target ->
         AlertDialog(
             onDismissRequest = { playlistToDelete = null },
-            title = { Text("Eliminar playlist") },
-            text = { Text("¿Deseas eliminar la playlist \"${target.name}\"? Las canciones permanecerán en tu dispositivo.") },
+            title = { Text(stringResource(R.string.lib_delete_playlist)) },
+            text = { Text(stringResource(R.string.lib_delete_confirm, target.name)) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -603,11 +606,11 @@ fun LibraryScreen(
                         }
                     }
                 ) {
-                    Text("Eliminar", color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { playlistToDelete = null }) { Text("Cancelar") }
+                TextButton(onClick = { playlistToDelete = null }) { Text(stringResource(R.string.common_cancel)) }
             }
         )
     }

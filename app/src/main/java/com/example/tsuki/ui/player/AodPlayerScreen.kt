@@ -68,6 +68,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.res.stringResource
+import com.example.tsuki.R
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.pointerInput
@@ -409,7 +411,7 @@ fun AodPlayerScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = { resetInteraction(); onPrevious() }, modifier = Modifier.size(56.dp)) {
-                    Icon(Icons.Rounded.SkipPrevious, contentDescription = "Anterior", tint = Color.White, modifier = Modifier.size(38.dp))
+                    Icon(Icons.Rounded.SkipPrevious, contentDescription = stringResource(R.string.player_previous), tint = Color.White, modifier = Modifier.size(38.dp))
                 }
                 androidx.compose.material3.FilledIconButton(
                     onClick = { resetInteraction(); onPlayPause() },
@@ -422,12 +424,12 @@ fun AodPlayerScreen(
                 ) {
                     Icon(
                         imageVector = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                        contentDescription = if (isPlaying) "Pausar" else "Reproducir",
+                        contentDescription = if (isPlaying) stringResource(R.string.player_pause) else stringResource(R.string.common_play),
                         modifier = Modifier.size(40.dp)
                     )
                 }
                 IconButton(onClick = { resetInteraction(); onNext() }, modifier = Modifier.size(56.dp)) {
-                    Icon(Icons.Rounded.SkipNext, contentDescription = "Siguiente", tint = Color.White, modifier = Modifier.size(38.dp))
+                    Icon(Icons.Rounded.SkipNext, contentDescription = stringResource(R.string.common_next), tint = Color.White, modifier = Modifier.size(38.dp))
                 }
             }
 

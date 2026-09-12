@@ -27,11 +27,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import com.example.tsuki.R
 import com.example.tsuki.domain.model.MediaTrack
 
 @Composable
@@ -108,7 +110,7 @@ fun ResumeWatchingCard(
                         .padding(6.dp)
                 ) {
                     Text(
-                        text = "$playCount reproducciones",
+                        text = stringResource(R.string.wrap_plays_count, playCount),
                         color = Color.White,
                         style = MaterialTheme.typography.labelSmall,
                         fontSize = 10.sp,

@@ -45,11 +45,13 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import com.example.tsuki.R
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.example.tsuki.domain.model.MediaTrack
@@ -320,18 +322,18 @@ fun AccountPlaylistsHeader(
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
-                "TUS LISTAS • YOUTUBE",
+                stringResource(R.string.music_sub_yt_playlists),
                 style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.9.sp, fontWeight = FontWeight.Bold),
                 color = MaterialTheme.colorScheme.primary
             )
             Text(
-                accountName ?: "Cuenta conectada",
+                accountName ?: stringResource(R.string.home_account_connected),
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                "Toca para gestionar tu cuenta",
+                stringResource(R.string.home_manage_account),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -391,7 +393,7 @@ fun MusicHeroCard(
                     .padding(horizontal = 10.dp, vertical = 6.dp)
             ) {
                 Text(
-                    "REPRODUCIR",
+                    stringResource(R.string.common_play).uppercase(),
                     color = Color.White,
                     style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Black, letterSpacing = 0.6.sp),
                     maxLines = 1
