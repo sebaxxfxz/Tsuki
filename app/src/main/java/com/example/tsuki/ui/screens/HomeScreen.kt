@@ -214,6 +214,9 @@ fun HomeScreen(
 
     val homePreferences = remember { HomePreferences(context) }
     val layoutMode by homePreferences.homeLayoutMode.collectAsStateWithLifecycle(initialValue = HomeLayoutMode.IMMERSIVE)
+    val shortsEnabled by homePreferences.shortsRecommendationsEnabled.collectAsStateWithLifecycle(initialValue = true)
+    val homeContentMode by homePreferences.contentMode.collectAsStateWithLifecycle(initialValue = HomePreferences.CONTENT_MODE_ALL)
+    val homeMusicOnly = homeContentMode == HomePreferences.CONTENT_MODE_MUSIC_ONLY
 
     val authManager = remember { YouTubeAuthManager(context) }
     val isLoggedIn by authManager.isLoggedIn.collectAsStateWithLifecycle(initialValue = false)
@@ -666,7 +669,7 @@ fun HomeScreen(
                         val isMainVerticalShelf = section.title.lowercase().let { t ->
                             t.contains("para ti") || t.contains("for you") || t.contains("descubrimiento") || t.contains("discover") || t.contains("descargas") || t.contains("downloads") || t.contains("tendencias") || t.contains("trending") || t.contains("suscripciones") || t.contains("subscriptions") || t.contains("canales que sigues")
                         }
-                        if (isShortsShelf) {
+                        if (isShortsShelf && shortsEnabled && !homeMusicOnly) {
                             item(key = "shorts_${section.title}_$sIndex") {
                                 ShortsShelf(tracks = section.tracks, isScrolling = isFeedScrolling, onTrackClick = { track ->
                                     viewModel.onTrackClicked(track)

@@ -1,7 +1,12 @@
 package com.example.tsuki.playback
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
+import android.view.KeyEvent
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
@@ -81,6 +86,83 @@ class AutoLibrarySessionCallback(
     private fun rememberTrack(browseId: String, track: MediaTrack) {
         if (trackCache.size > 800) trackCache.clear()
         trackCache[browseId] = track
+    }
+
+    private fun trackForSync(item: MediaItem): MediaTrack? {
+        trackCache.values.firstOrNull { (it.videoId ?: it.id) == item.mediaId }?.let { return it }
+        val md = item.mediaMetadata ?: return null
+        val title = md.title?.toString().orEmpty().ifBlank { return null }
+        val rawId = item.mediaId
+        return MediaTrack(
+            id = rawId,
+            title = title,
+            artist = md.artist?.toString().orEmpty(),
+            artworkUrl = md.artworkUri?.toString(),
+            videoId = rawId.takeIf { it.length == 11 }
+        )
+    }
+
+    private fun syncAppQueue(items: List<MediaItem>, startIndex: Int) {
+        if (items.isEmpty()) return
+        val tracks = items.mapNotNull { trackForSync(it) }
+        if (tracks.isEmpty()) return
+        Handler(Looper.getMainLooper()).post {
+            runCatching { PlayerController.getInstance(context).syncExternalQueue(tracks, startIndex) }
+        }
+    }
+
+    private fun appendAppQueue(items: List<MediaItem>) {
+        if (items.isEmpty()) return
+        val tracks = items.mapNotNull { trackForSync(it) }
+        if (tracks.isEmpty()) return
+        Handler(Looper.getMainLooper()).post {
+            runCatching { PlayerController.getInstance(context).appendExternalTracks(tracks) }
+        }
+    }
+
+    override fun onMediaButtonEvent(
+        session: MediaSession,
+        controllerInfo: MediaSession.ControllerInfo,
+        intent: Intent
+    ): Boolean {
+        if (intent.action != Intent.ACTION_MEDIA_BUTTON) return false
+        val event = if (android.os.Build.VERSION.SDK_INT >= 33) {
+            intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT, KeyEvent::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT)
+        } ?: return false
+        if (event.action != KeyEvent.ACTION_DOWN) return false
+        val controller = PlayerController.getInstance(context)
+        val main = Handler(Looper.getMainLooper())
+        when (event.keyCode) {
+            KeyEvent.KEYCODE_MEDIA_NEXT -> {
+                Log.d("TSukiMediaButton", "NEXT")
+                main.post { controller.playNext() }
+                return true
+            }
+            KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
+                Log.d("TSukiMediaButton", "PREVIOUS")
+                main.post { controller.playPrevious() }
+                return true
+            }
+            KeyEvent.KEYCODE_MEDIA_PLAY -> {
+                Log.d("TSukiMediaButton", "PLAY")
+                main.post { if (!controller.uiState.value.isPlaying) controller.togglePlayPause() }
+                return true
+            }
+            KeyEvent.KEYCODE_MEDIA_PAUSE -> {
+                Log.d("TSukiMediaButton", "PAUSE")
+                main.post { if (controller.uiState.value.isPlaying) controller.togglePlayPause() }
+                return true
+            }
+            KeyEvent.KEYCODE_MEDIA_STOP -> {
+                Log.d("TSukiMediaButton", "STOP")
+                main.post { if (controller.uiState.value.isPlaying) controller.togglePlayPause() }
+                return true
+            }
+            else -> return false
+        }
     }
 
     private fun baseMetadata(track: MediaTrack): MediaMetadata.Builder {
@@ -510,6 +592,9 @@ class AutoLibrarySessionCallback(
     ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
         return asyncFuture {
             val resolved = mediaItems.map { resolveOne(it) }
+            if (controller.packageName != context.packageName) {
+                syncAppQueue(resolved, startIndex)
+            }
             MediaSession.MediaItemsWithStartPosition(resolved, startIndex, startPositionMs)
         }
     }
@@ -520,7 +605,11 @@ class AutoLibrarySessionCallback(
         mediaItems: MutableList<MediaItem>
     ): ListenableFuture<MutableList<MediaItem>> {
         return asyncFuture {
-            mediaItems.map { resolveOne(it) }.toMutableList()
+            val resolved = mediaItems.map { resolveOne(it) }.toMutableList()
+            if (controller.packageName != context.packageName) {
+                appendAppQueue(resolved)
+            }
+            resolved
         }
     }
 

@@ -132,13 +132,16 @@ class TogetherManager(private val context: Context, private val controller: Play
 
     private fun getLocalIpv4Address(): String? =
         runCatching {
-            NetworkInterface.getNetworkInterfaces().toList()
+            val all = NetworkInterface.getNetworkInterfaces().toList()
                 .asSequence()
                 .filter { it.isUp && !it.isLoopback }
                 .flatMap { it.inetAddresses.toList().asSequence() }
                 .filterIsInstance<java.net.Inet4Address>()
-                .map { it.hostAddress }
-                .firstOrNull { !it.isNullOrBlank() && it != "127.0.0.1" }
+                .mapNotNull { it.hostAddress }
+                .filter { it.isNotBlank() && it != "127.0.0.1" }
+                .toList()
+            all.firstOrNull { it.startsWith("192.168.") || it.startsWith("10.") || it.startsWith("172.") }
+                ?: all.firstOrNull()
         }.getOrNull()
 
     private fun togetherOnlineErrorMessage(t: Throwable): String {

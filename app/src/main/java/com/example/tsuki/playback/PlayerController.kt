@@ -186,6 +186,10 @@ class PlayerController private constructor(private val context: Context) {
     private var lastSponsorSeekAtMs: Long = 0L
     private var pendingSeekPosition: Long = -1L
     @Volatile private var pendingPauseAfterRemoteStart: Boolean = false
+    @Volatile private var musicOnlyMode: Boolean = false
+    @Volatile private var preAppendedKey: String? = null
+    private var preAppendJob: Job? = null
+    private var preExtendedForIndex: Int = -1
     private val MAX_RETRY_PER_SONG = 4
     private val BASE_RETRY_MS = 2000L
     private val MAX_RETRY_DELAY_MS = 15000L
@@ -231,6 +235,11 @@ class PlayerController private constructor(private val context: Context) {
         scope.launch {
             playerPreferences.precacheLyrics.collect { enabled ->
                 precacheLyricsEnabled = enabled
+            }
+        }
+        scope.launch {
+            com.example.tsuki.data.local.HomePreferences(context).contentMode.collect { mode ->
+                musicOnlyMode = mode == com.example.tsuki.data.local.HomePreferences.CONTENT_MODE_MUSIC_ONLY
             }
         }
         scope.launch {
@@ -523,6 +532,21 @@ class PlayerController private constructor(private val context: Context) {
                     _uiState.update { it.copy(currentTrack = track, queueIndex = idx.coerceAtLeast(0)) }
                     _playbackTick.value = PlaybackTick()
                     loadLyricsForTrack(track)
+                    if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
+                        preAppendedKey = null
+                        preExtendedForIndex = -1
+                        autoQueueAttemptedForIndex = -1
+                        Log.d("PlayerController", "AUTO transition to ${track.id}, gapless advance")
+                        scope.launch(Dispatchers.IO) { historyManager.recordPlayback(track) }
+                        onStatsTrackStarted(track)
+                        scheduleNextTrackPrecache()
+                        val autoVid = track.videoId ?: track.id
+                        _uiState.update { it.copy(sponsorSegments = emptyList(), dislikesData = null) }
+                        if (!track.isLocal && autoVid.length == 11) {
+                            scope.launch { _uiState.update { it.copy(sponsorSegments = sponsorBlockClient.getSkipSegments(autoVid)) } }
+                            scope.launch { _uiState.update { it.copy(dislikesData = rydClient.getDislikes(autoVid)) } }
+                        }
+                    }
                 }
             }
 
@@ -640,6 +664,7 @@ class PlayerController private constructor(private val context: Context) {
                             }
                         }
                         _playbackTick.value = PlaybackTick(positionMs = pos, durationMs = dur)
+                        if (controller.isPlaying && !handingOff) maybePreAppendNext(pos, dur)
                         if (!handingOff && !togetherManager.isActive()) {
                             crossfadeController.maybeStart(crossfadeHost, scope, pos, dur, _uiState.value.isVideoMode)
                         }
@@ -749,13 +774,16 @@ class PlayerController private constructor(private val context: Context) {
     }
 
     fun startRadio(track: MediaTrack, asVideo: Boolean = false) {
+        val seedId = track.videoId ?: track.id
+        val currentId = _uiState.value.currentTrack?.let { it.videoId ?: it.id }
+        val resumeAt = if (currentId == seedId) currentPositionNow().takeIf { it > 2000L } ?: -1L else -1L
         scope.launch(Dispatchers.Main) {
             _uiState.update { it.copy(isBuffering = true, errorMessage = null) }
             val related = withContext(Dispatchers.IO) {
                 autoQueueHelper.extendQueue(track, listOf(track))
             }
             val queue = listOf(track) + related
-            playQueue(queue, 0, asVideo)
+            playQueue(queue, 0, asVideo, resumePositionMs = resumeAt)
         }
     }
 
@@ -782,6 +810,7 @@ class PlayerController private constructor(private val context: Context) {
                             current.queue.size == 1 &&
                                 current.currentTrack?.let { it.videoId ?: it.id } == seedId
                         if (stillSameSinglePlayback) {
+                            dropPreAppended()
                             _uiState.update { state -> state.copy(queue = state.queue + newTracks) }
                             prefetchTracks(newTracks)
                         }
@@ -801,6 +830,7 @@ class PlayerController private constructor(private val context: Context) {
 
     fun playQueue(tracks: List<MediaTrack>, startIndex: Int = 0, playAsVideo: Boolean? = null, isRetry: Boolean = false, startMuted: Boolean = false, resumePositionMs: Long = -1L, silentSwap: Boolean = false, playWhenReady: Boolean = true) {
         if (tracks.isEmpty()) return
+        dropPreAppended()
         val safeIndex = startIndex.coerceIn(0, tracks.lastIndex)
         val currentGen = playGeneration.incrementAndGet()
         val track = tracks[safeIndex]
@@ -813,9 +843,13 @@ class PlayerController private constructor(private val context: Context) {
             )
             return
         }
-        val isVideo = playAsVideo ?: track.isVideoItem
+        val isVideo = if (musicOnlyMode) false else (playAsVideo ?: track.isVideoItem)
 
         if (!isRetry) {
+            recentlyFailed.remove(track.id)
+            track.videoId?.let { recentlyFailed.remove(it) }
+            retryCountMap.remove(track.id)
+            track.videoId?.let { retryCountMap.remove(it) }
             playJob?.cancel()
             playJob = null
             pendingRetryJob?.cancel()
@@ -1060,6 +1094,169 @@ class PlayerController private constructor(private val context: Context) {
         }
     }
 
+    private fun computeAdvanceIndex(state: PlayerUiState): Int? {
+        if (state.queue.isEmpty()) return null
+        if (state.shuffleEnabled && state.queue.size > 1 && state.repeatMode != Player.REPEAT_MODE_ONE) {
+            val recentSet = synchronized(shuffleHistory) {
+                shuffleHistory.take(minOf(state.queue.size / 2, 20)).toSet()
+            }
+            val candidates = state.queue.indices.filter { it != state.queueIndex && it !in recentSet }
+            return if (candidates.isNotEmpty()) candidates.random()
+            else {
+                val t = kotlin.random.Random.nextInt(state.queue.size)
+                if (t == state.queueIndex) (t + 1) % state.queue.size else t
+            }
+        }
+        if (state.repeatMode == Player.REPEAT_MODE_ONE) return null
+        if (state.repeatMode == Player.REPEAT_MODE_OFF && state.queueIndex == state.queue.lastIndex) return null
+        return (state.queueIndex + 1) % state.queue.size
+    }
+
+    private fun dropPreAppended() {
+        preAppendedKey = null
+        preAppendJob?.cancel()
+        preAppendJob = null
+        try {
+            val mc = mediaController
+            if (mc != null && mc.mediaItemCount == 2) mc.removeMediaItem(1)
+        } catch (_: Exception) {}
+    }
+
+    private fun maybePreAppendNext(posMs: Long, durMs: Long) {
+        if (durMs <= 0L) return
+        val remaining = durMs - posMs
+        if (remaining <= 0L || remaining > 30_000L) return
+        if (togetherManager.canGuestControl() || togetherManager.isActive()) return
+        if (crossfadeController.isActive) return
+        if (preAppendJob?.isActive == true) return
+        val state = _uiState.value
+        val target = computeAdvanceIndex(state)
+        if (target == null) {
+            if (state.repeatMode == Player.REPEAT_MODE_OFF &&
+                state.queueIndex == state.queue.lastIndex &&
+                preExtendedForIndex != state.queueIndex
+            ) {
+                preExtendedForIndex = state.queueIndex
+                extendQueueAtEnd(state, playNow = false)
+            }
+            return
+        }
+        if (remaining > 20_000L) return
+        val next = state.queue.getOrNull(target) ?: return
+        if (next.isLocal) return
+        val nextVid = next.videoId ?: next.id
+        if (nextVid.length != 11) return
+        val key = "${state.queueIndex}_$nextVid"
+        if (preAppendedKey == key) return
+        val mc = mediaController ?: return
+        if (mc.mediaItemCount != 1) return
+        preAppendJob?.cancel()
+        preAppendJob = scope.launch(Dispatchers.IO) {
+            try {
+                val item = buildPreAppendItem(next, state.isVideoMode) ?: return@launch
+                withContext(Dispatchers.Main) {
+                    val now = _uiState.value
+                    val cur = mediaController
+                    if (cur == null || cur.mediaItemCount != 1) return@withContext
+                    if (now.queueIndex != state.queueIndex) return@withContext
+                    val check = now.queue.getOrNull(target)
+                    if ((check?.videoId ?: check?.id) != nextVid) return@withContext
+                    if (!(cur.isPlaying || (cur.playWhenReady && cur.playbackState == Player.STATE_BUFFERING))) return@withContext
+                    runCatching { cur.addMediaItem(item) }
+                    preAppendedKey = key
+                    Log.d("PlayerController", "Pre-appended $nextVid for gapless advance")
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
+    private suspend fun buildPreAppendItem(track: MediaTrack, isVideo: Boolean): MediaItem? {
+        val videoId = track.videoId ?: track.id
+        val cached = urlCache.get(videoId)
+        val detailed: StreamResult =
+            if (cached != null && (cached.availableAudioTracks.isNotEmpty() || cached.availableQualities.isNotEmpty())) cached
+            else {
+                val res = youtubeExtractor.getStreamUrlsDetailed(videoId)
+                if (res.audioUrl != null || res.videoUrl != null) urlCache.put(videoId, res)
+                res
+            }
+        val currentPref = _uiState.value.selectedQuality ?: "Auto"
+        val option = if (currentPref.equals("Auto", ignoreCase = true)) {
+            detailed.availableQualities.firstOrNull { it.label.contains("720p") } ?: detailed.availableQualities.firstOrNull()
+        } else {
+            detailed.availableQualities.find { it.label == currentPref } ?: detailed.availableQualities.firstOrNull()
+        }
+        val videoOnly = option?.isVideoOnly ?: true
+        val url = if (isVideo && option?.url != null) option.url else (detailed.audioUrl ?: detailed.videoUrl)
+        if (url.isNullOrBlank()) return null
+        val qualityLabel = if (currentPref.equals("Auto", ignoreCase = true)) "Auto" else (option?.label ?: "Auto")
+        val extras = Bundle().apply {
+            if (detailed.audioUrl != null && isVideo && detailed.videoUrl != null && videoOnly) {
+                putString("audio_stream_url", detailed.audioUrl)
+            }
+        }
+        val mergedAudio = extras.containsKey("audio_stream_url")
+        val metadata = MediaMetadata.Builder()
+            .setTitle(track.title)
+            .setArtist(track.artist)
+            .setAlbumTitle(track.album)
+            .setArtworkUri(track.artworkUrl?.let { Uri.parse(it) })
+            .setExtras(extras)
+            .build()
+        return MediaItem.Builder()
+            .setMediaId(track.id)
+            .setUri(url)
+            .setCustomCacheKey(if (mergedAudio) "${track.id}_${qualityLabel}_vo" else "${track.id}_$qualityLabel")
+            .setMediaMetadata(metadata)
+            .build()
+    }
+
+    private fun extendQueueAtEnd(state: PlayerUiState, playNow: Boolean): Boolean {
+        if (!(autoQueueEnabled && !isExtendingQueue && autoQueueAttemptedForIndex != state.queueIndex)) return false
+        val currentTrack = state.currentTrack ?: state.queue.lastOrNull()
+        if (currentTrack == null || currentTrack.isLocal) return false
+        autoQueueAttemptedForIndex = state.queueIndex
+        isExtendingQueue = true
+        if (playNow) _uiState.update { it.copy(isBuffering = true) }
+        scope.launch(Dispatchers.IO) {
+            try {
+                val newTracks = autoQueueHelper.extendQueue(currentTrack, state.queue)
+                if (newTracks.isNotEmpty()) {
+                    withContext(Dispatchers.Main) {
+                        val latestState = _uiState.value
+                        if (latestState.queue.isNotEmpty() && latestState.queueIndex == state.queueIndex) {
+                            val existingIds = latestState.queue.mapNotNull { it.videoId ?: it.id }.toSet()
+                            val uniqueNewTracks = newTracks.filter { (it.videoId ?: it.id) !in existingIds }
+                            val updatedQueue = latestState.queue + uniqueNewTracks
+                            _uiState.update { it.copy(queue = updatedQueue) }
+                            if (playNow) playQueue(updatedQueue, latestState.queueIndex + 1, latestState.isVideoMode)
+                        }
+                    }
+                } else {
+                    withContext(Dispatchers.Main) {
+                        autoQueueAttemptedForIndex = -1
+                        if (playNow) {
+                            _uiState.update { it.copy(isPlaying = false, isBuffering = false) }
+                            mediaController?.pause()
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w("PlayerController", "AutoQueue error: ${e.message}")
+                withContext(Dispatchers.Main) {
+                    autoQueueAttemptedForIndex = -1
+                    if (playNow) {
+                        _uiState.update { it.copy(isPlaying = false, isBuffering = false) }
+                        mediaController?.pause()
+                    }
+                }
+            } finally {
+                isExtendingQueue = false
+            }
+        }
+        return true
+    }
+
     fun playNext() {
         if (togetherManager.canGuestControl()) {
             togetherManager.requestControl(com.example.tsuki.together.ControlAction.SkipNext)
@@ -1085,49 +1282,10 @@ class PlayerController private constructor(private val context: Context) {
         if (state.queue.isNotEmpty()) {
             val nextIndex = if (state.repeatMode == Player.REPEAT_MODE_ONE) state.queueIndex else (state.queueIndex + 1) % state.queue.size
             if (state.repeatMode == Player.REPEAT_MODE_OFF && state.queueIndex == state.queue.lastIndex) {
-                if (autoQueueEnabled && !isExtendingQueue && autoQueueAttemptedForIndex != state.queueIndex) {
-                    autoQueueAttemptedForIndex = state.queueIndex
-                    val currentTrack = state.currentTrack ?: state.queue.lastOrNull()
-                    if (currentTrack != null && !currentTrack.isLocal) {
-                        isExtendingQueue = true
-                        _uiState.update { it.copy(isBuffering = true) }
-                        scope.launch(Dispatchers.IO) {
-                            try {
-                                val newTracks = autoQueueHelper.extendQueue(currentTrack, state.queue)
-                                if (newTracks.isNotEmpty()) {
-                                    withContext(Dispatchers.Main) {
-                                        val latestState = _uiState.value
-                                        if (latestState.queue.isNotEmpty() && latestState.queueIndex == state.queueIndex) {
-                                            val existingIds = latestState.queue.mapNotNull { it.videoId ?: it.id }.toSet()
-                                            val uniqueNewTracks = newTracks.filter { (it.videoId ?: it.id) !in existingIds }
-                                            val updatedQueue = latestState.queue + uniqueNewTracks
-                                            _uiState.update { it.copy(queue = updatedQueue) }
-                                            playQueue(updatedQueue, latestState.queueIndex + 1, latestState.isVideoMode)
-                                        }
-                                    }
-                                } else {
-                                    withContext(Dispatchers.Main) {
-                                        autoQueueAttemptedForIndex = -1
-                                        _uiState.update { it.copy(isPlaying = false, isBuffering = false) }
-                                        mediaController?.pause()
-                                    }
-                                }
-                            } catch (e: Exception) {
-                                Log.w("PlayerController", "AutoQueue error: ${e.message}")
-                                withContext(Dispatchers.Main) {
-                                    autoQueueAttemptedForIndex = -1
-                                    _uiState.update { it.copy(isPlaying = false, isBuffering = false) }
-                                    mediaController?.pause()
-                                }
-                            } finally {
-                                isExtendingQueue = false
-                            }
-                        }
-                        return
-                    }
+                if (!extendQueueAtEnd(state, playNow = true)) {
+                    _uiState.update { it.copy(isPlaying = false) }
+                    mediaController?.pause()
                 }
-                _uiState.update { it.copy(isPlaying = false) }
-                mediaController?.pause()
                 return
             }
             playQueue(state.queue, nextIndex, state.isVideoMode)
@@ -1213,11 +1371,18 @@ class PlayerController private constructor(private val context: Context) {
             crossfadeController.cancel("user seek during crossfade")
         }
         lastSeekAtMs = android.os.SystemClock.uptimeMillis()
-        pendingSeekPosition = positionMs
-        mediaController?.seekTo(positionMs)
-        _playbackTick.value = PlaybackTick(positionMs = positionMs, durationMs = _playbackTick.value.durationMs)
+        val knownDuration = mediaController?.duration?.takeIf { it > 0L }
+            ?: _playbackTick.value.durationMs.takeIf { it > 0L }
+        val safePosition = if (knownDuration != null) {
+            positionMs.coerceIn(0L, (knownDuration - 500L).coerceAtLeast(0L))
+        } else {
+            positionMs.coerceAtLeast(0L)
+        }
+        pendingSeekPosition = safePosition
+        mediaController?.seekTo(safePosition)
+        _playbackTick.value = PlaybackTick(positionMs = safePosition, durationMs = _playbackTick.value.durationMs)
         scope.launch {
-            com.example.tsuki.ui.widget.glance.TSukiGlanceSync.updateProgress(context, positionMs.coerceAtLeast(0L), _playbackTick.value.durationMs, force = true)
+            com.example.tsuki.ui.widget.glance.TSukiGlanceSync.updateProgress(context, safePosition.coerceAtLeast(0L), _playbackTick.value.durationMs, force = true)
         }
     }
 
@@ -1529,7 +1694,7 @@ class PlayerController private constructor(private val context: Context) {
         }
     }
 
-    fun toggleVideoMode() { if (_uiState.value.isVideoMode) setPlayerMode(PlayerMode.AudioOnly) else setPlayerMode(PlayerMode.VideoExpanded) }
+    fun toggleVideoMode() { if (musicOnlyMode && !_uiState.value.isVideoMode) return; if (_uiState.value.isVideoMode) setPlayerMode(PlayerMode.AudioOnly) else setPlayerMode(PlayerMode.VideoExpanded) }
 
     fun toggleShuffle() {
         val newShuffle = !_uiState.value.shuffleEnabled
@@ -1545,6 +1710,7 @@ class PlayerController private constructor(private val context: Context) {
     }
 
     private fun resyncQueueFromPlayer(reason: String) {
+        dropPreAppended()
         val mc = mediaController ?: return
         Log.w("PlayerController", "Playlist mutation failed ($reason), resyncing queue from player")
         val count = mc.mediaItemCount
@@ -1569,12 +1735,41 @@ class PlayerController private constructor(private val context: Context) {
         }
     }
 
+    fun syncExternalQueue(tracks: List<MediaTrack>, startIndex: Int) {
+        if (tracks.isEmpty()) return
+        val safeIndex = startIndex.coerceIn(0, tracks.lastIndex)
+        playGeneration.incrementAndGet()
+        playJob?.cancel()
+        playJob = null
+        pendingRetryJob?.cancel()
+        pendingRetryJob = null
+        val track = tracks[safeIndex]
+        _uiState.update {
+            it.copy(
+                queue = tracks,
+                queueIndex = safeIndex,
+                currentTrack = track,
+                playerMode = if (track.isVideoItem) PlayerMode.VideoExpanded else PlayerMode.AudioOnly,
+                errorMessage = null
+            )
+        }
+    }
+
+    fun appendExternalTracks(tracks: List<MediaTrack>) {
+        if (tracks.isEmpty()) return
+        _uiState.update { it.copy(queue = it.queue + tracks) }
+    }
+
     fun moveQueueItem(from: Int, to: Int) {
+        dropPreAppended()
         val state = _uiState.value
         if (from !in state.queue.indices || to !in state.queue.indices || from == to) return
         val newQueue = state.queue.toMutableList().apply { add(to, removeAt(from)) }
-        val currentId = state.currentTrack?.id
-        val newIndex = currentId?.let { id -> newQueue.indexOfFirst { it.id == id } } ?: state.queueIndex
+        val newIndex = when {
+            state.queueIndex == from -> to
+            state.queueIndex in (minOf(from, to)..maxOf(from, to)) -> if (from < to) state.queueIndex - 1 else state.queueIndex + 1
+            else -> state.queueIndex
+        }
         _uiState.update { it.copy(queue = newQueue, queueIndex = newIndex.coerceAtLeast(0)) }
         try {
             val mc = mediaController
@@ -1585,6 +1780,7 @@ class PlayerController private constructor(private val context: Context) {
     }
 
     fun removeQueueItem(index: Int): MediaTrack? {
+        dropPreAppended()
         val state = _uiState.value
         if (index !in state.queue.indices) return null
         val removed = state.queue[index]
@@ -1610,6 +1806,7 @@ class PlayerController private constructor(private val context: Context) {
     }
 
     fun restoreQueueItem(index: Int, track: MediaTrack) {
+        dropPreAppended()
         val state = _uiState.value
         val safeIndex = index.coerceIn(0, state.queue.size)
         val newQueue = state.queue.toMutableList().apply { add(safeIndex, track) }
@@ -1618,6 +1815,7 @@ class PlayerController private constructor(private val context: Context) {
     }
 
     fun addToQueue(track: MediaTrack) {
+        dropPreAppended()
         val state = _uiState.value
         if (state.queue.isEmpty()) {
             playQueue(listOf(track), 0, track.isVideoItem)
@@ -1628,6 +1826,7 @@ class PlayerController private constructor(private val context: Context) {
     }
 
     fun playNext(track: MediaTrack) {
+        dropPreAppended()
         val state = _uiState.value
         if (state.queue.isEmpty()) {
             playQueue(listOf(track), 0, track.isVideoItem)
@@ -1642,8 +1841,10 @@ class PlayerController private constructor(private val context: Context) {
 
     fun playWithRadio(track: MediaTrack, playAsVideo: Boolean = track.isVideoItem) {
         radioJob?.cancel()
-        playQueue(listOf(track), 0, playAsVideo)
         val seedId = track.videoId ?: track.id
+        val currentId = _uiState.value.currentTrack?.let { it.videoId ?: it.id }
+        val resumeAt = if (currentId == seedId) currentPositionNow().takeIf { it > 2000L } ?: -1L else -1L
+        playQueue(listOf(track), 0, playAsVideo, resumePositionMs = resumeAt)
         if (track.isLocal || seedId.length != 11) return
         radioJob = scope.launch(Dispatchers.IO) {
             try {
@@ -1656,6 +1857,7 @@ class PlayerController private constructor(private val context: Context) {
                             val existingIds = setOf(seedId)
                             val uniqueRelated = related.filter { (it.videoId ?: it.id) !in existingIds }
                             val newQueue = listOf(track) + uniqueRelated
+                            dropPreAppended()
                             _uiState.update { it.copy(queue = newQueue) }
                             prefetchTracks(uniqueRelated)
                         }
@@ -1668,6 +1870,7 @@ class PlayerController private constructor(private val context: Context) {
     }
 
     fun shuffleQueue() {
+        dropPreAppended()
         val state = _uiState.value
         if (state.queue.size < 2) return
         val current = state.currentTrack
@@ -1677,11 +1880,13 @@ class PlayerController private constructor(private val context: Context) {
     }
 
     fun clearQueue() {
+        dropPreAppended()
         _uiState.update { it.copy(queue = emptyList(), queueIndex = 0, currentTrack = null, isPlaying = false) }
         try { mediaController?.clearMediaItems(); mediaController?.stop() } catch (e: Exception) { resyncQueueFromPlayer("clearQueue") }
     }
 
     fun stopAndClearPlayback() {
+        dropPreAppended()
         crossfadeController.cancel("stopAndClear")
         progressJob?.cancel()
         try {

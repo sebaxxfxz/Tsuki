@@ -29,11 +29,13 @@ object TogetherLink {
     fun decode(raw: String): TogetherJoinInfo? {
         val input = raw.trim()
         if (input.isEmpty()) return null
-        runCatching { URI(input) }.getOrNull()?.let { uri ->
+        val link = Regex("tsuki://\\S+").find(input)?.value
+            ?.trimEnd('.', ',', ';', ':', '!', '?', ')') ?: input
+        runCatching { URI(link) }.getOrNull()?.let { uri ->
             parseDeepLink(uri)?.let { return it }
             parseWs(uri)?.let { return it }
         }
-        return parseCompact(input)
+        return parseCompact(link)
     }
 
     private fun parseDeepLink(uri: URI): TogetherJoinInfo? {

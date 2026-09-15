@@ -115,6 +115,7 @@ fun SubscriptionsScreen(
     val subs by subRepo.getAllSubscriptions().collectAsStateWithLifecycle(initialValue = emptyList())
     val favChannels by homePrefs.favoriteChannels.collectAsStateWithLifecycle(initialValue = emptySet())
     val blockedChannels by homePrefs.blockedChannels.collectAsStateWithLifecycle(initialValue = emptySet())
+    val blockedVideos by homePrefs.blockedVideos.collectAsStateWithLifecycle(initialValue = emptySet())
     val notifyEnabled by homePrefs.subNotifyEnabled.collectAsStateWithLifecycle(initialValue = false)
     var videos by remember { mutableStateOf<List<MediaTrack>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
@@ -430,16 +431,21 @@ fun SubscriptionsScreen(
                     }
                 }
                 else -> {
-                    val filtered = remember(videos, filter, selectedChannelId, showOnlyNew, sortMode, displaySubs) {
+                    val filtered = remember(videos, filter, selectedChannelId, showOnlyNew, sortMode, displaySubs, blockedChannels, blockedVideos) {
                         val byChannel = if (selectedChannelId == null) videos
                         else {
                             val ch = displaySubs.firstOrNull { it.channelId == selectedChannelId }
                             videos.filter { it.channelId == selectedChannelId || (ch != null && it.artist.equals(ch.channelName, ignoreCase = true)) }
                         }
-                        val onlyNew = if (showOnlyNew) byChannel.filter { it.id in sessionNewIds } else byChannel
+                        val visible = if (selectedChannelId != null) byChannel
+                        else byChannel.filter { track ->
+                            (track.channelId == null || track.channelId !in blockedChannels) &&
+                                track.id !in blockedVideos && (track.videoId ?: track.id) !in blockedVideos
+                        }
+                        val onlyNew = if (showOnlyNew) visible.filter { it.id in sessionNewIds } else visible
                         val byType = when (filter) {
                             "Shorts" -> onlyNew.filter { it.isShort || it.durationSeconds in 1..65 }
-                            "Videos" -> onlyNew.filter { !it.isShort && it.durationSeconds > 65 }
+                            "Videos" -> onlyNew.filter { !it.isShort && (it.durationSeconds > 65 || it.durationSeconds <= 0) }
                             else -> onlyNew
                         }
                         when (sortMode) {
@@ -605,7 +611,6 @@ fun SubscriptionsScreen(
                                 else homePrefs.blockChannel(channel.channelId)
                             }
                             Toast.makeText(context, if (isMuted) context.getString(R.string.subs_unmuted) else context.getString(R.string.subs_muted), Toast.LENGTH_SHORT).show()
-                            load()
                         }
                     )
                     SubSheetRow(

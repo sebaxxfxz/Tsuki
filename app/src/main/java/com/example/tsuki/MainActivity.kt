@@ -217,8 +217,10 @@ class MainActivity : ComponentActivity() {
             else -> null
         } ?: return
 
-        if (raw.startsWith("tsuki://together") || (raw.count { it == '|' } == 3 && !raw.contains("http"))) {
-            com.example.tsuki.ui.screens.TogetherDeepLink.pending.value = raw.trim()
+        val togetherLink = Regex("tsuki://together\\S+").find(raw)?.value
+            ?.trimEnd('.', ',', ';', ':', '!', '?', ')')
+        if (togetherLink != null || (raw.count { it == '|' } == 3 && !raw.contains("http"))) {
+            com.example.tsuki.ui.screens.TogetherDeepLink.pending.value = (togetherLink ?: raw).trim()
             return
         }
 
@@ -304,6 +306,13 @@ fun TSukiMainScreen(playerController: PlayerController) {
     var onboardingDone by remember { mutableStateOf<Boolean?>(null) }
     LaunchedEffect(Unit) {
         homePrefsOnboarding.onboardingDone.collect { onboardingDone = it }
+    }
+    val contentMode by homePrefsOnboarding.contentMode.collectAsStateWithLifecycle(initialValue = com.example.tsuki.data.local.HomePreferences.CONTENT_MODE_ALL)
+    val musicOnly = contentMode == com.example.tsuki.data.local.HomePreferences.CONTENT_MODE_MUSIC_ONLY
+    LaunchedEffect(musicOnly) {
+        if (musicOnly && (currentDestination == TSukiDestination.HOME || currentDestination == TSukiDestination.SUBSCRIPTIONS)) {
+            currentDestination = TSukiDestination.MUSIC
+        }
     }
 
     fun enterSystemPip() {
@@ -434,7 +443,7 @@ fun TSukiMainScreen(playerController: PlayerController) {
             isPlayerExpanded = false
             isCornerPip = false
             when (dest) {
-                "HOME" -> currentDestination = TSukiDestination.HOME
+                "HOME" -> currentDestination = if (musicOnly) TSukiDestination.MUSIC else TSukiDestination.HOME
                 "MUSIC", "SEARCH" -> currentDestination = TSukiDestination.MUSIC
                 "LIBRARY" -> {
                     currentDestination = TSukiDestination.LIBRARY
@@ -444,7 +453,7 @@ fun TSukiMainScreen(playerController: PlayerController) {
                     currentDestination = TSukiDestination.LIBRARY
                     libraryInitialSection = com.example.tsuki.ui.screens.LibrarySection.LIKED
                 }
-                "SUBSCRIPTIONS" -> currentDestination = TSukiDestination.SUBSCRIPTIONS
+                "SUBSCRIPTIONS" -> currentDestination = if (musicOnly) TSukiDestination.MUSIC else TSukiDestination.SUBSCRIPTIONS
             }
         }
         if (cur.getBooleanExtra("open_player", false) || cur.action == "com.example.tsuki.action.OPEN_PLAYER") {
@@ -601,7 +610,7 @@ fun TSukiMainScreen(playerController: PlayerController) {
                                         isPlayerExpanded = false
                                     }
                                 },
-                                onExploreClick = { currentDestination = TSukiDestination.HOME }
+                                onExploreClick = { currentDestination = if (musicOnly) TSukiDestination.MUSIC else TSukiDestination.HOME }
                             )
 
                             TSukiDestination.LIBRARY -> LibraryScreen(
@@ -632,7 +641,7 @@ fun TSukiMainScreen(playerController: PlayerController) {
 
                             TSukiDestination.RECOGNIZE -> {
                                 com.example.tsuki.ui.screens.RecognitionScreen(
-                                    onBack = { currentDestination = TSukiDestination.HOME },
+                                    onBack = { currentDestination = if (musicOnly) TSukiDestination.MUSIC else TSukiDestination.HOME },
                                     playerController = playerController,
                                     resolveTrack = { title, artist ->
                                         runCatching {
@@ -656,7 +665,7 @@ fun TSukiMainScreen(playerController: PlayerController) {
 
                             TSukiDestination.SETTINGS -> {
                                 SettingsScreen(
-                                    onBack = { currentDestination = TSukiDestination.HOME },
+                                    onBack = { currentDestination = if (musicOnly) TSukiDestination.MUSIC else TSukiDestination.HOME },
                                     onImportSpotifyClick = { showImportPlaylist = true },
                                     onPersonalizationClick = { showPersonalization = true },
                                     onStatsClick = { showStats = true },
@@ -717,6 +726,7 @@ fun TSukiMainScreen(playerController: PlayerController) {
                                 onPreviousClick = { playerController.playPrevious() },
                                 onClick = { playerSheetState.expandSoft() },
                                 onDismiss = { playerSheetState.dismiss(); if (isMusicPlaying) playerController.stopAndClearPlayback() },
+                                showVideoToggle = !musicOnly,
                                 modifier = Modifier
                                     .fillMaxWidth(0.78f)
                             )
@@ -757,8 +767,13 @@ fun TSukiMainScreen(playerController: PlayerController) {
                         .graphicsLayer { alpha = bottomBarVisibility.value },
                     contentAlignment = Alignment.Center
                 ) {
-                    val pillItems = remember(currentDestination, showTogether) {
-                        TSukiDestination.entries.map { dest ->
+                        val pillItems = remember(currentDestination, showTogether, musicOnly) {
+                            val visible = if (musicOnly) {
+                                listOf(TSukiDestination.MUSIC, TSukiDestination.LIBRARY, TSukiDestination.RECOGNIZE, TSukiDestination.SETTINGS)
+                            } else {
+                                TSukiDestination.entries
+                            }
+                            visible.map { dest ->
                             TSukiNavTabItem(
                                 label = context.resources.getString(dest.labelRes),
                                 icon = dest.icon,

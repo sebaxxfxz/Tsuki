@@ -87,15 +87,15 @@ fun ReorderableQueueList(
     val lazyListState = rememberLazyListState()
 
 
-    LaunchedEffect(queueIndex) {
-        if (!lazyListState.isScrollInProgress && queueIndex in queue.indices) {
-            lazyListState.animateScrollToItem((queueIndex - 1).coerceAtLeast(0))
-        }
-    }
-
     val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
         playerController.moveQueueItem(from.index, to.index)
         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+    }
+
+    LaunchedEffect(queueIndex) {
+        if (!lazyListState.isScrollInProgress && !reorderableState.isAnyItemDragging && queueIndex in queue.indices) {
+            lazyListState.animateScrollToItem((queueIndex - 1).coerceAtLeast(0))
+        }
     }
 
     FastScrollBox(

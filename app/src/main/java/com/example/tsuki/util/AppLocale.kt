@@ -58,10 +58,6 @@ object AppLocale {
     fun applyAndRecreate(activity: Activity, tag: String) {
         saveStored(activity, tag)
         val resolvedTag = resolveTag(tag)
-        val contentLang = if (resolvedTag == ENGLISH) "en" else "es"
-        val contentCountry = if (resolvedTag == ENGLISH) "US" else "ES"
-        com.example.tsuki.network.TSukiContentLocale.languageTag = contentLang
-        com.example.tsuki.network.TSukiContentLocale.countryCode = contentCountry
         try {
             java.io.File(activity.cacheDir, "tsuki_home_feed_cache.json").delete()
         } catch (_: Throwable) {}

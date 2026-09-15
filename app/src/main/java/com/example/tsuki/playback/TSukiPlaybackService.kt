@@ -2,6 +2,7 @@ package com.example.tsuki.playback
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.os.Bundle
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -15,7 +16,9 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.CommandButton
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaLibraryService
+import androidx.media3.session.MediaNotification
 import androidx.media3.session.MediaSession
+import com.google.common.collect.ImmutableList
 import com.example.tsuki.MainActivity
 import com.example.tsuki.R
 import kotlinx.coroutines.CoroutineScope
@@ -41,6 +44,22 @@ class TSukiPlaybackService : MediaLibraryService() {
     private var serviceScope: CoroutineScope? = null
     private var serviceWakeLock: android.os.PowerManager.WakeLock? = null
     private var progressTickerJob: Job? = null
+    private var lastMediaNotification: android.app.Notification? = null
+    private val serviceMainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
+    private fun repromoteForeground() {
+        val notification = lastMediaNotification ?: return
+        if (!::player.isInitialized) return
+        try {
+            if (player.mediaItemCount == 0) return
+            if (!(player.isPlaying || (player.playWhenReady && player.playbackState == Player.STATE_BUFFERING))) return
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
+                startForeground(1001, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
+            } else {
+                startForeground(1001, notification)
+            }
+        } catch (_: Exception) {}
+    }
 
     private fun updateProgressTicker(isPlaying: Boolean) {
         progressTickerJob?.cancel()
@@ -223,6 +242,7 @@ class TSukiPlaybackService : MediaLibraryService() {
                 updateServiceWakeLock()
                 updateProgressTicker(isPlaying)
                 syncGlanceWidgets()
+                if (isPlaying) serviceMainHandler.post { repromoteForeground() }
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
@@ -231,6 +251,7 @@ class TSukiPlaybackService : MediaLibraryService() {
                     updateProgressTicker(player.isPlaying)
                 }
                 syncGlanceWidgets()
+                if (playbackState == Player.STATE_BUFFERING) serviceMainHandler.post { repromoteForeground() }
             }
 
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
@@ -349,24 +370,28 @@ class TSukiPlaybackService : MediaLibraryService() {
             }
 
             override fun seekToNextMediaItem() {
+                android.util.Log.d("TSukiMediaButton", "seekToNextMediaItem")
                 android.os.Handler(android.os.Looper.getMainLooper()).post {
                     PlayerController.getInstance(this@TSukiPlaybackService).playNext()
                 }
             }
 
             override fun seekToPreviousMediaItem() {
+                android.util.Log.d("TSukiMediaButton", "seekToPreviousMediaItem")
                 android.os.Handler(android.os.Looper.getMainLooper()).post {
                     PlayerController.getInstance(this@TSukiPlaybackService).playPrevious()
                 }
             }
 
             override fun seekToNext() {
+                android.util.Log.d("TSukiMediaButton", "seekToNext")
                 android.os.Handler(android.os.Looper.getMainLooper()).post {
                     PlayerController.getInstance(this@TSukiPlaybackService).playNext()
                 }
             }
 
             override fun seekToPrevious() {
+                android.util.Log.d("TSukiMediaButton", "seekToPrevious")
                 android.os.Handler(android.os.Looper.getMainLooper()).post {
                     PlayerController.getInstance(this@TSukiPlaybackService).playPrevious()
                 }
@@ -383,7 +408,27 @@ class TSukiPlaybackService : MediaLibraryService() {
             .setNotificationId(1001)
             .build()
 
-        setMediaNotificationProvider(notificationProvider)
+        val cachingProvider = object : MediaNotification.Provider {
+            override fun createNotification(
+                session: MediaSession,
+                mediaButtonPreferences: ImmutableList<CommandButton>,
+                actionFactory: MediaNotification.ActionFactory,
+                onNotificationChangedCallback: MediaNotification.Provider.Callback
+            ): MediaNotification {
+                return notificationProvider.createNotification(
+                    session,
+                    mediaButtonPreferences,
+                    actionFactory,
+                    onNotificationChangedCallback
+                ).also { lastMediaNotification = it.notification }
+            }
+
+            override fun handleCustomCommand(session: MediaSession, action: String, extras: Bundle): Boolean {
+                return notificationProvider.handleCustomCommand(session, action, extras)
+            }
+        }
+
+        setMediaNotificationProvider(cachingProvider)
         serviceScope?.launch {
             PlayerController.getInstance(this@TSukiPlaybackService).uiState.collect { s ->
                 val session = mediaLibrarySession ?: return@collect

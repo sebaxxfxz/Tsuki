@@ -10,7 +10,14 @@ object LyricsUtils {
     private val WHITESPACE_REGEX = "\\s+".toRegex()
     private const val CONTINUATION_GAP_SEC = 0.08
 
-    private val HTML_ENTITY_REGEX = Regex("&#(x?[0-9a-fA-F]+);|&(amp|quot|apos|lt|gt);")
+    private val HTML_ENTITY_REGEX = Regex("&#(x?[0-9a-fA-F]+);|&(amp|quot|apos|lt|gt|nbsp|ndash|mdash|lsquo|rsquo|sbquo|ldquo|rdquo|bdquo|hellip|laquo|raquo|copy|reg|trade|times|divide|plusmn);")
+    private data class EnhancedWordSlot(
+        val text: String,
+        val startSec: Double,
+        val rawEndSec: Double?,
+        val hadTrailingSpace: Boolean
+    )
+    private val VOICE_LABEL_REGEX = Regex("^([Vv]\\d{1,2})\\s*:")
 
     private val TTML_DETECT_REGEX = Regex("""<[A-Za-z0-9_-]*:?tt[\s>:]""")
     private val TTML_P_BEGIN_DETECT_REGEX = Regex("""<p\s+[^>]*begin\s*=""")
@@ -39,6 +46,22 @@ object LyricsUtils {
                     "apos" -> "'"
                     "lt" -> "<"
                     "gt" -> ">"
+                    "nbsp" -> " "
+                    "ndash" -> "–"
+                    "mdash" -> "—"
+                    "lsquo", "sbquo" -> "‘"
+                    "rsquo" -> "’"
+                    "ldquo", "bdquo" -> "“"
+                    "rdquo" -> "”"
+                    "hellip" -> "…"
+                    "laquo" -> "«"
+                    "raquo" -> "»"
+                    "copy" -> "©"
+                    "reg" -> "®"
+                    "trade" -> "™"
+                    "times" -> "×"
+                    "divide" -> "÷"
+                    "plusmn" -> "±"
                     else -> m.value
                 }
             }
@@ -166,7 +189,7 @@ object LyricsUtils {
     }
 
     private fun flattenTtmlText(raw: String): String =
-        unescapeHtml(XML_TAG_REGEX.replace(raw, "")).replace(WHITESPACE_REGEX, " ").trim()
+        VOICE_LABEL_REGEX.replaceFirst(unescapeHtml(XML_TAG_REGEX.replace(raw, "")), "").replace(WHITESPACE_REGEX, " ").trim()
 
     fun parseLyrics(lyrics: String): List<LyricsEntry> {
         val normalized = normalizeLyricsText(lyrics)
@@ -198,7 +221,14 @@ object LyricsUtils {
         val trimmed = line.trim()
         val match = LINE_REGEX.matchEntire(trimmed) ?: return null
         val timesPart = match.groupValues[1]
-        val textPart = match.groupValues[3].trim()
+        val rawTextPart = match.groupValues[3].trim()
+        val voiceMatch = VOICE_LABEL_REGEX.find(rawTextPart)
+        val agent = voiceMatch?.groupValues?.getOrNull(1)?.lowercase()
+        val textPart = if (voiceMatch != null) {
+            rawTextPart.substring(voiceMatch.range.last + 1).trim()
+        } else {
+            rawTextPart
+        }
 
         val times = TIME_REGEX.findAll(timesPart).map { m ->
             val min = m.groupValues[1].toLongOrNull() ?: 0L
@@ -225,7 +255,8 @@ object LyricsUtils {
             LyricsEntry(
                 time = time,
                 text = cleanText,
-                words = words
+                words = words,
+                agent = agent
             )
         }
     }
@@ -235,6 +266,7 @@ object LyricsUtils {
         if (wordMatches.isEmpty()) return null
 
         val segments = mutableListOf<WordTimestamp>()
+        val rawEnds = mutableListOf<Double>()
 
         if (wordMatches.first().range.first > 0) {
             val prefix = textWithTimestamps.substring(0, wordMatches.first().range.first)
@@ -245,41 +277,73 @@ object LyricsUtils {
                 val endSec = if (firstMatchTime > startSec) firstMatchTime else startSec + 1.0
                 val spaced = if (prefix.last().isWhitespace()) "$cleanPrefix " else cleanPrefix
                 segments.add(WordTimestamp(text = spaced, startTime = startSec, endTime = endSec))
+                rawEnds.add(endSec)
             }
         }
 
+        val items = mutableListOf<EnhancedWordSlot>()
         for (i in wordMatches.indices) {
             val wMatch = wordMatches[i]
-            val wordStartSec = parseLrcMatchTimeSec(wMatch)
-            val nextStart = if (i + 1 < wordMatches.size) {
-                parseLrcMatchTimeSec(wordMatches[i + 1])
-            } else null
-
             val textStart = wMatch.range.last + 1
             val textEnd = if (i + 1 < wordMatches.size) wordMatches[i + 1].range.first else textWithTimestamps.length
             if (textStart >= textEnd) continue
 
             val rawWordText = textWithTimestamps.substring(textStart, textEnd)
             val wordText = rawWordText.trim()
-            if (wordText.isEmpty()) continue
+            if (wordText.isEmpty()) {
+                if (rawWordText.any { it.isWhitespace() }) {
+                    if (items.isNotEmpty()) {
+                        val lastItem = items.last()
+                        if (!lastItem.hadTrailingSpace) {
+                            items[items.size - 1] = lastItem.copy(hadTrailingSpace = true)
+                        }
+                    } else if (segments.isNotEmpty()) {
+                        val lastSeg = segments.last()
+                        if (!lastSeg.text.endsWith(" ")) {
+                            segments[segments.size - 1] = lastSeg.copy(text = lastSeg.text + " ")
+                        }
+                    }
+                }
+                continue
+            }
 
             val hadTrailingSpace = rawWordText.isNotEmpty() && rawWordText.last().isWhitespace()
-            val wordEndSec = nextStart ?: (wordStartSec + (wordText.length * 0.08).coerceIn(0.2, 0.45))
-            val unescaped = unescapeHtml(wordText)
-            val spacedText = if (hadTrailingSpace) "$unescaped " else unescaped
+            val rawEndSec = if (i + 1 < wordMatches.size) {
+                parseLrcMatchTimeSec(wordMatches[i + 1])
+            } else {
+                null
+            }
+            items.add(
+                EnhancedWordSlot(
+                    text = unescapeHtml(wordText),
+                    startSec = parseLrcMatchTimeSec(wMatch),
+                    rawEndSec = rawEndSec,
+                    hadTrailingSpace = hadTrailingSpace
+                )
+            )
+        }
+
+        for ((index, item) in items.withIndex()) {
+            val wordEndSec = items.getOrNull(index + 1)?.startSec
+                ?: item.rawEndSec
+                ?: (item.startSec + (item.text.length * 0.08).coerceIn(0.2, 0.45))
+            val spacedText = if (item.hadTrailingSpace) "${item.text} " else item.text
 
             val prev = segments.lastOrNull()
-            val isContinuation = prev != null &&
+            val prevRawEnd = rawEnds.lastOrNull() ?: prev?.endTime
+            val isContinuation = prev != null && prevRawEnd != null &&
                 !prev.text.endsWith(" ") &&
-                wordStartSec - prev.endTime <= CONTINUATION_GAP_SEC
+                item.startSec - prevRawEnd <= CONTINUATION_GAP_SEC
 
             if (isContinuation) {
                 segments[segments.size - 1] = prev!!.copy(
                     text = prev.text + spacedText,
                     endTime = wordEndSec
                 )
+                rawEnds[rawEnds.size - 1] = item.rawEndSec ?: wordEndSec
             } else {
-                segments.add(WordTimestamp(text = spacedText, startTime = wordStartSec, endTime = wordEndSec))
+                segments.add(WordTimestamp(text = spacedText, startTime = item.startSec, endTime = wordEndSec))
+                rawEnds.add(item.rawEndSec ?: wordEndSec)
             }
         }
 

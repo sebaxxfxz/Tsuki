@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -35,6 +36,9 @@ import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.rounded.Language
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.VideoLibrary
+import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -51,6 +55,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -151,10 +156,11 @@ fun OnboardingScreen(
     val isEnglish = AppLocale.resolveTag(appLocale) == AppLocale.ENGLISH
 
     val stepTitles = listOf(
+        stringResource(R.string.onboard_step_mode),
         stringResource(R.string.onboard_step_interests),
         stringResource(R.string.onboard_step_channels)
     )
-    val totalSteps = 2
+    val totalSteps = 3
 
     fun finish() {
         scope.launch {
@@ -171,6 +177,13 @@ fun OnboardingScreen(
             prefs.setSelectedTopics(selectedTopics)
             prefs.setOnboardingDone(true)
             onComplete()
+        }
+    }
+
+    fun pickMode(musicOnly: Boolean) {
+        scope.launch {
+            prefs.setContentMode(if (musicOnly) HomePreferences.CONTENT_MODE_MUSIC_ONLY else HomePreferences.CONTENT_MODE_ALL)
+            if (musicOnly) finish() else step++
         }
     }
 
@@ -262,6 +275,7 @@ fun OnboardingScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .navigationBarsPadding()
                     .padding(horizontal = 20.dp, vertical = 12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
@@ -272,19 +286,33 @@ fun OnboardingScreen(
                     Spacer(Modifier.width(1.dp))
                 }
 
-                val canAdvance = if (step == 0) selectedTopics.size >= 3 else true
+                val canAdvance = if (step == 1) selectedTopics.size >= 3 else true
                 val nextLabel = if (step == totalSteps - 1) stringResource(R.string.common_finish) else stringResource(R.string.common_next)
-                FilledTonalButton(
-                    onClick = { if (step == totalSteps - 1) finish() else step++ },
-                    enabled = canAdvance
-                ) { Text(nextLabel) }
+                if (step == 0) {
+                    TextButton(onClick = { finish() }) { Text(stringResource(R.string.onboard_skip)) }
+                } else {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextButton(onClick = { finish() }) { Text(stringResource(R.string.onboard_skip)) }
+                        Button(
+                            onClick = { if (step == totalSteps - 1) finish() else step++ },
+                            enabled = canAdvance,
+                            shape = RoundedCornerShape(20.dp),
+                            modifier = Modifier.height(52.dp),
+                            contentPadding = PaddingValues(horizontal = 24.dp)
+                        ) { Text(nextLabel, fontWeight = FontWeight.SemiBold) }
+                    }
+                }
             }
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
         androidx.compose.material3.LinearProgressIndicator(
             progress = { (step + 1).toFloat() / totalSteps.toFloat() },
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp)
+            trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp).height(6.dp).clip(RoundedCornerShape(50))
         )
 
         AnimatedContent(
@@ -304,7 +332,11 @@ fun OnboardingScreen(
             modifier = Modifier.fillMaxSize().padding(padding)
         ) { current ->
             when (current) {
-                0 -> InterestsStep(
+                0 -> ModeStep(
+                    onPickAll = { pickMode(false) },
+                    onPickMusicOnly = { pickMode(true) }
+                )
+                1 -> InterestsStep(
                     isEnglish = isEnglish,
                     selectedTopics = selectedTopics,
                     onToggle = { topic ->
@@ -316,7 +348,7 @@ fun OnboardingScreen(
                         }
                     }
                 )
-                1 -> ChannelsStep(
+                2 -> ChannelsStep(
                     searchQuery = searchQuery,
                     searchResults = searchResults,
                     isSearching = isSearching,
@@ -359,10 +391,97 @@ fun OnboardingScreen(
     }
 }
 
+@Composable
+private fun ModeStep(
+    onPickAll: () -> Unit,
+    onPickMusicOnly: () -> Unit
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    stringResource(R.string.onboard_mode_title),
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    stringResource(R.string.onboard_mode_sub),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        item {
+            ModeCard(
+                icon = MIcons.Rounded.VideoLibrary,
+                title = stringResource(R.string.onboard_mode_all_title),
+                subtitle = stringResource(R.string.onboard_mode_all_sub),
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                badgeColor = MaterialTheme.colorScheme.primary,
+                badgeContentColor = MaterialTheme.colorScheme.onPrimary,
+                onClick = onPickAll
+            )
+        }
+        item {
+            ModeCard(
+                icon = MIcons.Rounded.MusicNote,
+                title = stringResource(R.string.onboard_mode_music_title),
+                subtitle = stringResource(R.string.onboard_mode_music_sub),
+                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                badgeColor = MaterialTheme.colorScheme.secondary,
+                badgeContentColor = MaterialTheme.colorScheme.onSecondary,
+                onClick = onPickMusicOnly
+            )
+        }
+        item { Spacer(Modifier.height(8.dp)) }
+    }
+}
+
+@Composable
+private fun ModeCard(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    containerColor: androidx.compose.ui.graphics.Color,
+    contentColor: androidx.compose.ui.graphics.Color,
+    badgeColor: androidx.compose.ui.graphics.Color,
+    badgeContentColor: androidx.compose.ui.graphics.Color,
+    onClick: () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(28.dp),
+        color = containerColor,
+        contentColor = contentColor
+    ) {
+        Row(
+            modifier = Modifier.padding(20.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Box(
+                modifier = Modifier.size(56.dp).clip(CircleShape).background(badgeColor),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(icon, contentDescription = null, tint = badgeContentColor, modifier = Modifier.size(28.dp))
+            }
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
+                Text(subtitle, style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun InterestsStep(isEnglish: Boolean, selectedTopics: Set<String>, onToggle: (String) -> Unit) {
-    val categories    = remember(isEnglish) { TSukiTopicCatalog.getCategories(isEnglish) }
+private fun InterestsStep(isEnglish: Boolean, selectedTopics: Set<String>, onToggle: (String) -> Unit) {    val categories    = remember(isEnglish) { TSukiTopicCatalog.getCategories(isEnglish) }
     val remaining     = (3 - selectedTopics.size).coerceAtLeast(0)
 
     LazyColumn(
@@ -371,20 +490,30 @@ private fun InterestsStep(isEnglish: Boolean, selectedTopics: Set<String>, onTog
         verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
         item {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(
-                    stringResource(R.string.onboard_interests_title),
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    if (remaining > 0)
-                        stringResource(R.string.onboard_pick_more, remaining)
-                    else
-                        stringResource(R.string.onboard_ready),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color  = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            Surface(
+                shape = RoundedCornerShape(28.dp),
+                color = MaterialTheme.colorScheme.primaryContainer,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        stringResource(R.string.onboard_interests_title),
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                    Text(
+                        if (remaining > 0)
+                            stringResource(R.string.onboard_pick_more, remaining)
+                        else
+                            stringResource(R.string.onboard_ready),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.82f)
+                    )
+                }
             }
         }
 
@@ -392,9 +521,14 @@ private fun InterestsStep(isEnglish: Boolean, selectedTopics: Set<String>, onTog
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Text(category.icon, fontSize = 18.sp)
+                    Box(
+                        modifier = Modifier.size(36.dp).clip(CircleShape).background(MaterialTheme.colorScheme.secondaryContainer),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(category.icon, fontSize = 18.sp)
+                    }
                     Text(
                         category.name.uppercase(),
                         style  = MaterialTheme.typography.labelLarge,

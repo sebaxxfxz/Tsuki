@@ -25,7 +25,8 @@ data class ChannelRssEntry(
     val channelName: String,
     val thumbnailUrl: String?,
     val publishedAt: Long,
-    val viewCount: Long
+    val viewCount: Long,
+    val linkUrl: String? = null
 ) {
     fun toMediaTrack(): MediaTrack = MediaTrack(
         id = videoId,
@@ -36,7 +37,8 @@ data class ChannelRssEntry(
         isVideoItem = true,
         channelId = channelId,
         viewCount = viewCount,
-        publishedAt = publishedAt
+        publishedAt = publishedAt,
+        isShort = linkUrl?.contains("/shorts/") == true
     )
 }
 
@@ -110,6 +112,7 @@ class ChannelRssClient {
             var channelName: String? = null
             var viewCount = 0L
             var published: String? = null
+            var linkUrl: String? = null
 
             var eventType = parser.eventType
             while (eventType != XmlPullParser.END_DOCUMENT) {
@@ -124,10 +127,14 @@ class ChannelRssClient {
                             channelName = null
                             viewCount = 0L
                             published = null
+                            linkUrl = null
                         } else if (insideEntry) {
                             when {
                                 tagName.equals("videoId", ignoreCase = true) -> {
                                     videoId = parser.nextText()
+                                }
+                                tagName.equals("link", ignoreCase = true) && linkUrl == null -> {
+                                    linkUrl = parser.getAttributeValue(null, "href")
                                 }
                                 tagName.equals("title", ignoreCase = true) && title == null -> {
                                     title = parser.nextText()
@@ -161,7 +168,8 @@ class ChannelRssClient {
                                         channelName = channelName ?: channelTitle,
                                         thumbnailUrl = thumbnail ?: "https://i.ytimg.com/vi/$videoId/hqdefault.jpg",
                                         publishedAt = parseRssDate(published) ?: System.currentTimeMillis(),
-                                        viewCount = viewCount
+                                        viewCount = viewCount,
+                                        linkUrl = linkUrl
                                     )
                                 )
                             }

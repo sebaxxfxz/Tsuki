@@ -36,6 +36,8 @@ import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.ColorLens
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material.icons.rounded.MergeType
+import androidx.compose.material.icons.rounded.Movie
+import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.FolderOff
 import androidx.compose.material.icons.rounded.GraphicEq
@@ -143,6 +145,8 @@ fun SettingsScreen(
     val audioCacheUsedMb = audioCacheUsedBytes / (1024L * 1024L)
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val settingsHomePrefs = remember { com.example.tsuki.data.local.HomePreferences(context) }
+    val shortsPrefsEnabled by settingsHomePrefs.shortsRecommendationsEnabled.collectAsStateWithLifecycle(initialValue = true)
     val snackbarHostState = remember { androidx.compose.material3.SnackbarHostState() }
     fun showSnack(message: String) {
         scope.launch { snackbarHostState.showSnackbar(message) }
@@ -220,10 +224,12 @@ fun SettingsScreen(
     val p5 = itemMatches(stringResource(R.string.set_gapless_title), stringResource(R.string.set_gapless_sub))
     val p6 = itemMatches(stringResource(R.string.set_skipsilence_title), stringResource(R.string.set_skipsilence_sub))
     val p10 = itemMatches(stringResource(R.string.set_private_title), stringResource(R.string.set_private_sub))
+    val p11 = itemMatches(stringResource(R.string.set_musiconly_title), stringResource(R.string.set_musiconly_sub))
+    val p12 = itemMatches(stringResource(R.string.set_shorts_title), stringResource(R.string.set_shorts_sub))
     val p7 = itemMatches(stringResource(R.string.set_autoqueue_title), stringResource(R.string.set_autoqueue_sub))
     val p8 = itemMatches(stringResource(R.string.set_seekextra_title), stringResource(R.string.set_seekextra_sub))
     val p9 = itemMatches(stringResource(R.string.set_background_title), stringResource(R.string.set_background_warn))
-    val showPlayback = categoryMatches(SettingsCategory.PLAYBACK) && (searchQuery.isBlank() || p1 || p2 || p5 || p6 || p7 || p8 || p9 || p10)
+    val showPlayback = categoryMatches(SettingsCategory.PLAYBACK) && (searchQuery.isBlank() || p1 || p2 || p5 || p6 || p7 || p8 || p9 || p10 || p11 || p12)
 
     val a1 = itemMatches(stringResource(R.string.set_dark_title), stringResource(R.string.set_dark_sub))
     val a2 = itemMatches(stringResource(R.string.set_pureblack_title), stringResource(R.string.set_pureblack_sub))
@@ -466,6 +472,26 @@ fun SettingsScreen(
                                     icon = Icons.Rounded.VisibilityOff,
                                     checked = state.privateMode,
                                     onCheckedChange = { viewModel.setPrivateMode(it) }
+                                )
+                            }
+
+                            if (p11) {
+                                TogglePreference(
+                                    title = stringResource(R.string.set_musiconly_title),
+                                    subtitle = stringResource(R.string.set_musiconly_sub),
+                                    icon = Icons.Rounded.MusicNote,
+                                    checked = state.musicOnly,
+                                    onCheckedChange = { viewModel.setMusicOnly(it) }
+                                )
+                            }
+
+                            if (p12) {
+                                TogglePreference(
+                                    title = stringResource(R.string.set_shorts_title),
+                                    subtitle = stringResource(R.string.set_shorts_sub),
+                                    icon = Icons.Rounded.Movie,
+                                    checked = shortsPrefsEnabled,
+                                    onCheckedChange = { scope.launch { settingsHomePrefs.setShortsRecommendationsEnabled(it) } }
                                 )
                             }
 

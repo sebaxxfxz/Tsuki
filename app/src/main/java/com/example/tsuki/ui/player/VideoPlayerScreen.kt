@@ -129,7 +129,6 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil3.compose.AsyncImage
 import com.example.tsuki.ui.components.M3MorphingPlayPauseButton
-import com.example.tsuki.ui.components.M3WavySlider
 import com.example.tsuki.domain.model.MediaTrack
 import com.example.tsuki.domain.model.PlayerMode
 import com.example.tsuki.network.RydVoteData
@@ -264,6 +263,17 @@ fun VideoPlayerScreen(
         }
     }
 
+    DisposableEffect(isPlaying) {
+        if (isPlaying) {
+            window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        onDispose {
+            window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
+
     LaunchedEffect(isFullscreen) {
         if (isFullscreen) {
             activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
@@ -299,21 +309,30 @@ fun VideoPlayerScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-        if (!isFullscreen) {
+        if (!isFullscreen || showControls) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .statusBarsPadding()
+                    .then(if (isFullscreen) Modifier else Modifier.statusBarsPadding())
                     .height(30.dp)
-                    .pointerInput(Unit) {
-                        detectDragGestures { change, dragAmount ->
-                            if (dragAmount.y > 8f) {
-                                change.consume()
-                                onMinimizeToPip()
+                    .pointerInput(isFullscreen) {
+                        var totalDragY = 0f
+                        var handled = false
+                        detectDragGestures(
+                            onDragStart = { totalDragY = 0f; handled = false },
+                            onDrag = { change, dragAmount ->
+                                if (!handled) {
+                                    totalDragY += dragAmount.y
+                                    if (totalDragY > 80f) {
+                                        handled = true
+                                        change.consume()
+                                        if (isFullscreen) isFullscreen = false else onMinimizeToPip()
+                                    }
+                                }
                             }
-                        }
+                        )
                     }
-                    .clickable { onMinimizeToPip() },
+                    .clickable { if (isFullscreen) showControls = !showControls else onMinimizeToPip() },
                 contentAlignment = Alignment.Center
             ) {
                 Box(
@@ -349,13 +368,21 @@ fun VideoPlayerScreen(
                 .pointerInput(isFullscreen) {
                     if (!isFullscreen) {
                         var totalDragY = 0f
+                        var handled = false
                         detectDragGestures(
-                            onDragStart = { totalDragY = 0f },
+                            onDragStart = { totalDragY = 0f; handled = false },
                             onDrag = { change, dragAmount ->
-                                totalDragY += dragAmount.y
-                                if (totalDragY > 80f) {
-                                    change.consume()
-                                    onMinimizeToPip()
+                                if (!handled) {
+                                    totalDragY += dragAmount.y
+                                    if (totalDragY > 80f) {
+                                        handled = true
+                                        change.consume()
+                                        onMinimizeToPip()
+                                    } else if (totalDragY < -80f) {
+                                        handled = true
+                                        change.consume()
+                                        isFullscreen = true
+                                    }
                                 }
                             }
                         )
@@ -413,7 +440,7 @@ fun VideoPlayerScreen(
                     }
                 }
         ) {
-            if (track?.artworkUrl != null) {
+            if (track?.artworkUrl != null && isBuffering && currentPosition < 2000L) {
                 AsyncImage(
                     model = track.artworkUrl,
                     contentDescription = null,
@@ -632,7 +659,7 @@ fun VideoPlayerScreen(
                         Row(
                             modifier = Modifier
                                 .align(Alignment.BottomCenter)
-                                .then(if (isFullscreen) Modifier.navigationBarsPadding() else Modifier)
+                                .navigationBarsPadding()
                                 .fillMaxWidth()
                                 .padding(horizontal = 16.dp, vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -646,7 +673,7 @@ fun VideoPlayerScreen(
                                 color = Color.White,
                                 style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold)
                             )
-                            M3WavySlider(
+                            Slider(
                                 value = videoSliderDragValue ?: videoProgress,
                                 onValueChange = { value ->
                                     videoSliderDragValue = value
@@ -657,10 +684,11 @@ fun VideoPlayerScreen(
                                     }
                                     videoSliderDragValue = null
                                 },
-                                isPlaying = isPlaying,
-                                activeTrackColor = MaterialTheme.colorScheme.primary,
-                                inactiveTrackColor = Color.White.copy(alpha = 0.35f),
-                                thumbColor = MaterialTheme.colorScheme.primary,
+                                colors = SliderDefaults.colors(
+                                    activeTrackColor = MaterialTheme.colorScheme.primary,
+                                    inactiveTrackColor = Color.White.copy(alpha = 0.35f),
+                                    thumbColor = MaterialTheme.colorScheme.primary
+                                ),
                                 modifier = Modifier
                                     .weight(1f)
                                     .padding(horizontal = 8.dp)

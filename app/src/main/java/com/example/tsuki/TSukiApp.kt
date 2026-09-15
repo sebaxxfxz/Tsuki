@@ -34,10 +34,7 @@ class TSukiApp : Application(), SingletonImageLoader.Factory {
         createNotificationChannels()
         com.example.tsuki.ui.player.canvas.CanvasDiskCache.init(this)
         val homePrefs = com.example.tsuki.data.local.HomePreferences(this)
-        val initialAppLocale = com.example.tsuki.util.AppLocale.resolveTag(com.example.tsuki.util.AppLocale.readStored(this))
-        val initialLang = if (initialAppLocale == com.example.tsuki.util.AppLocale.ENGLISH) "en" else "es"
-        val initialCountry = if (initialLang == "en") "US" else "ES"
-        applyContentLocale(initialLang, initialCountry)
+        applyContentLocale("es", "ES")
         MainScope().launch(Dispatchers.IO) {
             combine(homePrefs.contentLanguageTag, homePrefs.contentCountry) { lang, country -> lang to country }
                 .collect { (lang, country) -> applyContentLocale(lang, country) }

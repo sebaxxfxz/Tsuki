@@ -37,6 +37,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -175,6 +176,11 @@ private fun ShortPage(track: MediaTrack, isCurrentPage: Boolean, extractor: YouT
     }
 
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    val view = LocalView.current
+    DisposableEffect(isPlaying) {
+        view.keepScreenOn = isPlaying
+        onDispose { view.keepScreenOn = false }
+    }
     DisposableEffect(lifecycleOwner, player) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_PAUSE || event == androidx.lifecycle.Lifecycle.Event.ON_STOP) {

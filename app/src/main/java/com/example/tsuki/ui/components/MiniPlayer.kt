@@ -79,7 +79,8 @@ fun MiniPlayer(
     modifier: Modifier = Modifier,
     currentPosition: Long = 0L,
     duration: Long = 0L,
-    progressProvider: (() -> Float)? = null
+    progressProvider: (() -> Float)? = null,
+    showVideoToggle: Boolean = true
 ) {
     AnimatedVisibility(
         visible = track != null,
@@ -259,7 +260,7 @@ fun MiniPlayer(
                     }
 
                     androidx.compose.animation.AnimatedVisibility(
-                        visible = isVideoMode || track.isVideoItem == true,
+                        visible = showVideoToggle && (isVideoMode || track.isVideoItem == true),
                         enter = expandHorizontally(animationSpec = M3MotionTokens.spatialDefault()) + fadeIn(),
                         exit = shrinkHorizontally(animationSpec = M3MotionTokens.spatialDefault()) + fadeOut()
                     ) {

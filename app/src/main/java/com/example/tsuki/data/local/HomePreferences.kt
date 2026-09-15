@@ -43,6 +43,10 @@ class HomePreferences(private val context: Context) {
         private val KEY_NOTIFIED_SUB_VIDEOS = stringSetPreferencesKey("notified_sub_videos")
         private val KEY_SUB_NOTIFY = booleanPreferencesKey("sub_notify_enabled")
         private val KEY_LAST_WRAPPED_WEEK = longPreferencesKey("last_wrapped_week_start")
+        private val KEY_CONTENT_MODE = stringPreferencesKey("content_mode")
+        private val KEY_SHORTS_ENABLED = booleanPreferencesKey("shorts_recommendations_enabled")
+        const val CONTENT_MODE_ALL = "all"
+        const val CONTENT_MODE_MUSIC_ONLY = "music_only"
         private const val DEFAULT_CATEGORIES = "ALL"
         private const val DEFAULT_CONTENT_LANGUAGE = "es"
         private const val DEFAULT_CONTENT_COUNTRY = "ES"
@@ -76,11 +80,11 @@ class HomePreferences(private val context: Context) {
     val selectedTopics: Flow<Set<String>> = context.homeDataStore.data.map { it[KEY_SELECTED_TOPICS] ?: emptySet() }
 
     val contentLanguageTag: Flow<String> = context.homeDataStore.data.map { prefs ->
-        prefs[KEY_CONTENT_LANGUAGE]?.takeIf { it.isNotBlank() } ?: (if (com.example.tsuki.util.AppLocale.resolveTag(com.example.tsuki.util.AppLocale.readStored(context)) == com.example.tsuki.util.AppLocale.ENGLISH) "en" else DEFAULT_CONTENT_LANGUAGE)
+        prefs[KEY_CONTENT_LANGUAGE]?.takeIf { it.isNotBlank() } ?: DEFAULT_CONTENT_LANGUAGE
     }
 
     val contentCountry: Flow<String> = context.homeDataStore.data.map { prefs ->
-        prefs[KEY_CONTENT_COUNTRY]?.takeIf { it.isNotBlank() } ?: (if (com.example.tsuki.util.AppLocale.resolveTag(com.example.tsuki.util.AppLocale.readStored(context)) == com.example.tsuki.util.AppLocale.ENGLISH) "US" else DEFAULT_CONTENT_COUNTRY)
+        prefs[KEY_CONTENT_COUNTRY]?.takeIf { it.isNotBlank() } ?: DEFAULT_CONTENT_COUNTRY
     }
 
     val appLocaleTag: Flow<String> = context.homeDataStore.data.map { prefs ->
@@ -89,13 +93,8 @@ class HomePreferences(private val context: Context) {
 
     suspend fun setAppLocale(tag: String) {
         context.getSharedPreferences("tsuki_prefs", Context.MODE_PRIVATE).edit().putString("app_locale_tag", tag).commit()
-        val resolved = com.example.tsuki.util.AppLocale.resolveTag(tag)
-        val nextLang = if (resolved == com.example.tsuki.util.AppLocale.ENGLISH) "en" else "es"
-        val nextCountry = if (resolved == com.example.tsuki.util.AppLocale.ENGLISH) "US" else "ES"
         context.homeDataStore.edit {
             it[KEY_APP_LOCALE] = tag
-            it[KEY_CONTENT_LANGUAGE] = nextLang
-            it[KEY_CONTENT_COUNTRY] = nextCountry
         }
     }
 
@@ -105,6 +104,22 @@ class HomePreferences(private val context: Context) {
 
     suspend fun setContentCountry(country: String) {
         context.homeDataStore.edit { it[KEY_CONTENT_COUNTRY] = country.uppercase() }
+    }
+
+    val contentMode: Flow<String> = context.homeDataStore.data.map { prefs ->
+        prefs[KEY_CONTENT_MODE]?.takeIf { it.isNotBlank() } ?: CONTENT_MODE_ALL
+    }
+
+    suspend fun setContentMode(mode: String) {
+        context.homeDataStore.edit { it[KEY_CONTENT_MODE] = mode }
+    }
+
+    val shortsRecommendationsEnabled: Flow<Boolean> = context.homeDataStore.data.map { prefs ->
+        prefs[KEY_SHORTS_ENABLED] ?: true
+    }
+
+    suspend fun setShortsRecommendationsEnabled(enabled: Boolean) {
+        context.homeDataStore.edit { it[KEY_SHORTS_ENABLED] = enabled }
     }
 
     suspend fun setSelectedCategories(categories: Set<String>) {

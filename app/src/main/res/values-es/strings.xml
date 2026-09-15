@@ -249,6 +249,10 @@
     <string name="set_seekextra_sub">Doble tap en portada: ±15s/20s en vez de 5s/10s</string>
     <string name="set_private_title">Modo privado</string>
     <string name="set_private_sub">No registrar lo que escuchas en el historial ni en estadísticas</string>
+    <string name="set_musiconly_title">Solo música</string>
+    <string name="set_musiconly_sub">Oculta videos y suscripciones; todo suena en audio</string>
+    <string name="set_shorts_title">Recomendaciones de shorts</string>
+    <string name="set_shorts_sub">Muestra la sección de videos cortos en Inicio</string>
     <string name="set_background_title">Segundo plano y batería</string>
     <string name="set_background_ok">Sin restricciones activas • Optimizado para Xiaomi y pantalla bloqueada</string>
     <string name="set_background_warn">Ahorro de batería activo • Toca para evitar que Xiaomi cierre la app a los 10 min</string>
@@ -671,6 +675,14 @@
     <string name="onboard_following">Siguiendo</string>
     <string name="onboard_follow">Seguir</string>
     <string name="onboard_added">%1$d añadidos ✓</string>
+    <string name="onboard_step_mode">Tu experiencia</string>
+    <string name="onboard_mode_title">¿Cómo quieres usar TSuki?</string>
+    <string name="onboard_mode_sub">Elige una vez; podrás cambiarlo después en Ajustes.</string>
+    <string name="onboard_mode_all_title">Videos + Música</string>
+    <string name="onboard_mode_all_sub">Todo completo: videos, shorts, suscripciones y música.</string>
+    <string name="onboard_mode_music_title">Solo música</string>
+    <string name="onboard_mode_music_sub">Sin videos ni suscripciones. Solo audio, letras y tu biblioteca.</string>
+    <string name="onboard_skip">Omitir</string>
     <string name="xtr_subs_m">%1$s M suscriptores</string>
     <string name="xtr_subs_k">%1$s K suscriptores</string>
     <string name="xtr_subs_exact">%1$d suscriptores</string>

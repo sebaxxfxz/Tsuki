@@ -48,7 +48,8 @@ data class SettingsUiState(
     val skipSilenceEnabled: Boolean = false,
     val accentColor: String = AppearancePreferences.ACCENT_AUTO,
     val privateMode: Boolean = false,
-    val precacheLyrics: Boolean = true
+    val precacheLyrics: Boolean = true,
+    val musicOnly: Boolean = false
 )
 
 private data class PlayerSettingsData(
@@ -72,7 +73,8 @@ private data class HomeSettingsData(
     val homeLayoutMode: HomeLayoutMode,
     val appLocaleTag: String,
     val contentLanguageTag: String,
-    val contentCountry: String
+    val contentCountry: String,
+    val contentMode: String
 )
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
@@ -136,13 +138,15 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         homePrefs.homeLayoutMode,
         homePrefs.appLocaleTag,
         homePrefs.contentLanguageTag,
-        homePrefs.contentCountry
-    ) { homeLayoutMode, appLocaleTag, contentLanguageTag, contentCountry ->
+        homePrefs.contentCountry,
+        homePrefs.contentMode
+    ) { homeLayoutMode, appLocaleTag, contentLanguageTag, contentCountry, contentMode ->
         HomeSettingsData(
             homeLayoutMode = homeLayoutMode,
             appLocaleTag = appLocaleTag,
             contentLanguageTag = contentLanguageTag,
-            contentCountry = contentCountry
+            contentCountry = contentCountry,
+            contentMode = contentMode
         )
     }
 
@@ -246,7 +250,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             skipSilenceEnabled = p.skipSilenceEnabled,
             accentColor = ap.accentColor,
             privateMode = p.privateMode,
-            precacheLyrics = p.precacheLyrics
+            precacheLyrics = p.precacheLyrics,
+            musicOnly = h.contentMode == HomePreferences.CONTENT_MODE_MUSIC_ONLY
         )
     }
 
@@ -280,6 +285,14 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             playerPrefs.setPrivateMode(enabled)
             com.example.tsuki.data.local.WatchHistoryManager.getInstance(getApplication()).setPrivateMode(enabled)
+        }
+    }
+
+    fun setMusicOnly(enabled: Boolean) {
+        viewModelScope.launch {
+            homePrefs.setContentMode(
+                if (enabled) HomePreferences.CONTENT_MODE_MUSIC_ONLY else HomePreferences.CONTENT_MODE_ALL
+            )
         }
     }
 
