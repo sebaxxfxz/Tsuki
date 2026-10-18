@@ -4,7 +4,7 @@
   <p><strong>Un reproductor de música moderno para Android con streaming sin anuncios, letras karaoke palabra por palabra, crossfade real, ecualizador integrado y reconocimiento de canciones.</strong></p>
 
   [![GitHub Release](https://img.shields.io/github/v/release/sebaxxfxz/TSuki?style=for-the-badge&color=6f42c1)](https://github.com/sebaxxfxz/TSuki/releases)
-  [![GitHub Downloads](https://img.shields.io/github/downloads/sebaxxfxz/TSuki/total?style=for-the-badge&color=007ec6)](https://github.com/sebaxxfxz/TSuki/releases)
+  [![GitHub Downloads](https://img.shields.io/github/downloads/sebaxxfxz/Tsuki/total?style=for-the-badge&color=007ec6)](https://github.com/sebaxxfxz/TSuki/releases)
   [![GitHub Stars](https://img.shields.io/github/stars/sebaxxfxz/TSuki?style=for-the-badge&color=e3b341)](https://github.com/sebaxxfxz/TSuki/stargazers)
   [![GitHub Issues](https://img.shields.io/github/issues/sebaxxfxz/TSuki?style=for-the-badge&color=d9534f)](https://github.com/sebaxxfxz/TSuki/issues)
   [![License](https://img.shields.io/github/license/sebaxxfxz/TSuki?style=for-the-badge&color=28a745)](LICENSE)
