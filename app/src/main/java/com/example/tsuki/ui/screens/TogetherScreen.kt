@@ -1,9 +1,10 @@
 package com.example.tsuki.ui.screens
 
 import android.content.Intent
-import androidx.compose.animation.animateContentSize
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.foundation.background
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -197,7 +198,7 @@ private fun shareText(context: android.content.Context, text: String) {
 @Composable
 private fun HeroCard() {
     Card(
-        modifier = Modifier.fillMaxWidth().animateContentSize(),
+        modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
         shape = RoundedCornerShape(28.dp)
     ) {
@@ -226,7 +227,7 @@ private fun HeroCard() {
 @Composable
 private fun SectionCard(content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
     Card(
-        modifier = Modifier.fillMaxWidth().animateContentSize(),
+        modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
         shape = RoundedCornerShape(24.dp)
     ) { Column(Modifier.padding(18.dp), content = content) }
@@ -356,7 +357,7 @@ private fun HostPrefsCard(
                 value = port, onValueChange = { port = it.filter(Char::isDigit).take(5) }, singleLine = true, modifier = Modifier.fillMaxWidth(),
                 label = { Text(stringResource(R.string.tog_port)) }, supportingText = { Text(stringResource(R.string.tog_port_current, prefs.port)) },
                 trailingIcon = {
-                    FilledTonalButton(onClick = { onPortChange(port) }, enabled = port.toIntOrNull()?.let { it in 1024..65535 && it != prefs.port } == true, shape = RoundedCornerShape(10.dp)) { Text(stringResource(R.string.tog_apply)) }
+                    TextButton(onClick = { onPortChange(port) }, enabled = port.toIntOrNull()?.let { it in 1024..65535 && it != prefs.port } == true) { Text(stringResource(R.string.tog_apply)) }
                 },
                 shape = RoundedCornerShape(14.dp)
             )
@@ -372,12 +373,23 @@ private fun HostPrefsCard(
 
 @Composable
 private fun ToggleRow(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .toggleable(
+                value = checked,
+                role = Role.Switch,
+                onValueChange = onChange
+            )
+            .padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         Column(Modifier.weight(1f).padding(end = 12.dp)) {
             Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
             Text(subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Switch(checked = checked, onCheckedChange = onChange)
+        Switch(checked = checked, onCheckedChange = null)
     }
 }
 
@@ -387,9 +399,9 @@ private fun ShareRow(text: String, masked: String?, onCopy: () -> Unit, onShare:
         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(masked ?: text, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, maxLines = 2, modifier = Modifier.weight(1f))
             Spacer(Modifier.width(8.dp))
-            IconButton(onClick = onCopy, modifier = Modifier.size(36.dp).clip(CircleShape).background(MaterialTheme.colorScheme.secondaryContainer)) { Icon(Icons.Rounded.ContentCopy, stringResource(R.string.common_copy), modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer) }
+            IconButton(onClick = onCopy, modifier = Modifier.size(48.dp).clip(CircleShape).background(MaterialTheme.colorScheme.secondaryContainer)) { Icon(Icons.Rounded.ContentCopy, stringResource(R.string.common_copy), modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSecondaryContainer) }
             Spacer(Modifier.width(6.dp))
-            IconButton(onClick = onShare, modifier = Modifier.size(36.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary)) { Icon(Icons.Rounded.Share, stringResource(R.string.common_share), modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onPrimary) }
+            IconButton(onClick = onShare, modifier = Modifier.size(48.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary)) { Icon(Icons.Rounded.Share, stringResource(R.string.common_share), modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onPrimary) }
         }
     }
 }

@@ -17,6 +17,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -50,6 +52,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -73,6 +76,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
+import com.example.tsuki.ui.components.M3MotionTokens
 import com.example.tsuki.ui.components.M3WavySlider
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -125,9 +129,25 @@ fun PlayerTopActionsV9(
         val haptic = LocalHapticFeedback.current
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (onAddToPlaylist != null) {
+                val addInteractionSource = remember { MutableInteractionSource() }
+                val isAddPressed by addInteractionSource.collectIsPressedAsState()
+                val addScale by animateFloatAsState(
+                    targetValue = if (isAddPressed) 0.88f else 1.0f,
+                    animationSpec = spring(dampingRatio = 0.65f, stiffness = 600f),
+                    label = "addScale"
+                )
                 IconButton(
-                    onClick = onAddToPlaylist,
-                    modifier = Modifier.size(44.dp)
+                    onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        onAddToPlaylist()
+                    },
+                    interactionSource = addInteractionSource,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .graphicsLayer {
+                            scaleX = addScale
+                            scaleY = addScale
+                        }
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Rounded.PlaylistAdd,
@@ -186,13 +206,13 @@ fun V9FavoriteButton(
             ringAlpha.snapTo(0.85f)
             ringScale.animateTo(
                 targetValue = 1.5f,
-                animationSpec = tween(durationMillis = 300, easing = androidx.compose.animation.core.FastOutSlowInEasing)
+                animationSpec = tween(durationMillis = M3MotionTokens.DurationMedium2, easing = androidx.compose.animation.core.FastOutSlowInEasing)
             )
         }
         coroutineScope.launch {
             ringAlpha.animateTo(
                 targetValue = 0f,
-                animationSpec = tween(durationMillis = 300, easing = androidx.compose.animation.core.LinearEasing)
+                animationSpec = tween(durationMillis = M3MotionTokens.DurationMedium2, easing = androidx.compose.animation.core.LinearEasing)
             )
         }
     }
@@ -209,12 +229,14 @@ fun V9FavoriteButton(
 
     Box(
         modifier = modifier
-            .size(44.dp)
+            .size(48.dp)
             .clip(CircleShape)
-            .clickable(
+            .toggleable(
+                value = isFavorite,
                 interactionSource = interactionSource,
                 indication = null,
-                onClick = {
+                role = Role.Checkbox,
+                onValueChange = {
                     if (!isFavorite) {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         triggerBurst()
@@ -339,6 +361,13 @@ fun V9AnimatedPlaybackControls(
             val springSpec = spring<Float>(dampingRatio = 0.7f, stiffness = 380f)
             val dpSpringSpec = spring<Dp>(dampingRatio = 0.75f, stiffness = 350f)
 
+            val prevInteractionSource = remember { MutableInteractionSource() }
+            val isPrevPressed by prevInteractionSource.collectIsPressedAsState()
+            val prevButtonScale by animateFloatAsState(
+                targetValue = if (isPrevPressed) 0.88f else 1.0f,
+                animationSpec = spring(dampingRatio = 0.62f, stiffness = 600f),
+                label = "prevButtonScale"
+            )
             val prevWeight by animateFloatAsState(
                 targetValue = weightFor(V9PlaybackButtonType.PREVIOUS),
                 animationSpec = springSpec,
@@ -348,9 +377,17 @@ fun V9AnimatedPlaybackControls(
                 modifier = Modifier
                     .weight(prevWeight)
                     .fillMaxHeight()
+                    .graphicsLayer {
+                        scaleX = prevButtonScale
+                        scaleY = prevButtonScale
+                    }
                     .clip(CircleShape)
                     .background(colorOtherButtons)
-                    .clickable(role = androidx.compose.ui.semantics.Role.Button) {
+                    .clickable(
+                        interactionSource = prevInteractionSource,
+                        indication = null,
+                        role = androidx.compose.ui.semantics.Role.Button
+                    ) {
                         lastClicked = V9PlaybackButtonType.PREVIOUS
                         clickTrigger++
                         hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -419,12 +456,12 @@ fun V9AnimatedPlaybackControls(
                         (scaleIn(
                             animationSpec = spring(dampingRatio = 0.55f, stiffness = 480f),
                             initialScale = 0.65f
-                        ) + fadeIn(tween(140)))
+                        ) + fadeIn(tween(M3MotionTokens.DurationShort3)))
                             .togetherWith(
                                 scaleOut(
                                     animationSpec = spring(dampingRatio = 0.75f, stiffness = 650f),
                                     targetScale = 0.65f
-                                ) + fadeOut(tween(100))
+                                ) + fadeOut(tween(M3MotionTokens.DurationShort2))
                             )
                     },
                     label = "v9PlayPauseMorph"
@@ -442,6 +479,13 @@ fun V9AnimatedPlaybackControls(
                 }
             }
 
+            val nextInteractionSource = remember { MutableInteractionSource() }
+            val isNextPressed by nextInteractionSource.collectIsPressedAsState()
+            val nextButtonScale by animateFloatAsState(
+                targetValue = if (isNextPressed) 0.88f else 1.0f,
+                animationSpec = spring(dampingRatio = 0.62f, stiffness = 600f),
+                label = "nextButtonScale"
+            )
             val nextWeight by animateFloatAsState(
                 targetValue = weightFor(V9PlaybackButtonType.NEXT),
                 animationSpec = springSpec,
@@ -451,9 +495,17 @@ fun V9AnimatedPlaybackControls(
                 modifier = Modifier
                     .weight(nextWeight)
                     .fillMaxHeight()
+                    .graphicsLayer {
+                        scaleX = nextButtonScale
+                        scaleY = nextButtonScale
+                    }
                     .clip(CircleShape)
                     .background(colorOtherButtons)
-                    .clickable(role = androidx.compose.ui.semantics.Role.Button) {
+                    .clickable(
+                        interactionSource = nextInteractionSource,
+                        indication = null,
+                        role = androidx.compose.ui.semantics.Role.Button
+                    ) {
                         lastClicked = V9PlaybackButtonType.NEXT
                         clickTrigger++
                         hapticFeedback.performHapticFeedback(HapticFeedbackType.TextHandleMove)

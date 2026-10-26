@@ -5,67 +5,39 @@ import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.rounded.OpenInNew
-import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
-import androidx.compose.material.icons.automirrored.rounded.QueueMusic
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.GraphicEq
-import androidx.compose.material.icons.rounded.History
-import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Mic
-import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Refresh
-import androidx.compose.material.icons.rounded.Share
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -77,19 +49,16 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import coil3.compose.AsyncImage
 import com.example.tsuki.R
 import com.example.tsuki.data.local.FavoritesManager
 import com.example.tsuki.data.local.RecognitionEntry
@@ -99,45 +68,24 @@ import com.example.tsuki.playback.PlayerController
 import com.example.tsuki.shazam.MusicRecognizer
 import com.example.tsuki.shazam.RecognitionOutcome
 import com.example.tsuki.ui.components.AddToPlaylistSheet
-import com.example.tsuki.ui.components.TagSongSheet
 import com.example.tsuki.ui.components.M3MotionTokens
-import com.example.tsuki.ui.components.M3WavyLinearProgressIndicator
 import com.example.tsuki.ui.components.PermissionRationaleSheet
-import com.example.tsuki.ui.components.rememberHiResImageModel
+import com.example.tsuki.ui.components.TagSongSheet
+import com.example.tsuki.ui.screens.recognition.LowAudioHoldMs
+import com.example.tsuki.ui.screens.recognition.LevelLowThreshold
+import com.example.tsuki.ui.screens.recognition.RecognitionHero
+import com.example.tsuki.ui.screens.recognition.RecognitionPhase
+import com.example.tsuki.ui.screens.recognition.RecognitionResultContent
+import com.example.tsuki.ui.screens.recognition.RecognitionStatusCard
+import com.example.tsuki.ui.screens.recognition.friendlyError
+import com.example.tsuki.ui.screens.recognition.recognitionHistorySection
+import com.example.tsuki.ui.theme.PlayerColorManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlin.math.abs
-import kotlin.math.sin
-
-private enum class RecPhase {
-    IDLE, LISTENING, PROCESSING, RESULT, NOMATCH, ERROR
-}
-
-private fun friendlyError(context: android.content.Context, e: Throwable): String {
-    val msg = e.message.orEmpty()
-    return when {
-        msg == "FORMAT" || msg == "MIC" -> context.getString(R.string.rec_mic_missing)
-        msg.startsWith("READ") -> context.getString(R.string.rec_mic_read)
-        msg == "SILENCE" -> context.getString(R.string.rec_quiet)
-        e is java.io.IOException || msg.contains("Unable to resolve host", true) || msg.contains("Failed to connect", true) -> context.getString(R.string.rec_offline)
-        msg.contains("timeout", true) || msg.contains("timed out", true) -> context.getString(R.string.rec_timeout)
-        else -> context.getString(R.string.rec_failed)
-    }
-}
-
-private fun relativeTime(context: android.content.Context, ts: Long): String {
-    val m = (System.currentTimeMillis() - ts) / 60000
-    return when {
-        m < 1 -> context.getString(R.string.rec_time_now)
-        m < 60 -> context.getString(R.string.rec_time_mins, m)
-        m < 1440 -> context.getString(R.string.rec_time_hours, m / 60)
-        m < 2880 -> context.getString(R.string.rec_time_yesterday)
-        else -> java.text.SimpleDateFormat("d MMM", java.util.Locale.getDefault()).format(java.util.Date(ts))
-    }
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -153,8 +101,9 @@ fun RecognitionScreen(
     val historyManager = remember { RecognitionHistoryManager.getInstance(context) }
     val favoritesManager = remember { FavoritesManager.getInstance(context) }
     val history by historyManager.history.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
 
-    var phase by remember { mutableStateOf(RecPhase.IDLE) }
+    var phase by remember { mutableStateOf(RecognitionPhase.IDLE) }
     var progress by remember { mutableFloatStateOf(0f) }
     var level by remember { mutableFloatStateOf(0f) }
     var round by remember { mutableIntStateOf(1) }
@@ -163,19 +112,27 @@ fun RecognitionScreen(
     var listenJob by remember { mutableStateOf<Job?>(null) }
     var playlistTrack by remember { mutableStateOf<MediaTrack?>(null) }
     var tagTrackTarget by remember { mutableStateOf<MediaTrack?>(null) }
-    var autoStarted by remember { mutableStateOf(false) }
     var pendingPermission by remember { mutableStateOf(false) }
+    var showMicRationale by remember { mutableStateOf(false) }
+    var resolvedTrack by remember { mutableStateOf<MediaTrack?>(null) }
+    var liked by remember { mutableStateOf(false) }
+    var showLowAudio by remember { mutableStateOf(false) }
+    var resultTint by remember { mutableStateOf<Color?>(null) }
 
     fun hasPermission(): Boolean {
         val perm = android.Manifest.permission.RECORD_AUDIO
         return androidx.core.content.ContextCompat.checkSelfPermission(context, perm) == android.content.pm.PackageManager.PERMISSION_GRANTED
     }
 
+    fun snack(message: String) {
+        scope.launch { snackbarHostState.showSnackbar(message) }
+    }
+
     fun start(extended: Boolean = false) {
         listenJob?.cancel()
         errorText = null
         if (!extended) outcome = null
-        phase = RecPhase.LISTENING
+        phase = RecognitionPhase.LISTENING
         progress = 0f
         listenJob = scope.launch {
             val res = MusicRecognizer.recognizeFromMic(
@@ -183,7 +140,7 @@ fun RecognitionScreen(
                 attempts = if (extended) 1 else 2,
                 onProgress = { p ->
                     progress = p / 100f
-                    if (p >= 97 && phase == RecPhase.LISTENING) phase = RecPhase.PROCESSING
+                    if (p >= 97 && phase == RecognitionPhase.LISTENING) phase = RecognitionPhase.PROCESSING
                 },
                 onLevel = { v -> level = v },
                 onAttempt = { n -> round = n }
@@ -192,7 +149,7 @@ fun RecognitionScreen(
                 onSuccess = { r ->
                     if (r.isMatch) {
                         outcome = r
-                        phase = RecPhase.RESULT
+                        phase = RecognitionPhase.RESULT
                         scope.launch(Dispatchers.IO) {
                             historyManager.add(
                                 RecognitionEntry(
@@ -205,15 +162,15 @@ fun RecognitionScreen(
                             )
                         }
                     } else {
-                        phase = RecPhase.NOMATCH
+                        phase = RecognitionPhase.NOMATCH
                     }
                 },
                 onFailure = { e ->
                     if (e is CancellationException) {
-                        phase = RecPhase.IDLE
+                        phase = RecognitionPhase.IDLE
                     } else {
                         errorText = friendlyError(context, e)
-                        phase = RecPhase.ERROR
+                        phase = RecognitionPhase.ERROR
                     }
                 }
             )
@@ -223,15 +180,28 @@ fun RecognitionScreen(
     fun cancel() {
         listenJob?.cancel()
         listenJob = null
-        phase = RecPhase.IDLE
+        phase = RecognitionPhase.IDLE
     }
 
-    fun withResolved(title: String, artist: String, action: (MediaTrack) -> Unit) {
+    fun heroTap() {
+        when (phase) {
+            RecognitionPhase.LISTENING -> cancel()
+            RecognitionPhase.PROCESSING -> Unit
+            else -> if (hasPermission()) start() else pendingPermission = true
+        }
+    }
+
+    fun runWithTrack(action: (MediaTrack) -> Unit) {
+        val cached = resolvedTrack
+        if (cached != null) {
+            action(cached)
+            return
+        }
+        val current = outcome ?: return
         scope.launch(Dispatchers.IO) {
-            val track = runCatching { resolveTrack(title, artist) }.getOrNull()
+            val track = runCatching { resolveTrack(current.title.orEmpty(), current.artist.orEmpty()) }.getOrNull()
             withContext(Dispatchers.Main) {
-                if (track != null) action(track)
-                else android.widget.Toast.makeText(context, context.getString(R.string.rec_not_found), android.widget.Toast.LENGTH_SHORT).show()
+                if (track != null) action(track) else snack(context.getString(R.string.rec_not_found))
             }
         }
     }
@@ -241,19 +211,13 @@ fun RecognitionScreen(
     ) { granted ->
         if (granted) start() else {
             errorText = context.getString(R.string.rec_no_mic)
-            phase = RecPhase.ERROR
+            phase = RecognitionPhase.ERROR
         }
     }
 
     LaunchedEffect(Unit) {
         historyManager.refresh()
-        if (!autoStarted) {
-            autoStarted = true
-            if (hasPermission()) start()
-        }
     }
-
-    var showMicRationale by remember { mutableStateOf(false) }
 
     LaunchedEffect(pendingPermission) {
         if (pendingPermission) {
@@ -262,643 +226,294 @@ fun RecognitionScreen(
         }
     }
 
+    LaunchedEffect(phase) {
+        if (phase != RecognitionPhase.LISTENING) {
+            showLowAudio = false
+            return@LaunchedEffect
+        }
+        var lowSince = 0L
+        while (true) {
+            delay(200)
+            if (level < LevelLowThreshold) {
+                if (lowSince == 0L) lowSince = System.currentTimeMillis()
+                else if (System.currentTimeMillis() - lowSince >= LowAudioHoldMs) showLowAudio = true
+            } else {
+                lowSince = 0L
+                showLowAudio = false
+            }
+        }
+    }
+
+    LaunchedEffect(outcome) {
+        val current = outcome
+        resolvedTrack = null
+        liked = false
+        resultTint = null
+        if (current == null) return@LaunchedEffect
+        val track = withContext(Dispatchers.IO) {
+            runCatching { resolveTrack(current.title.orEmpty(), current.artist.orEmpty()) }.getOrNull()
+        }
+        resolvedTrack = track
+        liked = track != null && favoritesManager.isTrackFavorite(track)
+        val colors = withContext(Dispatchers.IO) {
+            runCatching { PlayerColorManager.getOrExtract(context, current.coverArtUrl, publish = false) }.getOrNull()
+        }
+        resultTint = colors?.accent
+    }
+
     BackHandler {
         if (playlistTrack != null) playlistTrack = null else onBack()
     }
 
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .statusBarsPadding()
-    ) {
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = 32.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            item(key = "header") {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
-                    }
-                    Text(
-                        stringResource(R.string.rec_title),
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-
-            item(key = "hero") {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp)
-                ) {
-                    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(260.dp)) {
-                        if (phase == RecPhase.LISTENING) {
-                            val glow = rememberInfiniteTransition(label = "glow")
-                            val glowA by glow.animateFloat(
-                                0.45f, 0.85f,
-                                infiniteRepeatable(tween(1600, easing = M3MotionTokens.StandardDecelerateEasing), androidx.compose.animation.core.RepeatMode.Reverse),
-                                label = "glowA"
-                            )
-                            Box(
-                                Modifier
-                                    .size(244.dp)
-                                    .background(
-                                        androidx.compose.ui.graphics.Brush.radialGradient(
-                                            colors = listOf(
-                                                MaterialTheme.colorScheme.primary.copy(alpha = glowA * 0.30f),
-                                                MaterialTheme.colorScheme.primary.copy(alpha = 0f)
-                                            )
-                                        ),
-                                        CircleShape
-                                    )
-                            )
-                            val pulse = rememberInfiniteTransition(label = "pulse")
-                            repeat(2) { k ->
-                                val s by pulse.animateFloat(
-                                    1f, 1.45f,
-                                    infiniteRepeatable(tween(2200, delayMillis = k * 1100, easing = M3MotionTokens.StandardDecelerateEasing)),
-                                    label = "ps$k"
-                                )
-                                val a by pulse.animateFloat(
-                                    0.30f, 0f,
-                                    infiniteRepeatable(tween(2200, delayMillis = k * 1100, easing = LinearEasing)),
-                                    label = "pa$k"
-                                )
-                                Box(
-                                    Modifier
-                                        .size(176.dp)
-                                        .graphicsLayer {
-                                            scaleX = s
-                                            scaleY = s
-                                            alpha = a
-                                        }
-                                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.35f), CircleShape)
-                                )
-                            }
-                        }
-                        val targetScale = if (phase == RecPhase.LISTENING) 1f + level * 0.12f else 1f
-                        val btnScale by animateFloatAsState(targetScale, M3MotionTokens.expressiveBouncy(), label = "btn")
-                        val btnColor by animateColorAsState(
-                            when (phase) {
-                                RecPhase.RESULT -> MaterialTheme.colorScheme.tertiary
-                                RecPhase.NOMATCH, RecPhase.ERROR -> MaterialTheme.colorScheme.surfaceContainerHighest
-                                else -> MaterialTheme.colorScheme.primary
-                            },
-                            animationSpec = M3MotionTokens.effectsDefault(),
-                            label = "btnColor"
-                        )
-                        val btnContent by animateColorAsState(
-                            when (phase) {
-                                RecPhase.RESULT -> MaterialTheme.colorScheme.onTertiary
-                                RecPhase.NOMATCH, RecPhase.ERROR -> MaterialTheme.colorScheme.onSurface
-                                else -> MaterialTheme.colorScheme.onPrimary
-                            },
-                            animationSpec = M3MotionTokens.effectsDefault(),
-                            label = "btnContent"
-                        )
-                        Surface(
-                            shape = CircleShape,
-                            color = btnColor,
-                            shadowElevation = 16.dp,
-                            onClick = {
-                                when (phase) {
-                                    RecPhase.LISTENING -> {}
-                                    else -> if (hasPermission()) start() else pendingPermission = true
-                                }
-                            },
-                            modifier = Modifier
-                                .size(176.dp)
-                                .graphicsLayer {
-                                    scaleX = btnScale
-                                    scaleY = btnScale
-                                }
-                        ) {
-                            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
-                                if (phase == RecPhase.LISTENING) {
-                                    Box(
-                                        Modifier
-                                            .size(148.dp)
-                                            .border(1.5.dp, MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.28f), CircleShape)
-                                    )
-                                }
-                                AnimatedContent(
-                                    targetState = phase,
-                                    transitionSpec = {
-                                        (fadeIn(M3MotionTokens.effectsDefault()) + scaleIn(M3MotionTokens.expressiveBouncy(), initialScale = 0.6f))
-                                            .togetherWith(fadeOut(M3MotionTokens.effectsFast()) + scaleOut(M3MotionTokens.effectsFast(), targetScale = 0.6f))
-                                    },
-                                    label = "btnIcon"
-                                ) { p ->
-                                    Icon(
-                                        when (p) {
-                                            RecPhase.RESULT -> Icons.Rounded.PlayArrow
-                                            RecPhase.NOMATCH, RecPhase.ERROR -> Icons.Rounded.Refresh
-                                            else -> Icons.Rounded.GraphicEq
-                                        },
-                                        contentDescription = stringResource(R.string.set_tool_recognize),
-                                        tint = btnContent,
-                                        modifier = Modifier.size(if (p == RecPhase.RESULT) 76.dp else 64.dp)
-                                    )
-                                }
-                            }
-                        }
-                    }
-                    Spacer(Modifier.height(20.dp))
-                    LiveEqBars(level = level, active = phase == RecPhase.LISTENING)
-                    Spacer(Modifier.height(14.dp))
-                    AnimatedContent(
-                        targetState = phase,
-                        transitionSpec = {
-                            (fadeIn(M3MotionTokens.effectsDefault()) + scaleIn(M3MotionTokens.expressiveDefault(), initialScale = 0.92f))
-                                .togetherWith(fadeOut(M3MotionTokens.effectsFast()))
-                        },
-                        label = "status"
-                    ) { p ->
-                        Text(
-                            text = when (p) {
-                                RecPhase.LISTENING -> if (round > 1) stringResource(R.string.rec_still_listening) else stringResource(R.string.rec_listening)
-                                RecPhase.PROCESSING -> stringResource(R.string.rec_identifying)
-                                RecPhase.RESULT -> stringResource(R.string.rec_got_it)
-                                RecPhase.NOMATCH -> stringResource(R.string.rec_missed)
-                                RecPhase.ERROR -> stringResource(R.string.rec_oops)
-                                RecPhase.IDLE -> stringResource(R.string.rec_hint)
-                            },
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                    AnimatedVisibility(visible = phase == RecPhase.LISTENING || phase == RecPhase.PROCESSING) {
-                        M3WavyLinearProgressIndicator(
-                            progress = progress,
-                            modifier = Modifier
-                                .padding(top = 14.dp)
-                                .width(180.dp),
-                            isPlaying = phase == RecPhase.LISTENING
-                        )
-                    }
-                    AnimatedVisibility(visible = phase == RecPhase.LISTENING) {
-                        FilledTonalButton(
-                            onClick = { cancel() },
-                            shape = CircleShape,
-                            modifier = Modifier.padding(top = 10.dp)
-                        ) {
-                            Icon(Icons.Rounded.Close, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text(stringResource(R.string.common_cancel))
-                        }
-                    }
-                    Text(
-                        stringResource(R.string.rec_privacy_disclaimer),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(top = 12.dp, start = 48.dp, end = 48.dp)
-                    )
-                }
-            }
-
-            if (phase == RecPhase.RESULT && outcome != null) {
-                val res = outcome ?: return@LazyColumn
-                item(key = "result") {
-                    Surface(
-                        shape = RoundedCornerShape(32.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        tonalElevation = 2.dp,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 16.dp)
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.padding(24.dp)
-                        ) {
-                            val coverCorner by animateDpAsState(
-                                28.dp,
-                                animationSpec = M3MotionTokens.ExpressiveCornerSpring,
-                                label = "coverCorner"
-                            )
-                            AsyncImage(
-                                model = rememberHiResImageModel(res.coverArtUrl),
-                                contentDescription = null,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier
-                                    .size(168.dp)
-                                    .clip(RoundedCornerShape(coverCorner))
-                            )
-                            Spacer(Modifier.height(16.dp))
-                            Text(
-                                res.title.orEmpty(),
-                                style = MaterialTheme.typography.headlineSmall,
-                                fontWeight = FontWeight.Bold,
-                                textAlign = TextAlign.Center,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                res.artist.orEmpty(),
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.primary,
-                                textAlign = TextAlign.Center,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.padding(top = 4.dp)
-                            )
-                            if (!res.album.isNullOrBlank()) {
-                                Surface(
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = MaterialTheme.colorScheme.secondaryContainer,
-                                    modifier = Modifier.padding(top = 10.dp)
-                                ) {
-                                    Text(
-                                        res.album,
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = MaterialTheme.colorScheme.onSecondaryContainer,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
-                                    )
-                                }
-                            }
-                            Spacer(Modifier.height(20.dp))
-                            Button(
-                                onClick = { onPlayResult(res.title.orEmpty(), res.artist.orEmpty()) },
-                                shape = RoundedCornerShape(20.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.primary,
-                                    contentColor = MaterialTheme.colorScheme.onPrimary
-                                ),
-                                contentPadding = PaddingValues(horizontal = 28.dp),
-                                modifier = Modifier
-                                    .height(56.dp)
-                            ) {
-                                Icon(Icons.Rounded.PlayArrow, contentDescription = null, modifier = Modifier.size(24.dp))
-                                Spacer(Modifier.width(10.dp))
-                                Text(
-                                    stringResource(R.string.common_play),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            }
-                            Spacer(Modifier.height(12.dp))
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                RecAction(
-                                    icon = Icons.AutoMirrored.Rounded.QueueMusic,
-                                    label = stringResource(R.string.common_queue),
-                                    onClick = {
-                                        withResolved(res.title.orEmpty(), res.artist.orEmpty()) { track ->
-                                            playerController.addToQueue(track)
-                                            android.widget.Toast.makeText(context, context.getString(R.string.pld_added), android.widget.Toast.LENGTH_SHORT).show()
-                                        }
-                                    }
-                                )
-                                RecAction(
-                                    icon = Icons.Rounded.Favorite,
-                                    label = stringResource(R.string.pld_liked),
-                                    onClick = {
-                                        withResolved(res.title.orEmpty(), res.artist.orEmpty()) { track ->
-                                            scope.launch {
-                                                val added = favoritesManager.toggleFavorite(track)
-                                                android.widget.Toast.makeText(
-                                                    context,
-                                                    if (added) context.getString(R.string.pld_added_like) else context.getString(R.string.pld_removed_like),
-                                                    android.widget.Toast.LENGTH_SHORT
-                                                ).show()
-                                            }
-                                        }
-                                    }
-                                )
-                                RecAction(
-                                    icon = Icons.AutoMirrored.Rounded.PlaylistAdd,
-                                    label = stringResource(R.string.pld_playlist_word),
-                                    onClick = {
-                                        withResolved(res.title.orEmpty(), res.artist.orEmpty()) { track ->
-                                            playlistTrack = track
-                                        }
-                                    }
-                                )
-                                RecAction(
-                                    icon = Icons.Rounded.Share,
-                                    label = stringResource(R.string.common_share),
-                                    onClick = {
-                                        val text = buildString {
-                                            append(res.title.orEmpty())
-                                            if (!res.artist.isNullOrBlank()) append(" — ${res.artist}")
-                                            if (!res.shazamUrl.isNullOrBlank()) append(" ${res.shazamUrl}")
-                                        }
-                                        val send = Intent(Intent.ACTION_SEND).apply {
-                                            type = "text/plain"
-                                            putExtra(Intent.EXTRA_TEXT, text)
-                                        }
-                                        context.startActivity(Intent.createChooser(send, context.getString(R.string.common_share)))
-                                    }
-                                )
-                                if (!res.shazamUrl.isNullOrBlank()) {
-                                    RecAction(
-                                        icon = Icons.AutoMirrored.Rounded.OpenInNew,
-                                        label = "Shazam",
-                                        onClick = {
-                                            runCatching {
-                                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(res.shazamUrl)))
-                                            }
-                                        }
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (phase == RecPhase.NOMATCH) {
-                item(key = "nomatch") {
-                    Surface(
-                        shape = RoundedCornerShape(32.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 16.dp)
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.padding(24.dp)
-                        ) {
-                            Icon(
-                                Icons.Rounded.MusicNote,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(40.dp)
-                            )
-                            Spacer(Modifier.height(8.dp))
-                            Text(
-                                stringResource(R.string.rec_louder),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                textAlign = TextAlign.Center
-                            )
-                            Spacer(Modifier.height(16.dp))
-                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                Button(
-                                    onClick = { start(extended = true) },
-                                    shape = CircleShape
-                                ) {
-                                    Icon(Icons.Rounded.GraphicEq, contentDescription = null, modifier = Modifier.size(18.dp))
-                                    Spacer(Modifier.width(6.dp))
-                                    Text(stringResource(R.string.rec_keep_listening))
-                                }
-                                FilledTonalButton(
-                                    onClick = { start() },
-                                    shape = CircleShape
-                                ) {
-                                    Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                                    Spacer(Modifier.width(6.dp))
-                                    Text(stringResource(R.string.common_retry))
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (phase == RecPhase.ERROR) {
-                item(key = "recerror") {
-                    Surface(
-                        shape = RoundedCornerShape(32.dp),
-                        color = MaterialTheme.colorScheme.errorContainer,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 16.dp)
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.padding(24.dp)
-                        ) {
-                            Text(
-                                errorText.orEmpty(),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onErrorContainer,
-                                textAlign = TextAlign.Center
-                            )
-                            Spacer(Modifier.height(12.dp))
-                            Button(
-                                onClick = { if (hasPermission()) start() else pendingPermission = true },
-                                shape = CircleShape
-                            ) {
-                                Icon(Icons.Rounded.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text(stringResource(R.string.common_retry))
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (history.isNotEmpty()) {
-                item(key = "histheader") {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            Icons.Rounded.History,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            stringResource(R.string.rec_history_count, history.size),
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.weight(1f)
-                        )
-                        TextButton(onClick = {
-                            scope.launch(Dispatchers.IO) { historyManager.clear() }
-                        }) { Text(stringResource(R.string.common_clear)) }
-                    }
-                }
-                items(history, key = { "hist_${it.createdAt}_${it.title}" }) { entry ->
-                    Row(
-                        modifier = Modifier
-                            .padding(horizontal = 12.dp, vertical = 3.dp)
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(24.dp))
-                            .background(MaterialTheme.colorScheme.surfaceContainerLow)
-                            .clickable {
-                                outcome = RecognitionOutcome(
-                                    title = entry.title,
-                                    artist = entry.artist,
-                                    album = entry.album,
-                                    coverArtUrl = entry.coverUrl,
-                                    shazamUrl = entry.shazamUrl
-                                )
-                                phase = RecPhase.RESULT
-                            }
-                            .padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(52.dp)
-                                .clip(RoundedCornerShape(18.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (entry.coverUrl != null) {
-                                AsyncImage(
-                                    model = rememberHiResImageModel(entry.coverUrl),
-                                    contentDescription = null,
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                            } else {
-                                Icon(
-                                    Icons.Rounded.MusicNote,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                entry.title,
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.SemiBold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                "${entry.artist} • ${relativeTime(context, entry.createdAt)}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                        IconButton(onClick = { onPlayResult(entry.title, entry.artist) }) {
-                            Icon(
-                                Icons.Rounded.PlayArrow,
-                                contentDescription = stringResource(R.string.common_play),
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                        IconButton(onClick = {
-                            scope.launch(Dispatchers.IO) { historyManager.remove(entry.createdAt, entry.title) }
-                        }) {
-                            Icon(
-                                Icons.Rounded.Delete,
-                                contentDescription = stringResource(R.string.common_delete),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        val sheetTrack = playlistTrack
-        if (sheetTrack != null) {
-            AddToPlaylistSheet(
-                track = sheetTrack,
-                onDismiss = { playlistTrack = null },
-                onTag = {
-                    tagTrackTarget = playlistTrack
-                    playlistTrack = null
-                }
-            )
-        }
-        tagTrackTarget?.let { track ->
-            TagSongSheet(track = track, onDismiss = { tagTrackTarget = null })
-        }
-
-        if (showMicRationale) {
-            PermissionRationaleSheet(
-                title = stringResource(R.string.rec_mic_title),
-                body = stringResource(R.string.rec_mic_text),
-                icon = Icons.Rounded.Mic,
-                onConfirm = {
-                    showMicRationale = false
-                    permissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
-                },
-                onDismiss = { showMicRationale = false }
-            )
-        }
-    }
-}
-
-@Composable
-private fun LiveEqBars(
-    level: Float,
-    active: Boolean,
-    modifier: Modifier = Modifier
-) {
-    val transition = rememberInfiniteTransition(label = "eq")
-    val t by transition.animateFloat(
-        0f, (Math.PI * 2).toFloat(),
-        infiniteRepeatable(tween(1400, easing = LinearEasing)),
-        label = "eqt"
+    val tint by animateColorAsState(
+        targetValue = resultTint ?: MaterialTheme.colorScheme.primary,
+        animationSpec = M3MotionTokens.effectsSlow(),
+        label = "resultTint"
     )
-    Row(
-        modifier = modifier.height(38.dp),
-        horizontalArrangement = Arrangement.spacedBy(3.5.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        repeat(25) { i ->
-            val speed = 0.9f + (i % 5) * 0.35f
-            val wave = 0.35f + 0.65f * abs(sin(t * speed + i * 0.7f))
-            val amp = if (active) 0.15f + 0.85f * level else 0.08f
-            val barColor = if (i % 3 == 0) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary
+    val topBarColor by animateColorAsState(
+        targetValue = if (phase == RecognitionPhase.RESULT) Color.Transparent else MaterialTheme.colorScheme.background,
+        animationSpec = tween(320),
+        label = "topBarColor"
+    )
+
+    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        AnimatedVisibility(
+            visible = phase == RecognitionPhase.RESULT,
+            enter = fadeIn(tween(420)),
+            exit = fadeOut(tween(200))
+        ) {
             Box(
                 Modifier
-                    .width(5.dp)
-                    .height(38.dp)
-                    .graphicsLayer {
-                        scaleY = (wave * amp).coerceAtLeast(0.06f)
-                        transformOrigin = TransformOrigin(0.5f, 1f)
+                    .fillMaxSize()
+                    .drawBehind {
+                        drawRect(
+                            brush = Brush.radialGradient(
+                                colors = listOf(
+                                    tint.copy(alpha = 0.50f),
+                                    tint.copy(alpha = 0.16f),
+                                    Color.Transparent
+                                ),
+                                center = Offset(size.width / 2f, size.height * 0.16f),
+                                radius = size.width * 1.15f
+                            )
+                        )
                     }
-                    .clip(RoundedCornerShape(2.5.dp))
-                    .background(barColor)
             )
         }
-    }
-}
 
-@Composable
-private fun RecAction(
-    icon: ImageVector,
-    label: String,
-    onClick: () -> Unit
-) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        FilledTonalIconButton(
-            onClick = onClick,
-            shape = RoundedCornerShape(18.dp),
-            modifier = Modifier.size(52.dp)
-        ) {
-            Icon(icon, contentDescription = label, modifier = Modifier.size(22.dp))
+        Scaffold(
+            modifier = modifier.fillMaxSize(),
+            containerColor = Color.Transparent,
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Text(
+                            stringResource(R.string.rec_title),
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = topBarColor,
+                        titleContentColor = MaterialTheme.colorScheme.onBackground,
+                        navigationIconContentColor = MaterialTheme.colorScheme.onBackground
+                    )
+                )
+            },
+            snackbarHost = { SnackbarHost(hostState = snackbarHostState) }
+        ) { innerPadding ->
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding),
+                contentPadding = PaddingValues(bottom = 32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                item(key = "hero") {
+                    AnimatedVisibility(
+                        visible = phase != RecognitionPhase.RESULT,
+                        enter = fadeIn(M3MotionTokens.effectsDefault()) + scaleIn(M3MotionTokens.expressiveDefault(), initialScale = 0.94f),
+                        exit = fadeOut(M3MotionTokens.effectsFast()) + scaleOut(M3MotionTokens.effectsFast(), targetScale = 0.94f)
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.padding(top = 4.dp)
+                        ) {
+                            RecognitionHero(
+                                phase = phase,
+                                level = level,
+                                progress = progress,
+                                round = round,
+                                showLowAudio = showLowAudio,
+                                onClick = { heroTap() }
+                            )
+                            Text(
+                                stringResource(R.string.rec_privacy_disclaimer),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(top = 18.dp, start = 48.dp, end = 48.dp)
+                            )
+                        }
+                    }
+                }
+
+                val res = outcome
+                if (phase == RecognitionPhase.RESULT && res != null) {
+                    item(key = "result") {
+                        RecognitionResultContent(
+                            outcome = res,
+                            tint = tint,
+                            liked = liked,
+                            onPlay = { onPlayResult(res.title.orEmpty(), res.artist.orEmpty()) },
+                            onQueue = {
+                                runWithTrack { track ->
+                                    playerController.addToQueue(track)
+                                    snack(context.getString(R.string.pld_added))
+                                }
+                            },
+                            onLike = {
+                                runWithTrack { track ->
+                                    scope.launch {
+                                        val added = favoritesManager.toggleFavorite(track)
+                                        resolvedTrack = track
+                                        liked = added
+                                        snack(context.getString(if (added) R.string.pld_added_like else R.string.pld_removed_like))
+                                    }
+                                }
+                            },
+                            onPlaylist = { runWithTrack { track -> playlistTrack = track } },
+                            onShare = {
+                                val text = buildString {
+                                    append(res.title.orEmpty())
+                                    if (!res.artist.isNullOrBlank()) append(" — ${res.artist}")
+                                    if (!res.shazamUrl.isNullOrBlank()) append(" ${res.shazamUrl}")
+                                }
+                                val send = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_TEXT, text)
+                                }
+                                context.startActivity(Intent.createChooser(send, context.getString(R.string.common_share)))
+                            },
+                            onOpenShazam = if (res.shazamUrl.isNullOrBlank()) null else ({
+                                runCatching {
+                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(res.shazamUrl)))
+                                }
+                            }),
+                            onSearchAnother = { heroTap() }
+                        )
+                    }
+                }
+
+                if (phase == RecognitionPhase.NOMATCH) {
+                    item(key = "nomatch") {
+                        RecognitionStatusCard(
+                            icon = Icons.Rounded.MusicNote,
+                            message = stringResource(R.string.rec_louder),
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            contentColor = MaterialTheme.colorScheme.onSurface,
+                            primaryLabel = stringResource(R.string.rec_keep_listening),
+                            primaryIcon = Icons.Rounded.GraphicEq,
+                            onPrimary = { if (hasPermission()) start(extended = true) else pendingPermission = true },
+                            secondaryLabel = stringResource(R.string.common_retry),
+                            secondaryIcon = Icons.Rounded.Refresh,
+                            onSecondary = { if (hasPermission()) start() else pendingPermission = true }
+                        )
+                    }
+                }
+
+                if (phase == RecognitionPhase.ERROR) {
+                    item(key = "recerror") {
+                        RecognitionStatusCard(
+                            icon = Icons.Rounded.CloudOff,
+                            message = errorText.orEmpty(),
+                            containerColor = MaterialTheme.colorScheme.errorContainer,
+                            contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                            primaryLabel = stringResource(R.string.common_retry),
+                            primaryIcon = Icons.Rounded.Refresh,
+                            onPrimary = { if (hasPermission()) start() else pendingPermission = true }
+                        )
+                    }
+                }
+
+                if (history.isNotEmpty()) {
+                    recognitionHistorySection(
+                        entries = history,
+                        onOpen = { entry ->
+                            outcome = RecognitionOutcome(
+                                title = entry.title,
+                                artist = entry.artist,
+                                album = entry.album,
+                                coverArtUrl = entry.coverUrl,
+                                shazamUrl = entry.shazamUrl
+                            )
+                            phase = RecognitionPhase.RESULT
+                        },
+                        onPlay = { entry -> onPlayResult(entry.title, entry.artist) },
+                        onRemove = { entry ->
+                            scope.launch(Dispatchers.IO) {
+                                historyManager.remove(entry.createdAt, entry.title)
+                            }
+                            scope.launch {
+                                val result = snackbarHostState.showSnackbar(
+                                    message = context.getString(R.string.rec_removed),
+                                    actionLabel = context.getString(R.string.common_undo),
+                                    duration = SnackbarDuration.Short
+                                )
+                                if (result == SnackbarResult.ActionPerformed) {
+                                    withContext(Dispatchers.IO) {
+                                        historyManager.add(
+                                            RecognitionEntry(
+                                                title = entry.title,
+                                                artist = entry.artist,
+                                                album = entry.album,
+                                                coverUrl = entry.coverUrl,
+                                                shazamUrl = entry.shazamUrl
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                        },
+                        onClear = {
+                            scope.launch(Dispatchers.IO) { historyManager.clear() }
+                        }
+                    )
+                }
+            }
         }
-        Spacer(Modifier.height(4.dp))
-        Text(
-            label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
+    val sheetTrack = playlistTrack
+    if (sheetTrack != null) {
+        AddToPlaylistSheet(
+            track = sheetTrack,
+            onDismiss = { playlistTrack = null },
+            onTag = {
+                tagTrackTarget = playlistTrack
+                playlistTrack = null
+            }
+        )
+    }
+    tagTrackTarget?.let { track ->
+        TagSongSheet(track = track, onDismiss = { tagTrackTarget = null })
+    }
+
+    if (showMicRationale) {
+        PermissionRationaleSheet(
+            title = stringResource(R.string.rec_mic_title),
+            body = stringResource(R.string.rec_mic_text),
+            icon = Icons.Rounded.Mic,
+            onConfirm = {
+                showMicRationale = false
+                permissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+            },
+            onDismiss = { showMicRationale = false }
         )
     }
 }

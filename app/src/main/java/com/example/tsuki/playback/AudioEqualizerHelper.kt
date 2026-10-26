@@ -69,12 +69,15 @@ object AudioEqualizerHelper {
             releaseInternal()
             try {
                 currentSessionId = audioSessionId
-                equalizer = Equalizer(0, audioSessionId)
+                equalizer = try { Equalizer(0, audioSessionId) } catch (e: Exception) {
+                    Log.w(TAG, "Equalizer init failed: ${e.message}")
+                    null
+                }
                 bassBoost = try { BassBoost(0, audioSessionId) } catch (_: Exception) { null }
                 virtualizer = try { Virtualizer(0, audioSessionId) } catch (_: Exception) { null }
                 loudness = try { LoudnessEnhancer(audioSessionId) } catch (_: Exception) { null }
                 _sessionState.value = audioSessionId
-                Log.d(TAG, "Audio effects attached to session $audioSessionId bands=${equalizer?.numberOfBands}")
+                Log.d(TAG, "Audio effects attached to session $audioSessionId bands=${equalizer?.numberOfBands} loudness=${loudness != null}")
             } catch (e: Exception) {
                 Log.e(TAG, "initAudioEffects failed", e)
             }
@@ -218,6 +221,17 @@ object AudioEqualizerHelper {
 
     fun setOutputGainDb(gainDb: Float) {
         setOutputGainMb((gainDb * 100).toInt())
+    }
+
+    fun getGainMbForNormalizerLevel(level: Int): Int = when (level) {
+        1 -> 200
+        2 -> 400
+        3 -> 600
+        else -> 0
+    }
+
+    fun setLoudnessNormalizerLevel(level: Int) {
+        setOutputGainMb(getGainMbForNormalizerLevel(level))
     }
 
     fun useSystemPreset(presetIndex: Int) {

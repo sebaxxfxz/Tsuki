@@ -6,6 +6,12 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
+val localProps = Properties().apply {
+    val f = rootProject.file("local.properties")
+    if (f.exists()) f.reader(Charsets.UTF_8).use { load(it) }
+}
+val releaseKeystore = localProps.getProperty("TSUKI_KEYSTORE_PATH")?.let { file(it) }
+
 android {
     namespace = "com.example.tsuki"
     compileSdk = 36
@@ -14,24 +20,34 @@ android {
         applicationId = "com.example.tsuki"
         minSdk = 24
         targetSdk = 35
-        versionCode = 5
-        versionName = "2.1.0"
+        versionCode = 6
+        versionName = "3.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        val localProperties = Properties().apply {
-            val f = rootProject.file("local.properties")
-            if (f.exists()) f.inputStream().use { load(it) }
-        }
         buildConfigField(
             "String",
             "TOGETHER_BEARER_TOKEN",
-            "\"${localProperties.getProperty("TOGETHER_BEARER_TOKEN") ?: System.getenv("TOGETHER_BEARER_TOKEN") ?: ""}\""
+            "\"${localProps.getProperty("TOGETHER_BEARER_TOKEN") ?: System.getenv("TOGETHER_BEARER_TOKEN") ?: ""}\""
         )
+    }
+
+    signingConfigs {
+        if (releaseKeystore != null && releaseKeystore.exists()) {
+            create("release") {
+                storeFile = releaseKeystore
+                storePassword = localProps.getProperty("TSUKI_KEYSTORE_PASSWORD")
+                keyAlias = localProps.getProperty("TSUKI_KEY_ALIAS")
+                keyPassword = localProps.getProperty("TSUKI_KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
         release {
+            if (releaseKeystore != null && releaseKeystore.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(

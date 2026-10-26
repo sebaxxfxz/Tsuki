@@ -55,6 +55,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
@@ -93,6 +97,7 @@ fun MiniPlayer(
         modifier = modifier
     ) {
         if (track != null) {
+            val expandDescription = stringResource(R.string.mini_player_expand)
             val interactionSource = androidx.compose.runtime.remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
             val isPressed by interactionSource.collectIsPressedAsState()
             val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
@@ -134,6 +139,10 @@ fun MiniPlayer(
                         translationX = animOffsetX.value
                         translationY = animOffsetY.value
                         alpha = animAlpha.value
+                    }
+                    .semantics {
+                        role = Role.Button
+                        contentDescription = expandDescription
                     }
                     .pointerInput(Unit) {
                         detectTapGestures(
@@ -266,7 +275,7 @@ fun MiniPlayer(
                     ) {
                         IconButton(
                             onClick = onVideoToggleClick,
-                            modifier = Modifier.size(36.dp)
+                            modifier = Modifier.size(48.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Rounded.Movie,
@@ -285,7 +294,7 @@ fun MiniPlayer(
 
                     FilledIconButton(
                         onClick = onPlayPauseClick,
-                        modifier = Modifier.size(40.dp),
+                        modifier = Modifier.size(48.dp),
                         colors = IconButtonDefaults.filledIconButtonColors(
                             containerColor = MaterialTheme.colorScheme.primaryContainer,
                             contentColor = MaterialTheme.colorScheme.onPrimaryContainer
@@ -304,12 +313,12 @@ fun MiniPlayer(
                                     (androidx.compose.animation.scaleIn(
                                         animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.55f, stiffness = 480f),
                                         initialScale = 0.65f
-                                    ) + androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(140)))
+                                    ) + androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(M3MotionTokens.DurationShort3)))
                                         .togetherWith(
                                             androidx.compose.animation.scaleOut(
                                                 animationSpec = androidx.compose.animation.core.spring(dampingRatio = 0.75f, stiffness = 650f),
                                                 targetScale = 0.65f
-                                            ) + androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(100))
+                                            ) + androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(M3MotionTokens.DurationShort2))
                                         )
                                 },
                                 label = "MiniPlayPauseAnim"
@@ -329,7 +338,7 @@ fun MiniPlayer(
 
                     IconButton(
                         onClick = onNextClick,
-                        modifier = Modifier.size(38.dp)
+                        modifier = Modifier.size(48.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Rounded.SkipNext,

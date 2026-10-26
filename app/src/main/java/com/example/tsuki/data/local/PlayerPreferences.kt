@@ -32,7 +32,10 @@ class PlayerPreferences(private val context: Context) {
         private val KEY_CROSSFADE_GAPLESS = booleanPreferencesKey("crossfade_gapless")
         private val KEY_PREFERRED_LYRICS_PROVIDER = stringPreferencesKey("preferred_lyrics_provider")
         private val KEY_AUTO_QUEUE_ENABLED = booleanPreferencesKey("auto_queue_enabled")
+        private val KEY_BATTERY_EXEMPTION_ASKED = booleanPreferencesKey("battery_exemption_asked")
         private val KEY_SKIP_SILENCE_ENABLED = booleanPreferencesKey("skip_silence_enabled")
+        private val KEY_PLAYBACK_PITCH = intPreferencesKey("playback_pitch_semitones")
+        private val KEY_LOUDNESS_NORMALIZER_LEVEL = intPreferencesKey("loudness_normalizer_level")
         private val KEY_CACHE_SIZE_MB = intPreferencesKey("cache_size_mb")
         private val KEY_AUDIO_QUALITY = stringPreferencesKey("audio_quality")
         private val KEY_DATA_SAVER = booleanPreferencesKey("data_saver")
@@ -49,14 +52,18 @@ class PlayerPreferences(private val context: Context) {
         private val KEY_LYRICS_SYNC_OFFSET = intPreferencesKey("lyrics_sync_offset_ms")
         private val KEY_SYNC_LIKED = booleanPreferencesKey("sync_liked_enabled")
         private val KEY_SYNC_PLAYLISTS = booleanPreferencesKey("sync_playlists_enabled")
-        private val KEY_SYNC_HISTORY = booleanPreferencesKey("sync_history_enabled")
         private val KEY_VOLUME_NORMALIZATION = booleanPreferencesKey("volume_normalization")
+        private val KEY_RECO_SOURCE = stringPreferencesKey("reco_source")
+        private val KEY_SYNC_HISTORY = booleanPreferencesKey("sync_history_enabled")
         private val KEY_PRIVATE_MODE = booleanPreferencesKey("private_mode")
-        private val KEY_PRECACHE_LYRICS = booleanPreferencesKey("precache_lyrics")
         private val KEY_DOWNLOAD_TREE_URI = stringPreferencesKey("download_tree_uri")
+        private val KEY_QUEUE_RESTORE_ENABLED = booleanPreferencesKey("queue_restore_enabled")
 
         const val LYRICS_SYNC_OFFSET_MIN = -2000
         const val LYRICS_SYNC_OFFSET_MAX = 2000
+        const val RECO_SOURCE_YOUTUBE = "youtube"
+        const val RECO_SOURCE_TSUKI = "tsuki"
+        const val RECO_SOURCE_MIXED = "mixed"
         const val LYRICS_SYNC_OFFSET_DEFAULT = 0
 
         const val LYRICS_TEXT_SIZE_MIN = 18
@@ -93,6 +100,10 @@ class PlayerPreferences(private val context: Context) {
 
     val autoQueueEnabled: Flow<Boolean> = context.playerDataStore.data.map {
         it[KEY_AUTO_QUEUE_ENABLED] ?: true
+    }
+
+    val batteryExemptionAsked: Flow<Boolean> = context.playerDataStore.data.map {
+        it[KEY_BATTERY_EXEMPTION_ASKED] ?: false
     }
 
     val cacheSizeMb: Flow<Int> = context.playerDataStore.data.map {
@@ -150,9 +161,12 @@ class PlayerPreferences(private val context: Context) {
     val syncLikedEnabled: Flow<Boolean> = context.playerDataStore.data.map { it[KEY_SYNC_LIKED] ?: true }
     val syncPlaylistsEnabled: Flow<Boolean> = context.playerDataStore.data.map { it[KEY_SYNC_PLAYLISTS] ?: true }
     val syncHistoryEnabled: Flow<Boolean> = context.playerDataStore.data.map { it[KEY_SYNC_HISTORY] ?: true }
+
+
+    val recoSource: Flow<String> = context.playerDataStore.data.map { it[KEY_RECO_SOURCE] ?: RECO_SOURCE_MIXED }
     val volumeNormalization: Flow<Boolean> = context.playerDataStore.data.map { it[KEY_VOLUME_NORMALIZATION] ?: true }
     val privateMode: Flow<Boolean> = context.playerDataStore.data.map { it[KEY_PRIVATE_MODE] ?: false }
-    val precacheLyrics: Flow<Boolean> = context.playerDataStore.data.map { it[KEY_PRECACHE_LYRICS] ?: true }
+    val precacheLyrics: Flow<Boolean> = kotlinx.coroutines.flow.flowOf(true)
     val downloadTreeUri: Flow<String?> = context.playerDataStore.data.map { it[KEY_DOWNLOAD_TREE_URI] }
 
     suspend fun setVolumeNormalization(enabled: Boolean) {
@@ -161,10 +175,6 @@ class PlayerPreferences(private val context: Context) {
 
     suspend fun setPrivateMode(enabled: Boolean) {
         context.playerDataStore.edit { it[KEY_PRIVATE_MODE] = enabled }
-    }
-
-    suspend fun setPrecacheLyrics(enabled: Boolean) {
-        context.playerDataStore.edit { it[KEY_PRECACHE_LYRICS] = enabled }
     }
 
     suspend fun setDownloadTreeUri(uri: String?) {
@@ -191,14 +201,28 @@ class PlayerPreferences(private val context: Context) {
     }
 
     val skipSilenceEnabled: Flow<Boolean> = context.playerDataStore.data.map { it[KEY_SKIP_SILENCE_ENABLED] ?: false }
+    val playbackPitchSemitones: Flow<Int> = context.playerDataStore.data.map { it[KEY_PLAYBACK_PITCH] ?: 0 }
+    val loudnessNormalizerLevel: Flow<Int> = context.playerDataStore.data.map { it[KEY_LOUDNESS_NORMALIZER_LEVEL] ?: 0 }
     val playbackSpeed: Flow<Float> = context.playerDataStore.data.map { it[KEY_PLAYBACK_SPEED] ?: 1.0f }
 
     suspend fun setPlaybackSpeed(speed: Float) {
         context.playerDataStore.edit { it[KEY_PLAYBACK_SPEED] = speed.coerceIn(0.25f, 3f) }
     }
 
+    suspend fun setPlaybackPitchSemitones(semitones: Int) {
+        context.playerDataStore.edit { it[KEY_PLAYBACK_PITCH] = semitones.coerceIn(-6, 6) }
+    }
+
+    suspend fun setLoudnessNormalizerLevel(level: Int) {
+        context.playerDataStore.edit { it[KEY_LOUDNESS_NORMALIZER_LEVEL] = level.coerceIn(0, 3) }
+    }
+
     suspend fun setAutoQueueEnabled(enabled: Boolean) {
         context.playerDataStore.edit { it[KEY_AUTO_QUEUE_ENABLED] = enabled }
+    }
+
+    suspend fun setBatteryExemptionAsked() {
+        context.playerDataStore.edit { it[KEY_BATTERY_EXEMPTION_ASKED] = true }
     }
 
     suspend fun setSkipSilenceEnabled(enabled: Boolean) {
@@ -275,5 +299,15 @@ class PlayerPreferences(private val context: Context) {
 
     suspend fun setSyncHistoryEnabled(enabled: Boolean) {
         context.playerDataStore.edit { it[KEY_SYNC_HISTORY] = enabled }
+    }
+
+    suspend fun setRecoSource(value: String) {
+        context.playerDataStore.edit { it[KEY_RECO_SOURCE] = value }
+    }
+
+    val queueRestoreEnabled: Flow<Boolean> = context.playerDataStore.data.map { it[KEY_QUEUE_RESTORE_ENABLED] ?: true }
+
+    suspend fun setQueueRestoreEnabled(enabled: Boolean) {
+        context.playerDataStore.edit { it[KEY_QUEUE_RESTORE_ENABLED] = enabled }
     }
 }

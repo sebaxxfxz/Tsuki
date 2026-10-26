@@ -135,12 +135,13 @@ fun CornerPipPlayer(
                             .align(Alignment.Center)
                             .size(40.dp)
                             .clip(CircleShape)
-                            .background(Color.Black.copy(alpha = 0.6f)),
+                            .background(Color.Black.copy(alpha = 0.6f))
+                            .clickable { playerController.togglePlayPause() },
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            contentDescription = null,
+                            contentDescription = stringResource(if (isPlaying) R.string.common_pause else R.string.common_play),
                             tint = Color.White,
                             modifier = Modifier.size(24.dp)
                         )
@@ -161,7 +162,7 @@ fun CornerPipPlayer(
                         IconButton(onClick = onEnterSystemPip, modifier = Modifier.fillMaxSize()) {
                             Icon(
                                 imageVector = Icons.Default.PictureInPictureAlt,
-                                contentDescription = "PiP sistema",
+                                contentDescription = stringResource(R.string.vid_pip),
                                 tint = Color.White,
                                 modifier = Modifier.size(16.dp)
                             )
@@ -175,7 +176,7 @@ fun CornerPipPlayer(
                         IconButton(onClick = onExpand, modifier = Modifier.fillMaxSize()) {
                             Icon(
                                 imageVector = Icons.Default.OpenInFull,
-                                contentDescription = "Expandir",
+                                contentDescription = stringResource(R.string.vid_fullscreen),
                                 tint = Color.White,
                                 modifier = Modifier.size(16.dp)
                             )
@@ -221,11 +222,11 @@ fun CornerPipPlayer(
                 }
                 IconButton(
                     onClick = { playerController.togglePlayPause() },
-                    modifier = Modifier.size(36.dp)
+                    modifier = Modifier.size(48.dp)
                 ) {
                     Icon(
                         imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        contentDescription = null,
+                        contentDescription = stringResource(if (isPlaying) R.string.common_pause else R.string.common_play),
                         tint = MaterialTheme.colorScheme.primary
                     )
                 }

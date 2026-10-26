@@ -64,7 +64,6 @@ import coil3.compose.AsyncImage
 import com.example.tsuki.R
 import com.example.tsuki.domain.model.MediaTrack
 import com.example.tsuki.playback.PlayerController
-import com.example.tsuki.ui.components.FastScrollBox
 import kotlinx.coroutines.launch
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
@@ -98,11 +97,7 @@ fun ReorderableQueueList(
         }
     }
 
-    FastScrollBox(
-        listState = lazyListState,
-        modifier = modifier
-    ) {
-        val itemKeys = remember(queue) {
+    val itemKeys = remember(queue) {
             val occurrenceMap = mutableMapOf<String, Int>()
             queue.map { item ->
                 val count = occurrenceMap.getOrDefault(item.id, 0)
@@ -111,17 +106,19 @@ fun ReorderableQueueList(
             }
         }
 
+    val rowShape = remember { RoundedCornerShape(18.dp) }
+    val thumbShape = remember { RoundedCornerShape(12.dp) }
+
         LazyColumn(
             state = lazyListState,
             verticalArrangement = Arrangement.spacedBy(10.dp),
             contentPadding = PaddingValues(vertical = 2.dp),
-            modifier = Modifier.fillMaxSize()
+            modifier = modifier.fillMaxSize()
         ) {
-        itemsIndexed(queue, key = { index, _ -> itemKeys.getOrElse(index) { "${queue[index].id}_$index" } }) { index, item ->
+        itemsIndexed(queue, key = { index, _ -> itemKeys.getOrElse(index) { "${queue[index].id}_$index" } }, contentType = { _, _ -> "queue_row" }) { index, item ->
             val itemKey = itemKeys.getOrElse(index) { "${item.id}_$index" }
             ReorderableItem(reorderableState, key = itemKey) { isDragging ->
                 val isCurrent = index == queueIndex
-                val rowShape = RoundedCornerShape(18.dp)
                 val currentIndex by androidx.compose.runtime.rememberUpdatedState(index)
                 val containerColor =
                     when {
@@ -166,7 +163,7 @@ fun ReorderableQueueList(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(18.dp))
+                                .clip(rowShape)
                                 .background(
                                     if (revealDelete) MaterialTheme.colorScheme.errorContainer
                                     else Color.Transparent
@@ -175,7 +172,7 @@ fun ReorderableQueueList(
                         ) {
                             Icon(
                                 imageVector = Icons.Rounded.Delete,
-                                contentDescription = null,
+                                contentDescription = stringResource(R.string.common_delete),
                                 tint = MaterialTheme.colorScheme.onErrorContainer,
                                 modifier = Modifier.padding(horizontal = 24.dp)
                             )
@@ -187,8 +184,6 @@ fun ReorderableQueueList(
                         modifier = Modifier
                             .fillMaxWidth()
                             .graphicsLayer {
-                                scaleX = if (isDragging) 0.97f else 1f
-                                scaleY = if (isDragging) 0.97f else 1f
                                 shadowElevation = if (isDragging) 16f else 0f
                                 shape = rowShape
                                 clip = true
@@ -202,7 +197,7 @@ fun ReorderableQueueList(
                         Box(
                             modifier = Modifier
                                 .size(46.dp)
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(thumbShape)
                                 .background(MaterialTheme.colorScheme.surfaceVariant),
                             contentAlignment = Alignment.Center
                         ) {
@@ -256,7 +251,7 @@ fun ReorderableQueueList(
                         Box(
                             modifier = Modifier
                                 .size(48.dp)
-                                .clip(RoundedCornerShape(12.dp))
+                                .clip(thumbShape)
                                 .draggableHandle(
                                     onDragStarted = {
                                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -274,7 +269,6 @@ fun ReorderableQueueList(
                     }
                 }
             }
-        }
         }
     }
 }

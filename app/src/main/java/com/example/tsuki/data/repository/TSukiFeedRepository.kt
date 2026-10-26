@@ -107,6 +107,8 @@ class TSukiFeedRepository(private val context: Context) {
     private data class CachedFeedEnvelope(
         val hl: String,
         val gl: String,
+        val version: Int = 0,
+        val savedAt: Long = 0L,
         val payload: TSukiHomeFeed
     )
 
@@ -116,7 +118,9 @@ class TSukiFeedRepository(private val context: Context) {
             if (file.exists()) {
                 val envelope = json.decodeFromString<CachedFeedEnvelope>(file.readText())
 
-                if (envelope.hl == TSukiContentLocale.hl() && envelope.gl == TSukiContentLocale.gl()) {
+                if (envelope.version >= 2 && envelope.hl == TSukiContentLocale.hl() && envelope.gl == TSukiContentLocale.gl() &&
+                    System.currentTimeMillis() - envelope.savedAt < 30 * 60_000L
+                ) {
                     envelope.payload
                 } else null
             } else null
@@ -132,6 +136,8 @@ class TSukiFeedRepository(private val context: Context) {
             val envelope = CachedFeedEnvelope(
                 hl = TSukiContentLocale.hl(),
                 gl = TSukiContentLocale.gl(),
+                version = 2,
+                savedAt = System.currentTimeMillis(),
                 payload = feed
             )
             file.writeText(json.encodeToString(envelope))
@@ -143,9 +149,7 @@ class TSukiFeedRepository(private val context: Context) {
     private suspend fun importAccountSubscriptions(): List<String> {
         val auth = com.example.tsuki.auth.YouTubeAuthManager(context)
         val cookie = auth.cookie.first()
-        if (cookie.isNullOrBlank() ||
-            !(cookie.contains("SAPISID") || cookie.contains("__Secure-3PAPISID"))
-        ) return emptyList()
+        if (cookie.isNullOrBlank() || !com.example.tsuki.auth.hasValidAuthCookie(cookie)) return emptyList()
         val channels = innerTubeClient.fetchAccountSubscriptions(cookie, auth.visitorData.first())
         if (channels.isEmpty()) return emptyList()
         val existing = subRepo.getAllIds().toSet()
@@ -202,6 +206,7 @@ class TSukiFeedRepository(private val context: Context) {
         val subIds = try { subRepo.getAllIds() } catch (_: Exception) { emptySet() }
         val history = try { historyManager.getRecentHistory(30) } catch (_: Exception) { emptyList() }
         val favIds = favoriteChannels.map { it.substringBefore("|") }.filter { it.isNotBlank() }.toSet()
+        val recoMode = try { com.example.tsuki.data.local.PlayerPreferences(context).recoSource.first() } catch (_: Exception) { com.example.tsuki.data.local.PlayerPreferences.RECO_SOURCE_MIXED }
 
         val isEnglish = com.example.tsuki.util.AppLocale.resolveTag(com.example.tsuki.util.AppLocale.readStored(context)) == com.example.tsuki.util.AppLocale.ENGLISH || TSukiContentLocale.hl().startsWith("en")
         val topicsToQuery = selectedTopics.ifEmpty {
@@ -245,12 +250,45 @@ class TSukiFeedRepository(private val context: Context) {
                 try {
                     val auth = com.example.tsuki.auth.YouTubeAuthManager(context)
                     val sessionCookie = auth.cookie.first()
-                    if (!sessionCookie.isNullOrBlank() &&
-                        (sessionCookie.contains("SAPISID") || sessionCookie.contains("__Secure-3PAPISID"))
-                    ) {
-                        innerTubeClient.fetchForYouVideos(sessionCookie, auth.visitorData.first())
+                    if (!sessionCookie.isNullOrBlank() && com.example.tsuki.auth.hasValidAuthCookie(sessionCookie)) {
+                        val first = innerTubeClient.fetchForYouVideos(sessionCookie, auth.visitorData.first())
+                        val all = first.tracks.toMutableList()
+                        var cont = first.continuation
+                        if (all.isNotEmpty() && cont != null) {
+                            val seen = all.map { it.id }.toMutableSet()
+                            var pages = 0
+                            while (pages < 2 && all.size < 80) {
+                                try {
+                                    val next = innerTubeClient.fetchForYouVideos(sessionCookie, auth.visitorData.first(), cont)
+                                    all.addAll(next.tracks.filter { seen.add(it.id) })
+                                    cont = next.continuation ?: break
+                                    pages++
+                                } catch (_: Exception) { break }
+                            }
+                        }
+                        com.example.tsuki.network.ForYouPage(all, cont)
                     } else com.example.tsuki.network.ForYouPage(emptyList())
                 } catch (_: Exception) { com.example.tsuki.network.ForYouPage(emptyList()) }
+            }
+            val exploreDeferred = async {
+                try {
+                    val auth = com.example.tsuki.auth.YouTubeAuthManager(context)
+                    val ck = auth.cookie.first()
+                    if (ck != null && recoMode != com.example.tsuki.data.local.PlayerPreferences.RECO_SOURCE_YOUTUBE &&
+                        com.example.tsuki.auth.hasValidAuthCookie(ck)
+                    ) {
+                        val seen = mutableSetOf<String>()
+                        val out = mutableListOf<TSukiFeedSection>()
+                        for (kind in listOf("explore", "new_releases")) {
+                            val fetched = innerTubeClient.fetchMusicExploreFeed(ck, auth.visitorData.first(), auth.dataSyncId.first(), kind)
+                            for (section in fetched) {
+                                val fresh = section.tracks.filter { seen.add(it.id) }
+                                if (fresh.isNotEmpty()) out.add(section.copy(tracks = fresh.take(12)))
+                            }
+                        }
+                        out
+                    } else emptyList()
+                } catch (_: Exception) { emptyList() }
             }
             val topicResults = topicDeferredList.awaitAll().toMap()
             val favTracks = favTracksDeferred.await()
@@ -259,6 +297,7 @@ class TSukiFeedRepository(private val context: Context) {
             val trendingTracks = trendingDeferred.await()
             val forYouPage = forYouDeferred.await()
             val accountSubIds = accountSubsDeferred.await()
+            val exploreSections = exploreDeferred.await()
             val forYouTracks = forYouPage.tracks
             lastForYouContinuation = forYouPage.continuation
             val combinedSubs = (favTracks + subTracks).distinctBy { it.id }
@@ -274,7 +313,18 @@ class TSukiFeedRepository(private val context: Context) {
             val forYouMain = forYouTracks.filterNot { it.id in forYouShortIds }
 
             if (forYouMain.isNotEmpty()) {
-                sections.add(TSukiFeedSection("Para ti", forYouMain))
+                if (exploreSections.isNotEmpty()) {
+                    val exploreTsuki = recoMode == com.example.tsuki.data.local.PlayerPreferences.RECO_SOURCE_TSUKI
+                    val exploreHead = if (exploreTsuki) exploreSections else exploreSections.take(1)
+                    val exploreTail = if (exploreTsuki) emptyList() else exploreSections.drop(1)
+                    sections.addAll(exploreHead)
+                    sections.add(TSukiFeedSection("Para ti", forYouMain))
+                    if (exploreTail.isNotEmpty()) {
+                        sections.addAll(exploreTail)
+                    }
+                } else {
+                    sections.add(TSukiFeedSection("Para ti", forYouMain))
+                }
                 if (forYouShorts.isNotEmpty()) {
                     sections.add(TSukiFeedSection("Shorts y Videos Cortos", forYouShorts))
                 }

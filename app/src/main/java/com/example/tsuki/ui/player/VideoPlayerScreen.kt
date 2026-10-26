@@ -260,6 +260,11 @@ fun VideoPlayerScreen(
     DisposableEffect(Unit) {
         onDispose {
             activity?.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            window?.let { w ->
+                val attributes = w.attributes
+                attributes.screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+                w.attributes = attributes
+            }
         }
     }
 
@@ -422,7 +427,8 @@ fun VideoPlayerScreen(
                                         if (isBrightness) {
                                             window?.let {
                                                 val attributes = it.attributes
-                                                val newBrightness = (attributes.screenBrightness - dragY / 1000f).coerceIn(0f, 1f)
+                                                val base = attributes.screenBrightness.takeIf { b -> b >= 0f } ?: 0.5f
+                                                val newBrightness = (base - dragY / 1000f).coerceIn(0.01f, 1f)
                                                 attributes.screenBrightness = newBrightness
                                                 it.attributes = attributes
                                             }
@@ -610,7 +616,7 @@ fun VideoPlayerScreen(
                                         playerController.mediaController?.seekTo(newPos)
                                     },
                                     modifier = Modifier
-                                        .size(46.dp)
+                                        .size(48.dp)
                                         .background(Color.Black.copy(alpha = 0.5f), CircleShape)
                                 ) {
                                     Icon(
@@ -643,7 +649,7 @@ fun VideoPlayerScreen(
                                         playerController.mediaController?.seekTo(newPos)
                                     },
                                     modifier = Modifier
-                                        .size(46.dp)
+                                        .size(48.dp)
                                         .background(Color.Black.copy(alpha = 0.5f), CircleShape)
                                 ) {
                                     Icon(
@@ -753,11 +759,7 @@ fun VideoPlayerScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             val viewInfo = buildString {
-                                if (!track?.viewCountText.isNullOrBlank()) {
-                                    append(track?.viewCountText)
-                                } else {
-                                    append("133 visualizaciones")
-                                }
+                                track?.viewCountText?.takeIf { it.isNotBlank() }?.let { append(it) }
                                 if (!track?.publishedTimeText.isNullOrBlank()) {
                                     append(" • ")
                                     append(track?.publishedTimeText)
@@ -898,7 +900,7 @@ fun VideoPlayerScreen(
                                 shape = RoundedCornerShape(50),
                                 color = if (isSubscribed) MaterialTheme.colorScheme.surfaceContainerHighest else MaterialTheme.colorScheme.primary,
                                 modifier = Modifier
-                                    .height(38.dp)
+                                    .height(48.dp)
                                     .graphicsLayer {
                                         scaleX = subScale
                                         scaleY = subScale
@@ -942,10 +944,10 @@ fun VideoPlayerScreen(
                                 Surface(
                                     shape = RoundedCornerShape(50),
                                     color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                                    modifier = Modifier.height(38.dp)
+                                    modifier = Modifier.height(48.dp)
                                 ) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                        val baseLikes = dislikesData?.likes ?: 475900L
+                                        val baseLikes = dislikesData?.likes ?: 0L
                                         val displayedLikes = if (userVote == "LIKED") baseLikes + 1 else baseLikes
 
                                         val likeSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
@@ -1158,7 +1160,7 @@ fun VideoPlayerScreen(
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Text(
-                                        text = "SponsorBlock (${sponsorSegments.size} segmentos)",
+                                        text = stringResource(R.string.vid_sponsorblock_segments, sponsorSegments.size),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onTertiaryContainer
                                     )
@@ -1250,7 +1252,7 @@ fun VideoPlayerScreen(
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                     )
                     IconButton(onClick = { showCommentsSheet = false }) {
-                        Icon(Icons.Default.Close, contentDescription = null)
+                        Icon(Icons.Default.Close, contentDescription = stringResource(R.string.common_close))
                     }
                 }
 
@@ -1322,9 +1324,9 @@ fun VideoPlayerScreen(
                                                 overflow = TextOverflow.Ellipsis,
                                                 modifier = Modifier.weight(1f, fill = false)
                                             )
-                                            if (!comment.publishedText.isNullOrBlank()) {
+                                            comment.publishedText?.takeIf { it.isNotBlank() }?.let { published ->
                                                 Text(
-                                                    text = comment.publishedText,
+                                                    text = published,
                                                     style = MaterialTheme.typography.labelSmall,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                                                 )
@@ -1336,7 +1338,7 @@ fun VideoPlayerScreen(
                                             style = MaterialTheme.typography.bodyMedium,
                                             color = MaterialTheme.colorScheme.onSurface
                                         )
-                                        if (!comment.likesText.isNullOrBlank()) {
+                                        comment.likesText?.takeIf { it.isNotBlank() }?.let {
                                             Spacer(modifier = Modifier.height(3.dp))
                                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                                 Icon(
@@ -1346,7 +1348,7 @@ fun VideoPlayerScreen(
                                                     modifier = Modifier.size(13.dp)
                                                 )
                                                 Text(
-                                                    text = comment.likesText,
+                                                    text = it,
                                                     style = MaterialTheme.typography.labelSmall,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                                 )
@@ -1992,7 +1994,7 @@ fun ActionChip(
                 else MaterialTheme.colorScheme.surfaceContainerHighest,
         border = if (isSelected) androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null,
         modifier = Modifier
-            .height(38.dp)
+            .height(48.dp)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
@@ -2074,7 +2076,7 @@ fun RelatedVideoCard(
                     .padding(horizontal = 6.dp, vertical = 2.dp)
             ) {
                 Text(
-                    text = if (video.durationMs > 0) formatTime(video.durationMs) else "3:06:44",
+                    text = if (video.durationMs > 0) formatTime(video.durationMs) else "--:--",
                     color = Color.White,
                     style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 11.sp)
                 )
@@ -2146,8 +2148,6 @@ fun RelatedVideoCard(
                     if (!video.viewCountText.isNullOrBlank()) {
                         append(" • ")
                         append(video.viewCountText)
-                    } else {
-                        append(" • 2K vistas")
                     }
                     if (!video.publishedTimeText.isNullOrBlank()) {
                         append(" • ")
@@ -2164,16 +2164,6 @@ fun RelatedVideoCard(
                 )
             }
 
-            IconButton(
-                onClick = { },
-                modifier = Modifier.size(24.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.MoreVert,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
         }
     }
 }

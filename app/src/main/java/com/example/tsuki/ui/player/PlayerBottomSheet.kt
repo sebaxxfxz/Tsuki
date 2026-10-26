@@ -34,6 +34,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -73,7 +74,12 @@ fun PlayerBottomSheet(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(scrimColor.copy(alpha = scrimColor.alpha * state.progress.coerceIn(0f, 1f)))
+                    .drawBehind {
+                        drawRect(
+                            color = scrimColor,
+                            alpha = (scrimColor.alpha * state.progress).coerceIn(0f, 1f)
+                        )
+                    }
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null
@@ -98,7 +104,12 @@ fun PlayerBottomSheet(
                         topEnd = if (!state.isExpanded) 16.dp else 0.dp
                     )
                 )
-                .background(backgroundColor.copy(alpha = backgroundColor.alpha * state.progress.coerceIn(0f, 1f))),
+                .drawBehind {
+                    drawRect(
+                        color = backgroundColor,
+                        alpha = (backgroundColor.alpha * state.progress).coerceIn(0f, 1f)
+                    )
+                },
         ) {
             if (state.isExpandedOrExpanding && backHandlerEnabled) {
                 BackHandler(onBack = state::collapseSoft)

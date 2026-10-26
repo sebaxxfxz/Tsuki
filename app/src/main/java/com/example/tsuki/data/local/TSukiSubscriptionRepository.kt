@@ -51,6 +51,19 @@ class TSukiSubscriptionRepository private constructor(private val context: Conte
         }
     }
 
+    suspend fun subscribeAll(channels: List<TSukiChannelSubscription>) {
+        if (channels.isEmpty()) return
+        context.tsukiSubsDataStore.edit { p ->
+            val order = p[ORDER_KEY] ?: ""
+            val list = if (order.isEmpty()) mutableListOf<String>() else order.split(",").toMutableList()
+            for (channel in channels) {
+                p[channelKey(channel.channelId)] = serialize(channel)
+                if (!list.contains(channel.channelId)) list.add(0, channel.channelId)
+            }
+            p[ORDER_KEY] = list.joinToString(",")
+        }
+    }
+
     suspend fun unsubscribe(channelId: String) {
         context.tsukiSubsDataStore.edit { p ->
             p.remove(channelKey(channelId))

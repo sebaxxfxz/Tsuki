@@ -1,5 +1,6 @@
 package com.example.tsuki.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -87,6 +88,14 @@ fun ChannelScreen(
     var isSubscribed by remember(channelId) { mutableStateOf(false) }
     var channelSearchQuery by remember(channelId) { mutableStateOf("") }
     var openChannelPlaylist by remember(channelId) { mutableStateOf<TSukiInnerTubeClient.ChannelPlaylist?>(null) }
+
+    BackHandler {
+        if (openChannelPlaylist != null) {
+            openChannelPlaylist = null
+        } else {
+            onBack()
+        }
+    }
 
     LaunchedEffect(channelId) {
         subscriptionRepo.isSubscribed(channelId).collect { isSubscribed = it }
@@ -445,9 +454,9 @@ fun ChannelScreen(
                                         maxLines = 2,
                                         overflow = TextOverflow.Ellipsis
                                     )
-                                    if (!playlist.videoCountText.isNullOrBlank()) {
+                                    playlist.videoCountText?.takeIf { it.isNotBlank() }?.let {
                                         Text(
-                                            playlist.videoCountText,
+                                            it,
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
@@ -517,9 +526,9 @@ private fun ChannelPlaylistSheet(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
-            if (!playlist.videoCountText.isNullOrBlank()) {
+            playlist.videoCountText?.takeIf { it.isNotBlank() }?.let {
                 Text(
-                    playlist.videoCountText,
+                    it,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

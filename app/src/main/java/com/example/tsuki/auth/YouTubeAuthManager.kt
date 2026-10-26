@@ -16,6 +16,9 @@ private val Context.authDataStore by preferencesDataStore(
     corruptionHandler = ReplaceFileCorruptionHandler(produceNewData = { emptyPreferences() })
 )
 
+fun hasValidAuthCookie(cookie: String?): Boolean =
+    !cookie.isNullOrBlank() && (cookie.contains("SAPISID=") || cookie.contains("__Secure-3PAPISID="))
+
 class YouTubeAuthManager(private val context: Context) {
 
     companion object {
@@ -41,8 +44,7 @@ class YouTubeAuthManager(private val context: Context) {
     }
 
     val isLoggedIn: Flow<Boolean> = context.authDataStore.data.map { prefs ->
-        val c = prefs[KEY_COOKIE]
-        !c.isNullOrBlank() && (c.contains("SAPISID=") || c.contains("__Secure-3PAPISID=") || c.contains("SID=") || c.contains("__Secure-1PSID="))
+        hasValidAuthCookie(prefs[KEY_COOKIE])
     }
 
     suspend fun saveSession(

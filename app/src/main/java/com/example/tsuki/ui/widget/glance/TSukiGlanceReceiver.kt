@@ -11,8 +11,13 @@ import kotlinx.coroutines.launch
 abstract class BaseTSukiGlanceReceiver(override val glanceAppWidget: GlanceAppWidget) : GlanceAppWidgetReceiver() {
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
         super.onUpdate(context, appWidgetManager, appWidgetIds)
+        val pending = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
-            TSukiGlanceSync.pushCurrentState(context.applicationContext)
+            try {
+                TSukiGlanceSync.pushCurrentState(context.applicationContext)
+            } finally {
+                pending.finish()
+            }
         }
     }
 }

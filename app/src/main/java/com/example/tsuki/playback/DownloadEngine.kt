@@ -238,7 +238,7 @@ class DownloadEngine(private val context: Context) {
 
             if (!downloadUrlFast(downloadUrl, targetFile, onProgress)) return@withContext null
 
-            if (!partFile.renameTo(targetFile)) {
+            if (partFile.exists() && !partFile.renameTo(targetFile)) {
                 Log.e(TAG, "Could not finalize audio download for $videoId")
                 partFile.delete()
                 return@withContext null

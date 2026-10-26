@@ -248,7 +248,9 @@ class TSukiNeuroEngine private constructor(private val appContext: Context) {
         val vid = track.videoId ?: track.id
         val chan = track.channelId ?: ""
         val chanProfile = brain.channelTopicProfiles[chan]
-        val vec = cachedVectors.getOrPut(vid) { textTokenizer.extractFeatures(track, idfSnapshot, chanProfile) }
+        val vec = synchronized(cachedVectors) {
+            cachedVectors.getOrPut(vid) { textTokenizer.extractFeatures(track, idfSnapshot, chanProfile) }
+        }
         val gSim = TSukiVectorMath.calculateCosineSimilarity(brain.globalVector, vec)
         val tSim = TSukiVectorMath.calculateCosineSimilarity(timeVector, vec)
         var score = gSim * 0.65 + tSim * 0.35
@@ -419,8 +421,10 @@ class TSukiNeuroEngine private constructor(private val appContext: Context) {
             val vid = track.videoId ?: track.id
             val chan = track.channelId ?: ""
             val idfSnap = TSukiIdfSnapshot(HashMap(docFreq), docTotal)
-            val vec = cachedVectors.getOrPut(vid) {
-                textTokenizer.extractFeatures(track, idfSnap, activeBrain.channelTopicProfiles[chan])
+            val vec = synchronized(cachedVectors) {
+                cachedVectors.getOrPut(vid) {
+                    textTokenizer.extractFeatures(track, idfSnap, activeBrain.channelTopicProfiles[chan])
+                }
             }
             if (type == TSukiInteractionType.WATCHED || type == TSukiInteractionType.CLICK || type == TSukiInteractionType.LIKED || type == TSukiInteractionType.MOOD_TAGGED) {
                 val lr = if (type == TSukiInteractionType.LIKED) 0.20

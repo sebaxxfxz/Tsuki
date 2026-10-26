@@ -397,20 +397,28 @@ class WatchHistoryManager private constructor(context: Context) {
         var totals = ListeningTotals(0, 0L, 0, 0)
         try {
             val db = dbHelper.readableDatabase
-            db.rawQuery(
-                """
-                SELECT COUNT(DISTINCT video_id || '_' || (timestamp / 300000)),
-                       COALESCE(SUM(play_time_ms),0),
-                       COUNT(DISTINCT video_id),
-                       COUNT(DISTINCT artist)
-                FROM play_events WHERE timestamp >= ?
-                """.trimIndent(),
-                arrayOf(fromTimestamp.toString())
+            val chunksByVideo = HashMap<String, MutableList<PlayChunk>>()
+            val artists = HashSet<String>()
+            var totalMs = 0L
+            db.query(
+                WatchHistoryDbHelper.TABLE_PLAY_EVENTS,
+                arrayOf("video_id", "artist", "timestamp", "play_time_ms"),
+                "timestamp >= ?",
+                arrayOf(fromTimestamp.toString()),
+                null, null, null
             ).use { cursor ->
-                if (cursor.moveToFirst()) {
-                    totals = ListeningTotals(cursor.getInt(0), cursor.getLong(1), cursor.getInt(2), cursor.getInt(3))
+                while (cursor.moveToNext()) {
+                    val videoId = cursor.getString(0) ?: ""
+                    artists.add(cursor.getString(1) ?: "")
+                    val ts = cursor.getLong(2)
+                    val ms = cursor.getLong(3)
+                    totalMs += ms
+                    chunksByVideo.getOrPut(videoId) { mutableListOf() }.add(PlayChunk(ts, ms))
                 }
             }
+            var plays = 0
+            for (chunks in chunksByVideo.values) plays += PlaySessionCounter.playCount(chunks)
+            totals = ListeningTotals(plays, totalMs, chunksByVideo.size, artists.size)
         } catch (_: Exception) {}
         totals
     }
@@ -421,18 +429,28 @@ class WatchHistoryManager private constructor(context: Context) {
         val list = mutableListOf<TopEntry>()
         try {
             val db = dbHelper.readableDatabase
-            db.rawQuery(
-                """
-                SELECT title, artist, artwork_url, COUNT(1), SUM(play_time_ms)
-                FROM play_events WHERE timestamp >= ?
-                GROUP BY video_id ORDER BY COUNT(1) DESC, SUM(play_time_ms) DESC LIMIT ?
-                """.trimIndent(),
-                arrayOf(fromTimestamp.toString(), limit.toString())
+            val agg = HashMap<String, WeekAgg>()
+            db.query(
+                WatchHistoryDbHelper.TABLE_PLAY_EVENTS,
+                arrayOf("video_id", "title", "artist", "artwork_url", "timestamp", "play_time_ms"),
+                "timestamp >= ?",
+                arrayOf(fromTimestamp.toString()),
+                null, null, null
             ).use { cursor ->
                 while (cursor.moveToNext()) {
-                    list.add(TopEntry(cursor.getString(0), cursor.getString(1), cursor.getString(2), cursor.getInt(3), cursor.getLong(4)))
+                    val videoId = cursor.getString(0) ?: ""
+                    val ts = cursor.getLong(4)
+                    val ms = cursor.getLong(5)
+                    val entry = agg.getOrPut(videoId) { WeekAgg(cursor.getString(1) ?: "", cursor.getString(2) ?: "", cursor.getString(3)) }
+                    entry.ms += ms
+                    entry.chunks.add(PlayChunk(ts, ms))
                 }
             }
+            for (entry in agg.values) entry.plays = PlaySessionCounter.playCount(entry.chunks)
+            agg.values
+                .sortedWith(compareByDescending<WeekAgg> { it.plays }.thenByDescending { it.ms })
+                .take(limit)
+                .mapTo(list) { TopEntry(it.title, it.artist, it.artworkUrl, it.plays, it.ms) }
         } catch (_: Exception) {}
         list
     }
@@ -535,17 +553,14 @@ class WatchHistoryManager private constructor(context: Context) {
     private class WeekAgg(val title: String, val artist: String, val artworkUrl: String?) {
         var plays: Int = 0
         var ms: Long = 0L
+        val chunks = mutableListOf<PlayChunk>()
     }
 
     suspend fun getWeeklyWrapped(weeksCount: Int = 12, topLimit: Int = 5): List<WeeklyWrapped> = withContext(Dispatchers.IO) {
         val now = System.currentTimeMillis()
         val currentWeekStart = startOfWeekLocal(now)
         val fromTs = currentWeekStart - (weeksCount - 1) * 7L * 24L * 3600L * 1000L
-        val weekMs = HashMap<Long, Long>()
-        val weekPlays = HashMap<Long, Int>()
-        val weekSessions = HashMap<Long, HashSet<String>>()
-        val songAgg = HashMap<Long, HashMap<String, WeekAgg>>()
-        val artistAgg = HashMap<Long, HashMap<String, WeekAgg>>()
+        val videoAgg = HashMap<Long, HashMap<String, WeekAgg>>()
         try {
             val db = dbHelper.readableDatabase
             db.query(
@@ -563,17 +578,9 @@ class WatchHistoryManager private constructor(context: Context) {
                     val artwork = cursor.getString(4)
                     val videoId = cursor.getString(5) ?: ""
                     val ws = startOfWeekLocal(ts)
-                    weekMs[ws] = (weekMs[ws] ?: 0L) + ms
-                    if (weekSessions.getOrPut(ws) { HashSet() }.add("${videoId}|${ts / 300000L}")) {
-                        weekPlays[ws] = (weekPlays[ws] ?: 0) + 1
-                    }
-                    songAgg.getOrPut(ws) { HashMap() }.getOrPut("$title|$artist") { WeekAgg(title, artist, artwork) }.let {
-                        it.plays += 1
+                    videoAgg.getOrPut(ws) { HashMap() }.getOrPut(videoId) { WeekAgg(title, artist, artwork) }.let {
                         it.ms += ms
-                    }
-                    artistAgg.getOrPut(ws) { HashMap() }.getOrPut(artist) { WeekAgg(artist, artist, artwork) }.let {
-                        it.plays += 1
-                        it.ms += ms
+                        it.chunks.add(PlayChunk(ts, ms))
                     }
                 }
             }
@@ -581,15 +588,32 @@ class WatchHistoryManager private constructor(context: Context) {
         val result = mutableListOf<WeeklyWrapped>()
         for (w in 0 until weeksCount) {
             val ws = currentWeekStart - w * 7L * 24L * 3600L * 1000L
-            val songs = (songAgg[ws]?.values ?: emptyList())
+            val songAgg = HashMap<String, WeekAgg>()
+            val artistAgg = HashMap<String, WeekAgg>()
+            var weekMs = 0L
+            var weekPlays = 0
+            for (v in videoAgg[ws].orEmpty().values) {
+                val plays = PlaySessionCounter.playCount(v.chunks)
+                weekMs += v.ms
+                weekPlays += plays
+                songAgg.getOrPut("${v.title}|${v.artist}") { WeekAgg(v.title, v.artist, v.artworkUrl) }.let {
+                    it.plays += plays
+                    it.ms += v.ms
+                }
+                artistAgg.getOrPut(v.artist) { WeekAgg(v.artist, "", v.artworkUrl) }.let {
+                    it.plays += plays
+                    it.ms += v.ms
+                }
+            }
+            val songs = songAgg.values
                 .sortedWith(compareByDescending<WeekAgg> { it.plays }.thenByDescending { it.ms })
                 .take(topLimit)
                 .map { TopEntry(it.title, it.artist, it.artworkUrl, it.plays, it.ms) }
-            val artists = (artistAgg[ws]?.values ?: emptyList())
+            val artists = artistAgg.values
                 .sortedWith(compareByDescending<WeekAgg> { it.ms }.thenByDescending { it.plays })
                 .take(topLimit)
                 .map { TopEntry(it.title, "", it.artworkUrl, it.plays, it.ms) }
-            result.add(WeeklyWrapped(ws, weekMs[ws] ?: 0L, weekPlays[ws] ?: 0, songs, artists))
+            result.add(WeeklyWrapped(ws, weekMs, weekPlays, songs, artists))
         }
         result.sortedByDescending { it.weekStartMs }
     }
@@ -605,11 +629,7 @@ class WatchHistoryManager private constructor(context: Context) {
             set(Calendar.MILLISECOND, 0)
         }
         val monthStart = cal.timeInMillis
-        var totalMs = 0L
-        var plays = 0
-        val sessions = HashSet<String>()
-        val songAgg = HashMap<String, WeekAgg>()
-        val artistAgg = HashMap<String, WeekAgg>()
+        val videoAgg = HashMap<String, WeekAgg>()
         try {
             val db = dbHelper.readableDatabase
             db.query(
@@ -626,19 +646,30 @@ class WatchHistoryManager private constructor(context: Context) {
                     val artist = cursor.getString(3) ?: ""
                     val artwork = cursor.getString(4)
                     val videoId = cursor.getString(5) ?: ""
-                    totalMs += ms
-                    if (sessions.add("${videoId}|${ts / 300000L}")) plays += 1
-                    songAgg.getOrPut("$title|$artist") { WeekAgg(title, artist, artwork) }.let {
-                        it.plays += 1
+                    videoAgg.getOrPut(videoId) { WeekAgg(title, artist, artwork) }.let {
                         it.ms += ms
-                    }
-                    artistAgg.getOrPut(artist) { WeekAgg(artist, artist, artwork) }.let {
-                        it.plays += 1
-                        it.ms += ms
+                        it.chunks.add(PlayChunk(ts, ms))
                     }
                 }
             }
         } catch (_: Exception) {}
+        var totalMs = 0L
+        var plays = 0
+        val songAgg = HashMap<String, WeekAgg>()
+        val artistAgg = HashMap<String, WeekAgg>()
+        for (v in videoAgg.values) {
+            val vPlays = PlaySessionCounter.playCount(v.chunks)
+            totalMs += v.ms
+            plays += vPlays
+            songAgg.getOrPut("${v.title}|${v.artist}") { WeekAgg(v.title, v.artist, v.artworkUrl) }.let {
+                it.plays += vPlays
+                it.ms += v.ms
+            }
+            artistAgg.getOrPut(v.artist) { WeekAgg(v.artist, "", v.artworkUrl) }.let {
+                it.plays += vPlays
+                it.ms += v.ms
+            }
+        }
         if (plays == 0) return@withContext null
         val songs = songAgg.values
             .sortedWith(compareByDescending<WeekAgg> { it.plays }.thenByDescending { it.ms })

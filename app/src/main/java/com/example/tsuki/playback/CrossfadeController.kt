@@ -273,6 +273,7 @@ class CrossfadeController(private val context: Context) {
             }
 
             withContext(Dispatchers.Main) {
+                AudioEqualizerHelper.releaseSecondaryAudioEffects()
                 secondaryPlayer.stop()
                 secondaryPlayer.release()
             }

@@ -6,6 +6,7 @@ internal class TSukiSeedSelector {
 
     companion object {
         private const val MAX_SEEDS = 5
+        private const val MAX_SEEDS_PER_ARTIST = 2
         private const val RECENT_HISTORY_WINDOW = 50
         private const val MIN_WATCH_PERCENT_SEED = 0.20f
     }
@@ -16,49 +17,63 @@ internal class TSukiSeedSelector {
         tokenizer: TSukiTokenizer
     ): List<TSukiSeedInput> {
         val windowed = history.take(RECENT_HISTORY_WINDOW)
-            .filter { it.watchDurationMs > 0L || it.playCount > 1 }
+            .filter { entry ->
+                val percent = brain.watchHistoryMap[entry.videoId]?.toDouble()
+                if (percent != null) percent >= MIN_WATCH_PERCENT_SEED
+                else entry.watchDurationMs > 0L || entry.playCount > 1
+            }
 
         if (windowed.isEmpty()) return emptyList()
 
         val scoredEntries: List<Pair<WatchHistoryEntry, Double>> = windowed.map { item ->
             val normalizedDuration = (item.watchDurationMs.toDouble() / 1_200_000.0).coerceIn(0.0, 1.0)
             val recency = recencyScore(item.lastPlayedTimestamp)
-            val channelAffinity = brain.channelScores[item.videoId] ?: 0.0
-            val combined = normalizedDuration * 0.5 + recency * 0.3 + channelAffinity * 0.2
+            val artistToken = tokenizer.tokenize(item.artist).firstOrNull()
+            val artistAffinity = artistToken?.let { brain.topicAffinities[it] } ?: 0.0
+            val combined = normalizedDuration * 0.625 + recency * 0.375 + artistAffinity * 0.2
             item to combined
         }
 
         val grouped: Map<String, List<Pair<WatchHistoryEntry, Double>>> =
             scoredEntries.groupBy { (entry, _) ->
-                val tokens = tokenizer.tokenize(entry.title)
-                tokens.firstOrNull() ?: entry.videoId
+                tokenizer.tokenize(entry.artist).joinToString(" ").ifBlank { entry.videoId }
             }
 
         val rankedGroups = grouped.entries
             .sortedByDescending { (_, members) ->
                 members.maxOfOrNull { (_, score) -> score } ?: 0.0
             }
-            .take(MAX_SEEDS)
 
-        return rankedGroups.mapNotNull { (_, members) ->
-            val best = members.maxByOrNull { (_, score) -> score } ?: return@mapNotNull null
-            val (entry, weight) = best
-            val percent = if (entry.watchDurationMs > 0L) {
-                (entry.watchDurationMs.toDouble() / 1_200_000.0).coerceIn(0.0, 1.0)
-            } else {
-                0.0
+        val seeds = mutableListOf<TSukiSeedInput>()
+        val perArtist = mutableMapOf<String, Int>()
+        for ((key, members) in rankedGroups) {
+            for ((entry, weight) in members.sortedByDescending { (_, score) -> score }) {
+                if (seeds.size >= MAX_SEEDS) break
+                if ((perArtist[key] ?: 0) >= MAX_SEEDS_PER_ARTIST) break
+                seeds.add(toSeedInput(entry, weight))
+                perArtist[key] = (perArtist[key] ?: 0) + 1
             }
-            TSukiSeedInput(
-                id = entry.videoId,
-                title = entry.title,
-                channelId = "",
-                source = TSukiSeedSource.WATCH_HISTORY,
-                engagementWeight = weight,
-                timestamp = entry.lastPlayedTimestamp,
-                durationSec = (entry.watchDurationMs / 1000L).toInt(),
-                percentWatched = percent
-            )
+            if (seeds.size >= MAX_SEEDS) break
         }
+        return seeds
+    }
+
+    private fun toSeedInput(entry: WatchHistoryEntry, weight: Double): TSukiSeedInput {
+        val percent = if (entry.watchDurationMs > 0L) {
+            (entry.watchDurationMs.toDouble() / 1_200_000.0).coerceIn(0.0, 1.0)
+        } else {
+            0.0
+        }
+        return TSukiSeedInput(
+            id = entry.videoId,
+            title = entry.title,
+            channelId = "",
+            source = TSukiSeedSource.WATCH_HISTORY,
+            engagementWeight = weight,
+            timestamp = entry.lastPlayedTimestamp,
+            durationSec = (entry.watchDurationMs / 1000L).toInt(),
+            percentWatched = percent
+        )
     }
 
     private fun recencyScore(timestamp: Long): Double {

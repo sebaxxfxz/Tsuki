@@ -17,7 +17,11 @@ object CanvasDiskCache {
 
     private const val MAX_BYTES = 256L * 1024 * 1024
 
-    private lateinit var cacheDir: File
+    private var appContext: android.content.Context? = null
+
+    private val cacheDir: File by lazy {
+        File(appContext!!.cacheDir, "canvas").apply { mkdirs() }
+    }
 
     private val downloadClient by lazy {
         OkHttpClient.Builder()
@@ -28,7 +32,7 @@ object CanvasDiskCache {
     }
 
     fun init(context: android.content.Context) {
-        cacheDir = File(context.cacheDir, "canvas").apply { mkdirs() }
+        appContext = context.applicationContext
     }
 
     private fun targetFile(mediaId: String, url: String): File {
@@ -39,14 +43,14 @@ object CanvasDiskCache {
     }
 
     fun getCachedFile(mediaId: String, url: String): File? {
-        if (!::cacheDir.isInitialized || url.isBlank()) return null
+        if (appContext == null || url.isBlank()) return null
         val file = targetFile(mediaId, url)
         if (!file.exists() || file.length() < 4096L) return null
         return file.takeIf { isValidVideo(it) }
     }
 
     suspend fun ensureDownloaded(mediaId: String, url: String): File? = withContext(Dispatchers.IO) {
-        if (!::cacheDir.isInitialized || url.isBlank()) return@withContext null
+        if (appContext == null || url.isBlank()) return@withContext null
         if (url.contains(".m3u8")) return@withContext null
         val file = targetFile(mediaId, url)
         if (file.exists() && file.length() > 4096L && isValidVideo(file)) return@withContext file
@@ -141,7 +145,7 @@ object CanvasDiskCache {
     }
 
     private fun trim() {
-        if (!::cacheDir.isInitialized) return
+        if (appContext == null) return
         val files = cacheDir.listFiles()?.filter { it.isFile } ?: return
         var total = files.sumOf { it.length() }
         if (total <= MAX_BYTES) return
@@ -153,10 +157,10 @@ object CanvasDiskCache {
     }
 
     fun clearAll() {
-        if (!::cacheDir.isInitialized) return
+        if (appContext == null) return
         cacheDir.listFiles()?.forEach { it.delete() }
     }
 
     fun sizeBytes(): Long =
-        if (::cacheDir.isInitialized) cacheDir.listFiles()?.sumOf { it.length() } ?: 0L else 0L
+        if (appContext != null) cacheDir.listFiles()?.sumOf { it.length() } ?: 0L else 0L
 }

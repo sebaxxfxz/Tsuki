@@ -25,7 +25,9 @@ class AutoQueueHelper private constructor(private val client: TSukiInnerTubeClie
 
     suspend fun extendQueue(
         current: MediaTrack,
-        existingQueue: List<MediaTrack> = emptyList()
+        existingQueue: List<MediaTrack> = emptyList(),
+        explorationCandidates: List<MediaTrack> = emptyList(),
+        preferExploration: Boolean = false
     ): List<MediaTrack> = withContext(Dispatchers.IO) {
         try {
             if (current.isLocal) return@withContext emptyList()
@@ -35,19 +37,46 @@ class AutoQueueHelper private constructor(private val client: TSukiInnerTubeClie
             val existingIds = existingQueue.mapNotNull { it.videoId ?: it.id }.toSet() + videoId
 
             val related = client.fetchRelatedTracks(videoId)
-            if (related.isNullOrEmpty()) {
+            if (related.isNullOrEmpty() && explorationCandidates.isEmpty()) {
                 Log.d(TAG, "No related tracks returned for $videoId")
                 return@withContext emptyList()
             }
 
             val seen = mutableSetOf<String>()
-            val filtered = related.filter { track ->
+            val filtered = (related ?: emptyList()).filter { track ->
                 val id = track.videoId ?: track.id
                 id !in existingIds && seen.add(id)
             }.take(MAX_AUTO_QUEUE_ITEMS)
 
-            Log.d(TAG, "Auto-extended queue with ${filtered.size} tracks for $videoId")
-            filtered
+            val mixed = if (preferExploration && explorationCandidates.isNotEmpty()) {
+                val primary = mutableListOf<MediaTrack>()
+                for (candidate in explorationCandidates) {
+                    if (primary.size >= MAX_AUTO_QUEUE_ITEMS) break
+                    val id = candidate.videoId ?: candidate.id
+                    if (id in existingIds || seen.contains(id)) continue
+                    primary.add(candidate)
+                }
+                val primaryIds = primary.mapNotNull { it.videoId ?: it.id }.toSet()
+                primary.addAll(filtered.filter { (it.videoId ?: it.id) !in primaryIds })
+                primary.take(MAX_AUTO_QUEUE_ITEMS)
+            } else {
+                val sprinkled = filtered.toMutableList()
+                if (explorationCandidates.isNotEmpty() && sprinkled.size >= 4) {
+                    var inserted = 0
+                    val positions = listOf(3, 7, 11).filter { it < sprinkled.size }
+                    for (candidate in explorationCandidates) {
+                        if (inserted >= 3 || inserted >= positions.size) break
+                        val id = candidate.videoId ?: candidate.id
+                        if (id in existingIds || !seen.add(id)) continue
+                        sprinkled[positions[inserted]] = candidate
+                        inserted++
+                    }
+                }
+                sprinkled
+            }
+
+            Log.d(TAG, "Auto-extended queue with ${mixed.size} tracks for $videoId")
+            mixed
         } catch (e: Exception) {
             Log.w(TAG, "Failed to extend queue: ${e.message}")
             emptyList()

@@ -153,10 +153,10 @@ class TSukiPlaybackService : MediaLibraryService() {
         val loadControl = androidx.media3.exoplayer.DefaultLoadControl.Builder()
             .setAllocator(androidx.media3.exoplayer.upstream.DefaultAllocator(true, 64 * 1024))
             .setBufferDurationsMs(
-                1_000,
+                3_000,
                 50_000,
-                200,
-                600
+                500,
+                1_500
             )
             .setBackBuffer(15_000, true)
             .setPrioritizeTimeOverSizeThresholds(true)
@@ -474,20 +474,24 @@ class TSukiPlaybackService : MediaLibraryService() {
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         if (::player.isInitialized) {
-            if (!player.playWhenReady || player.mediaItemCount == 0) {
-                try {
-                    if (serviceWakeLock?.isHeld == true) {
-                        serviceWakeLock?.release()
-                    }
-                } catch (_: Exception) {}
-                serviceWakeLock = null
-                player.pause()
-                player.stop()
-                player.clearMediaItems()
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
-            }
+            try {
+                if (serviceWakeLock?.isHeld == true) {
+                    serviceWakeLock?.release()
+                }
+            } catch (_: Exception) {}
+            serviceWakeLock = null
+            player.pause()
+            player.stop()
+            player.clearMediaItems()
         }
+        progressTickerJob?.cancel()
+        progressTickerJob = null
+        try {
+            val controller = PlayerController.peekInstance()
+            if (controller?.togetherManager?.isActive() == true) controller.togetherManager.leaveTogether()
+        } catch (_: Exception) {}
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
         super.onTaskRemoved(rootIntent)
     }
 

@@ -93,7 +93,7 @@ fun FastScrollBox(
                 .align(Alignment.CenterEnd)
                 .fillMaxHeight()
                 .width(with(density) { 28.dp })
-                .alpha(thumbFade.value)
+                .graphicsLayer { alpha = thumbFade.value }
                 .pointerInput(hasScrollableContent, totalItems, maxTrackPx) {
                     detectVerticalDragGestures(
                         onDragStart = {

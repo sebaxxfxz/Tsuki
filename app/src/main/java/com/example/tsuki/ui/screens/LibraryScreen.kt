@@ -205,7 +205,7 @@ fun LibraryScreen(
                 ) {
                     item {
                         LibraryFilterChip(
-                            title = "Playlists",
+                            title = stringResource(R.string.chan_playlists),
                             count = playlistSummaries.size,
                             icon = Icons.AutoMirrored.Filled.QueueMusic,
                             selected = selectedSection == LibrarySection.PLAYLISTS,
@@ -232,7 +232,7 @@ fun LibraryScreen(
                     }
                     item {
                         LibraryFilterChip(
-                            title = "Local",
+                            title = stringResource(R.string.music_source_local),
                             count = localTracks.size,
                             icon = Icons.Filled.Folder,
                             selected = selectedSection == LibrarySection.LOCAL,
@@ -318,22 +318,22 @@ fun LibraryScreen(
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .size(100.dp)
+                                    .size(56.dp)
                                     .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)),
+                                    .background(MaterialTheme.colorScheme.surfaceContainerHigh),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Filled.QueueMusic,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(48.dp)
+                                    modifier = Modifier.size(28.dp)
                                 )
                             }
-                            Spacer(modifier = Modifier.height(24.dp))
+                            Spacer(modifier = Modifier.height(16.dp))
                             Text(
                                 text = stringResource(R.string.lib_empty),
-                                style = MaterialTheme.typography.titleLarge,
+                                style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onBackground
                             )
@@ -465,23 +465,23 @@ fun LibraryScreen(
                         } else {
                             androidx.compose.foundation.layout.Box(
                                 modifier = Modifier
-                                    .size(100.dp)
+                                    .size(56.dp)
                                     .clip(CircleShape)
-                                    .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)),
+                                    .background(MaterialTheme.colorScheme.surfaceContainerHigh),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     imageVector = emptyIcon,
                                     contentDescription = null,
                                     tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(48.dp)
+                                    modifier = Modifier.size(28.dp)
                                 )
                             }
                         }
-                        Spacer(modifier = Modifier.height(24.dp))
+                        Spacer(modifier = Modifier.height(16.dp))
                         Text(
                             text = emptyTitle,
-                            style = MaterialTheme.typography.titleLarge,
+                            style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onBackground,
                             textAlign = TextAlign.Center

@@ -159,13 +159,17 @@ object BackupManager {
             }
 
             var favoritesImported = 0
+            val favoritesToAdd = mutableListOf<MediaTrack>()
             root.jsonArray("favorites").forEach { element ->
                 val track = trackJson(element as? JsonObject) ?: return@forEach
                 val key = track.videoId ?: track.id
                 if (!favoritesManager.isFavorite(key)) {
-                    favoritesManager.addFavorite(track)
-                    favoritesImported++
+                    favoritesToAdd.add(track)
                 }
+            }
+            if (favoritesToAdd.isNotEmpty()) {
+                favoritesManager.addFavorites(favoritesToAdd)
+                favoritesImported = favoritesToAdd.size
             }
 
             var watchImported = 0

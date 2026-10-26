@@ -17,6 +17,7 @@ import org.schabi.newpipe.extractor.localization.Localization
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -33,6 +34,14 @@ class TSukiApp : Application(), SingletonImageLoader.Factory {
         super.onCreate()
         createNotificationChannels()
         com.example.tsuki.ui.player.canvas.CanvasDiskCache.init(this)
+        MainScope().launch(Dispatchers.IO) {
+            runCatching {
+                com.example.tsuki.playback.PlayerCacheProvider.persistSizeMb(
+                    this@TSukiApp,
+                    com.example.tsuki.data.local.PlayerPreferences(this@TSukiApp).cacheSizeMb.first()
+                )
+            }
+        }
         val homePrefs = com.example.tsuki.data.local.HomePreferences(this)
         applyContentLocale("es", "ES")
         MainScope().launch(Dispatchers.IO) {
@@ -70,6 +79,7 @@ class TSukiApp : Application(), SingletonImageLoader.Factory {
 
     private fun initTSukiBrain() {
         MainScope().launch {
+            delay(900)
             withContext(Dispatchers.IO) {
                 com.example.tsuki.data.recommendation.TSukiNeuroEngine.initialize(this@TSukiApp)
             }

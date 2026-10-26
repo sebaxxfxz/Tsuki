@@ -277,7 +277,7 @@ private fun TSukiPillTab(
         } else {
             MaterialTheme.colorScheme.onSurfaceVariant
         },
-        animationSpec = tween(durationMillis = 180, easing = androidx.compose.animation.core.FastOutSlowInEasing),
+        animationSpec = tween(durationMillis = M3MotionTokens.DurationShort4, easing = androidx.compose.animation.core.FastOutSlowInEasing),
         label = "TabContentColor"
     )
 

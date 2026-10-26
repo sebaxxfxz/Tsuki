@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.example.tsuki.R
 import com.example.tsuki.data.local.TrackTagsManager
+import com.example.tsuki.data.recommendation.MusicTasteRepository
 import com.example.tsuki.data.recommendation.TSukiInteractionType
 import com.example.tsuki.data.recommendation.TSukiNeuroEngine
 import com.example.tsuki.domain.model.MediaTrack
@@ -248,6 +249,7 @@ fun TagSongSheet(
                             .clickable {
                                 scope.launch {
                                     TSukiNeuroEngine.onTrackInteraction(track, TSukiInteractionType.NOT_INTERESTED)
+                                    MusicTasteRepository.getInstance(context).blockArtist(track.artist)
                                     Toast.makeText(context, context.getString(R.string.tag_not_again), Toast.LENGTH_SHORT).show()
                                     onDismiss()
                                 }

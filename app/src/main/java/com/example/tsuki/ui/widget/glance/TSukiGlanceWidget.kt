@@ -155,7 +155,7 @@ private suspend fun GlanceAppWidget.provideGlanceInternal(
             TSukiGlanceSync.getCachedArtworkBitmap(context.applicationContext, mediaId)
         } else null
 
-        GlanceTheme {
+        TSukiGlanceTheme {
             content(
                 title, artist, bitmap, isPlaying, shuffle, repeatMode,
                 isFavorite, hasTrack, dominantColor, accentColor, positionMs, durationMs

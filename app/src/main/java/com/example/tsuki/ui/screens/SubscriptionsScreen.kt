@@ -112,7 +112,8 @@ fun SubscriptionsScreen(
     val feedRepo = remember { TSukiSubscriptionFeedRepository(context) }
     val homePrefs = remember { HomePreferences(context) }
     val scope = rememberCoroutineScope()
-    val subs by subRepo.getAllSubscriptions().collectAsStateWithLifecycle(initialValue = emptyList())
+    val subsFlow = remember(subRepo) { subRepo.getAllSubscriptions() }
+    val subs by subsFlow.collectAsStateWithLifecycle(initialValue = emptyList())
     val favChannels by homePrefs.favoriteChannels.collectAsStateWithLifecycle(initialValue = emptySet())
     val blockedChannels by homePrefs.blockedChannels.collectAsStateWithLifecycle(initialValue = emptySet())
     val blockedVideos by homePrefs.blockedVideos.collectAsStateWithLifecycle(initialValue = emptySet())
@@ -244,8 +245,18 @@ fun SubscriptionsScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(stringResource(R.string.subs_title), style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Column(modifier = Modifier.weight(1f, fill = false)) {
+                    Text(
+                        stringResource(R.string.subs_title),
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+                    )
+                    Text(
+                        pluralStringResource(R.plurals.subs_channels, displaySubs.size, displaySubs.size),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = { toggleNotify() }) {
                         Icon(
                             if (notifyEnabled) Icons.Rounded.Notifications else Icons.Rounded.NotificationsOff,
@@ -253,9 +264,12 @@ fun SubscriptionsScreen(
                             tint = if (notifyEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    IconButton(onClick = { importLauncher.launch("application/json") }) { Icon(Icons.Rounded.Download, contentDescription = null) }
-                    IconButton(onClick = { exportLauncher.launch("tsuki_subs_${System.currentTimeMillis()}.json") }) { Icon(Icons.Rounded.Upload, contentDescription = null) }
-                    Text(pluralStringResource(R.plurals.subs_channels, displaySubs.size, displaySubs.size), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    IconButton(onClick = { importLauncher.launch("application/json") }) {
+                        Icon(Icons.Rounded.Download, contentDescription = stringResource(R.string.subs_import_action))
+                    }
+                    IconButton(onClick = { exportLauncher.launch("tsuki_subs_${System.currentTimeMillis()}.json") }) {
+                        Icon(Icons.Rounded.Upload, contentDescription = stringResource(R.string.subs_export_action))
+                    }
                 }
             }
         }

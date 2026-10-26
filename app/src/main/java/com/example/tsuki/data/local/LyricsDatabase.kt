@@ -23,8 +23,11 @@ class LyricsDatabase private constructor(context: Context) : SQLiteOpenHelper(co
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        db.execSQL("DROP TABLE IF EXISTS lyrics")
-        onCreate(db)
+        db.execSQL("DROP TABLE IF EXISTS lyrics_translations")
+    }
+
+    override fun onDowngrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        db.execSQL("DROP TABLE IF EXISTS lyrics_translations")
     }
 
     data class CachedLyrics(val raw: String, val source: String)
@@ -69,7 +72,7 @@ class LyricsDatabase private constructor(context: Context) : SQLiteOpenHelper(co
 
     companion object {
         private const val DATABASE_NAME = "lyrics.db"
-        private const val DATABASE_VERSION = 1
+        private const val DATABASE_VERSION = 3
 
         @Volatile
         private var instance: LyricsDatabase? = null

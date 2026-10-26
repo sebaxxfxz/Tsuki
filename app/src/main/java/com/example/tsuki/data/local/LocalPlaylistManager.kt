@@ -242,6 +242,22 @@ class LocalPlaylistManager private constructor(context: Context) {
         }
     }
 
+    suspend fun setTrackOrder(playlistId: Long, tracks: List<MediaTrack>) = withContext(Dispatchers.IO) {
+        val db = dbHelper.writableDatabase
+        db.beginTransaction()
+        try {
+            db.delete(
+                LocalPlaylistDbHelper.TABLE_PLAYLIST_SONGS,
+                "playlist_id = ?",
+                arrayOf(playlistId.toString())
+            )
+            insertTracks(db, playlistId, tracks)
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
     suspend fun renamePlaylist(playlistId: Long, newName: String) = withContext(Dispatchers.IO) {
         val db = dbHelper.writableDatabase
         val values = ContentValues().apply { put("name", newName) }
@@ -321,6 +337,19 @@ class LocalPlaylistManager private constructor(context: Context) {
 
     suspend fun getAllPlaylists(): List<LocalPlaylistWithTracks> = withContext(Dispatchers.IO) {
         val db = dbHelper.readableDatabase
+        val byPlaylist = mutableMapOf<Long, MutableList<MediaTrack>>()
+        db.rawQuery(
+            "SELECT playlist_id, track_json FROM ${LocalPlaylistDbHelper.TABLE_PLAYLIST_SONGS} ORDER BY playlist_id, position ASC",
+            null
+        ).use { c ->
+            while (c.moveToNext()) {
+                val pid = c.getLong(0)
+                runCatching {
+                    byPlaylist.getOrPut(pid) { mutableListOf() }
+                        .add(json.decodeFromString(MediaTrack.serializer(), c.getString(1)))
+                }
+            }
+        }
         val playlists = mutableListOf<LocalPlaylistWithTracks>()
         val cursor = db.rawQuery(
             "SELECT id, name FROM ${LocalPlaylistDbHelper.TABLE_PLAYLISTS} ORDER BY created_at DESC",
@@ -330,8 +359,7 @@ class LocalPlaylistManager private constructor(context: Context) {
             while (c.moveToNext()) {
                 val pid = c.getLong(0)
                 val name = c.getString(1)
-                val tracks = getPlaylistTracks(pid)
-                playlists.add(LocalPlaylistWithTracks(pid, name, tracks))
+                playlists.add(LocalPlaylistWithTracks(pid, name, byPlaylist[pid] ?: emptyList()))
             }
         }
         playlists

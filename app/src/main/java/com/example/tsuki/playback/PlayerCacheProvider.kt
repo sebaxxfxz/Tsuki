@@ -7,9 +7,6 @@ import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.NoOpCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
 import com.example.tsuki.data.local.PlayerPreferences
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
 import java.io.File
 
 object PlayerCacheProvider {
@@ -23,11 +20,7 @@ object PlayerCacheProvider {
         }
 
     private fun create(context: Context): Cache {
-        val sizeMb = runCatching {
-            runBlocking(Dispatchers.IO) {
-                PlayerPreferences(context).cacheSizeMb.first()
-            }
-        }.getOrDefault(PlayerPreferences.CACHE_SIZE_DEFAULT_MB)
+        val sizeMb = readSizeMb(context)
 
         val evictor = if (sizeMb <= 0) {
             NoOpCacheEvictor()
@@ -39,6 +32,21 @@ object PlayerCacheProvider {
             evictor,
             StandaloneDatabaseProvider(context),
         )
+    }
+
+    private const val CONFIG_PREFS = "tsuki_cache_config"
+    private const val KEY_CACHE_SIZE_MB = "cache_size_mb"
+
+    private fun readSizeMb(context: Context): Int = runCatching {
+        context.getSharedPreferences(CONFIG_PREFS, Context.MODE_PRIVATE)
+            .getInt(KEY_CACHE_SIZE_MB, PlayerPreferences.CACHE_SIZE_DEFAULT_MB)
+    }.getOrDefault(PlayerPreferences.CACHE_SIZE_DEFAULT_MB)
+
+    fun persistSizeMb(context: Context, sizeMb: Int) {
+        runCatching {
+            context.applicationContext.getSharedPreferences(CONFIG_PREFS, Context.MODE_PRIVATE)
+                .edit().putInt(KEY_CACHE_SIZE_MB, sizeMb).apply()
+        }
     }
 
     fun clear(context: Context) {

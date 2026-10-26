@@ -72,7 +72,7 @@ fun StatsShareCard(
             ) {
                 Column {
                     Text(
-                        text = "TU RESUMEN",
+                        text = stringResource(R.string.stats_share_title),
                         style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Black, letterSpacing = 3.sp),
                         color = onContainer.copy(alpha = 0.75f)
                     )
@@ -136,7 +136,7 @@ fun StatsShareCard(
                                 overflow = TextOverflow.Ellipsis
                             )
                             Text(
-                                text = "${song.subtitle} · ${song.plays} plays",
+                                text = "${song.subtitle} · ${stringResource(R.string.wrap_plays_count, song.plays)}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = onContainer.copy(alpha = 0.7f),
                                 maxLines = 1,
@@ -155,7 +155,7 @@ fun StatsShareCard(
                     .background(onContainer.copy(alpha = 0.2f))
             )
             Text(
-                text = "Hecho con TSuki",
+                text = stringResource(R.string.stats_share_made_with),
                 style = MaterialTheme.typography.labelSmall,
                 color = onContainer.copy(alpha = 0.6f),
                 modifier = Modifier.align(Alignment.CenterHorizontally)

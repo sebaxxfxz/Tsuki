@@ -4,6 +4,10 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.setProgress
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,14 +26,16 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.VolumeUp
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.SurroundSound
 import androidx.compose.material.icons.rounded.VolumeUp
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
@@ -60,8 +66,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import com.example.tsuki.R
 import com.example.tsuki.data.local.PlayerPreferences
 import com.example.tsuki.playback.AudioEqualizerHelper
@@ -157,63 +161,72 @@ fun EqualizerDialog(
         persistBands()
     }
 
-    Dialog(
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+    ModalBottomSheet(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
     ) {
-        Card(
-            shape = RoundedCornerShape(28.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 24.dp)
         ) {
-            Column(
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-                    .padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                    .padding(bottom = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(androidx.compose.foundation.shape.CircleShape)
-                            .background(MaterialTheme.colorScheme.secondaryContainer),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "月",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(14.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = stringResource(R.string.eq_title),
-                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = if (capabilities.bandCount > 0) stringResource(R.string.eq_bands_active, capabilities.bandCount) else stringResource(R.string.eq_waiting),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Switch(checked = eqEnabled, onCheckedChange = { checked ->
-                        eqEnabled = checked
-                        AudioEqualizerHelper.setEnabled(checked)
-                        scope.launch { prefs.setEqEnabled(checked) }
-                    })
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(androidx.compose.foundation.shape.CircleShape)
+                        .background(MaterialTheme.colorScheme.secondaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.GraphicEq,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.size(24.dp)
+                    )
                 }
-
-                if (capabilities.bandCount > 0) {
-                    EqSection {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.eq_title),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = if (capabilities.bandCount > 0) stringResource(R.string.eq_bands_active, capabilities.bandCount) else stringResource(R.string.eq_waiting),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (eqEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(checked = eqEnabled, onCheckedChange = { checked ->
+                    eqEnabled = checked
+                    AudioEqualizerHelper.setEnabled(checked)
+                    scope.launch { prefs.setEqEnabled(checked) }
+                })
+            }
+            Surface(
+                shape = RoundedCornerShape(28.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                    if (capabilities.bandCount > 0) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .horizontalScroll(rememberScrollState())
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             EQ_PRESETS.keys.forEach { presetName ->
@@ -236,19 +249,21 @@ fun EqualizerDialog(
                                                 "vocal" -> stringResource(R.string.eq_preset_vocal)
                                                 else -> stringResource(R.string.eq_preset_electronic)
                                             },
-                                            style = MaterialTheme.typography.labelSmall
+                                            style = MaterialTheme.typography.labelMedium
                                         )
                                     },
                                     enabled = eqEnabled
                                 )
                             }
                         }
-
                         val minLevel = capabilities.minLevelMb.coerceAtMost(-500)
                         val maxLevel = capabilities.maxLevelMb.coerceAtLeast(500)
-
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                        )
                         Row(
-                            modifier = Modifier.fillMaxWidth().height(190.dp).horizontalScroll(rememberScrollState()).padding(bottom = 8.dp),
+                            modifier = Modifier.fillMaxWidth().height(190.dp).horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 10.dp),
                             horizontalArrangement = Arrangement.spacedBy(14.dp)
                         ) {
                             bandLevels.forEachIndexed { index, level ->
@@ -284,9 +299,11 @@ fun EqualizerDialog(
                                 }
                             }
                         }
-                    }
-                } else {
-                    Surface(color = MaterialTheme.colorScheme.surfaceContainerHighest, shape = RoundedCornerShape(16.dp)) {
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                        )
+                    } else {
                         Text(
                             text = stringResource(R.string.eq_empty),
                             style = MaterialTheme.typography.bodyMedium,
@@ -294,10 +311,11 @@ fun EqualizerDialog(
                             textAlign = TextAlign.Center,
                             modifier = Modifier.fillMaxWidth().padding(18.dp)
                         )
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 16.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+                        )
                     }
-                }
-
-                EqSection {
                     EqEffectRow(
                         icon = Icons.Rounded.GraphicEq,
                         title = stringResource(R.string.eq_bass),
@@ -313,12 +331,10 @@ fun EqualizerDialog(
                         onFinished = { scope.launch { prefs.setEqBassBoost(bassBoost) } },
                         enabled = eqEnabled
                     )
-
-                    androidx.compose.material3.HorizontalDivider(
+                    HorizontalDivider(
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                     )
-
                     EqEffectRow(
                         icon = Icons.Rounded.SurroundSound,
                         title = stringResource(R.string.eq_virtualizer),
@@ -334,14 +350,12 @@ fun EqualizerDialog(
                         onFinished = { scope.launch { prefs.setEqVirtualizer(virtualizer) } },
                         enabled = eqEnabled
                     )
-
-                    androidx.compose.material3.HorizontalDivider(
+                    HorizontalDivider(
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                         color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                     )
-
                     EqEffectRow(
-                        icon = Icons.Rounded.VolumeUp,
+                        icon = Icons.AutoMirrored.Rounded.VolumeUp,
                         title = stringResource(R.string.eq_gain),
                         value = formatDb(outputGain / 100f),
                         enabled = eqEnabled
@@ -358,27 +372,32 @@ fun EqualizerDialog(
                         valueRange = 0f..1500f
                     )
                 }
-
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = {
-                        for (i in bandLevels.indices) {
-                            bandLevels[i] = 0
-                            AudioEqualizerHelper.setBandLevel(i, 0)
-                        }
-                        bassBoost = 0; virtualizer = 0; outputGain = 0
-                        AudioEqualizerHelper.setBassBoostStrength(0)
-                        AudioEqualizerHelper.setVirtualizerStrength(0)
-                        AudioEqualizerHelper.setOutputGainMb(0)
-                        selectedPreset = "custom"
-                        scope.launch {
-                            prefs.setEqBandLevels(bandLevels.toList())
-                            prefs.setEqPreset("custom")
-                            prefs.setEqBassBoost(0); prefs.setEqVirtualizer(0); prefs.setEqOutputGainMb(0)
-                        }
-                    }) { Text(stringResource(R.string.common_reset)) }
-                    Spacer(Modifier.width(8.dp))
-                    Button(onClick = onDismiss) { Text(stringResource(R.string.common_close)) }
-                }
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 12.dp),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(onClick = {
+                    for (i in bandLevels.indices) {
+                        bandLevels[i] = 0
+                        AudioEqualizerHelper.setBandLevel(i, 0)
+                    }
+                    bassBoost = 0; virtualizer = 0; outputGain = 0
+                    AudioEqualizerHelper.setBassBoostStrength(0)
+                    AudioEqualizerHelper.setVirtualizerStrength(0)
+                    AudioEqualizerHelper.setOutputGainMb(0)
+                    selectedPreset = "custom"
+                    scope.launch {
+                        prefs.setEqBandLevels(bandLevels.toList())
+                        prefs.setEqPreset("custom")
+                        prefs.setEqBassBoost(0); prefs.setEqVirtualizer(0); prefs.setEqOutputGainMb(0)
+                    }
+                }) { Text(stringResource(R.string.common_reset)) }
+                Spacer(Modifier.width(8.dp))
+                FilledTonalButton(onClick = onDismiss) { Text(stringResource(R.string.common_close)) }
             }
         }
     }
@@ -491,7 +510,16 @@ private fun VerticalEqSlider(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxHeight()
-            .width(44.dp)
+            .width(48.dp)
+            .semantics {
+                if (enabled) {
+                    progressBarRangeInfo = ProgressBarRangeInfo(value, valueRange)
+                    setProgress { target ->
+                        onValueChange(target.coerceIn(valueRange.start, valueRange.endInclusive))
+                        true
+                    }
+                }
+            }
             .then(
                 if (enabled) {
                     Modifier.pointerInput(valueRange, paddingPx) {

@@ -378,7 +378,7 @@ fun HomeScreen(
                                         }
                                     }
                                 }),
-                                shape = RoundedCornerShape(24.dp),
+                                shape = RoundedCornerShape(28.dp),
                                 colors = OutlinedTextFieldDefaults.colors(
                                     focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                                     unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -729,8 +729,7 @@ fun HomeScreen(
                                                             video = track,
                                                             onClick = {
                                                                 viewModel.onTrackClicked(track)
-                                                                val idx = section.tracks.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
-                                                                playerController?.playQueue(section.tracks, idx, playAsVideo = true)
+                                                                playerController?.playWithRadio(track, playAsVideo = true)
                                                                 onExpandPlayer()
                                                             },
                                                             onAddToQueue = { t -> playerController?.addToQueue(t) }
@@ -748,8 +747,7 @@ fun HomeScreen(
                                                 showQuickAdd = true,
                                                 onClick = {
                                                     viewModel.onTrackClicked(track)
-                                                    val idx = section.tracks.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
-                                                    playerController?.playQueue(section.tracks, idx, playAsVideo = true)
+                                                    playerController?.playWithRadio(track, playAsVideo = true)
                                                     onExpandPlayer()
                                                 },
                                                 onAddToQueue = { t -> playerController?.addToQueue(t) },
@@ -771,8 +769,7 @@ fun HomeScreen(
                                             video = track,
                                             onClick = {
                                                 viewModel.onTrackClicked(track)
-                                                val idx = section.tracks.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
-                                                playerController?.playQueue(section.tracks, idx, playAsVideo = true)
+                                                playerController?.playWithRadio(track, playAsVideo = true)
                                                 onExpandPlayer()
                                             },
                                             onAddToQueue = { t -> playerController?.addToQueue(t) },
@@ -794,8 +791,7 @@ fun HomeScreen(
                                                 Box(modifier = Modifier.weight(1f)) {
                                                     VideoCardGrid(video = track, onClick = {
                                                         viewModel.onTrackClicked(track)
-                                                        val idx = section.tracks.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
-                                                        playerController?.playQueue(section.tracks, idx, playAsVideo = true)
+                                                        playerController?.playWithRadio(track, playAsVideo = true)
                                                         onExpandPlayer()
                                                     })
                                                 }
@@ -824,8 +820,7 @@ fun HomeScreen(
                                 }
                                 HorizontalMediaRow(title = localizedRowTitle, tracks = section.tracks, isScrolling = isFeedScrolling, onTrackClick = { track ->
                                     viewModel.onTrackClicked(track)
-                                    val idx = section.tracks.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
-                                    playerController?.playQueue(section.tracks, idx, playAsVideo = true)
+                                    playerController?.playWithRadio(track, playAsVideo = true)
                                     onExpandPlayer()
                                 })
                             }

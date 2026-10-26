@@ -1,7 +1,6 @@
 package com.example.tsuki.ui.components
 
 import androidx.compose.animation.core.*
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -11,13 +10,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import kotlin.math.max
 
@@ -40,7 +38,6 @@ fun Modifier.shimmerEffect(
     durationMillis: Int = 1200,
     delayMillis: Int = 0,
 ): Modifier {
-    var size by remember { mutableStateOf(IntSize.Zero) }
     val progress by transition.animateFloat(
         initialValue = -1f,
         targetValue = 2f,
@@ -53,11 +50,18 @@ fun Modifier.shimmerEffect(
     val surfaceColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
     val highlightColor = MaterialTheme.colorScheme.surfaceColorAtElevation(8.dp).copy(alpha = 0.15f)
     val shimmerColors = listOf(surfaceColor, surfaceColor, highlightColor.copy(alpha = 0.9f), highlightColor, highlightColor.copy(alpha = 0.9f), surfaceColor, surfaceColor)
-    val diagonal = max(size.width.toFloat(), size.height.toFloat()) * 1.5f
-    val startOffset = diagonal * progress
-    val endOffset = startOffset + diagonal * 0.6f
-    val brush = Brush.linearGradient(colors = shimmerColors, start = Offset(startOffset, startOffset * 0.5f), end = Offset(endOffset, endOffset * 0.5f))
-    return this.onGloballyPositioned { size = it.size }.clip(shape).background(brush, shape)
+    return this.clip(shape).drawBehind {
+        val diagonal = max(size.width, size.height) * 1.5f
+        val startOffset = diagonal * progress
+        val endOffset = startOffset + diagonal * 0.6f
+        drawRect(
+            brush = Brush.linearGradient(
+                colors = shimmerColors,
+                start = Offset(startOffset, startOffset * 0.5f),
+                end = Offset(endOffset, endOffset * 0.5f)
+            )
+        )
+    }
 }
 
 @Composable

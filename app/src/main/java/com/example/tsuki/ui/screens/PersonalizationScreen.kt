@@ -13,7 +13,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Psychology
 import androidx.compose.material.icons.rounded.Upload
@@ -60,6 +59,7 @@ fun PersonalizationScreen(
     val prefs = remember { HomePreferences(context) }
     val scope = rememberCoroutineScope()
     val contentLanguage by prefs.contentLanguageTag.collectAsStateWithLifecycle(initialValue = "es")
+    val shortsEnabled by prefs.shortsRecommendationsEnabled.collectAsStateWithLifecycle(initialValue = true)
     val contentCountry by prefs.contentCountry.collectAsStateWithLifecycle(initialValue = "ES")
 
     Scaffold(
@@ -68,16 +68,8 @@ fun PersonalizationScreen(
                 title = { Text(stringResource(R.string.pers_title), fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
-                },
-                actions = {
-                    Icon(
-                        Icons.Filled.Settings,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(end = 16.dp)
-                    )
                 }
             )
         },
@@ -205,6 +197,23 @@ fun PersonalizationScreen(
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(stringResource(R.string.set_shorts_title), style = MaterialTheme.typography.labelLarge)
+                                Text(
+                                    stringResource(R.string.set_shorts_sub),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = shortsEnabled,
+                                onCheckedChange = { scope.launch { prefs.setShortsRecommendationsEnabled(it) } }
+                            )
+                        }
                     }
                 }
             }

@@ -97,7 +97,7 @@ fun LyricsPaneV9(
                 inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
                 trackHeight = 3.dp,
                 waveAmplitude = 2.dp,
-                showThumb = false,
+                showThumb = true,
                 modifier = Modifier.fillMaxWidth()
             )
             Row(
@@ -105,7 +105,7 @@ fun LyricsPaneV9(
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = onPrevious, modifier = Modifier.size(44.dp)) {
+                IconButton(onClick = onPrevious, modifier = Modifier.size(48.dp)) {
                     Icon(imageVector = Icons.Rounded.SkipPrevious, contentDescription = stringResource(R.string.player_previous), tint = MaterialTheme.colorScheme.onSurface)
                 }
                 IconButton(
@@ -123,7 +123,7 @@ fun LyricsPaneV9(
                             .padding(start = if (!isPlaying) 2.dp else 0.dp)
                     )
                 }
-                IconButton(onClick = onNext, modifier = Modifier.size(44.dp)) {
+                IconButton(onClick = onNext, modifier = Modifier.size(48.dp)) {
                     Icon(imageVector = Icons.Rounded.SkipNext, contentDescription = stringResource(R.string.common_next), tint = MaterialTheme.colorScheme.onSurface)
                 }
             }
@@ -160,7 +160,7 @@ private fun VolumeSliderV9(modifier: Modifier = Modifier) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Icon(imageVector = Icons.Rounded.VolumeDown, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+        Icon(imageVector = Icons.Rounded.VolumeDown, contentDescription = stringResource(R.string.player_volume), tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
         Slider(
             value = sliderPos,
             onValueChange = {
@@ -180,6 +180,6 @@ private fun VolumeSliderV9(modifier: Modifier = Modifier) {
                 thumbColor = MaterialTheme.colorScheme.onSurfaceVariant
             )
         )
-        Icon(imageVector = Icons.Rounded.VolumeUp, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+        Icon(imageVector = Icons.Rounded.VolumeUp, contentDescription = stringResource(R.string.player_volume), tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
     }
 }

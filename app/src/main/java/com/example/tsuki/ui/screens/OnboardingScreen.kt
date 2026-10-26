@@ -1,5 +1,6 @@
 package com.example.tsuki.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -152,6 +154,8 @@ fun OnboardingScreen(
     var searchJob by remember { mutableStateOf<Job?>(null) }
     var appLocale by remember { mutableStateOf(AppLocale.readStored(context)) }
     var showLanguageMenu by remember { mutableStateOf(false) }
+
+    BackHandler(enabled = step > 0) { step-- }
 
     val isEnglish = AppLocale.resolveTag(appLocale) == AppLocale.ENGLISH
 
@@ -309,28 +313,33 @@ fun OnboardingScreen(
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
-        androidx.compose.material3.LinearProgressIndicator(
-            progress = { (step + 1).toFloat() / totalSteps.toFloat() },
-            trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp).height(6.dp).clip(RoundedCornerShape(50))
-        )
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+        ) {
+            androidx.compose.material3.LinearProgressIndicator(
+                progress = { (step + 1).toFloat() / totalSteps.toFloat() },
+                trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp).height(6.dp).clip(RoundedCornerShape(50))
+            )
 
-        AnimatedContent(
-            targetState = step,
-            transitionSpec = {
-                val forward = targetState > initialState
-                val enter = if (forward)
-                    slideInHorizontally { it / 4 } + fadeIn()
-                else
-                    slideInHorizontally { -it / 4 } + fadeIn()
-                val exit = if (forward)
-                    slideOutHorizontally { -it / 4 } + fadeOut()
-                else
-                    slideOutHorizontally { it / 4 } + fadeOut()
-                enter togetherWith exit
-            },
-            modifier = Modifier.fillMaxSize().padding(padding)
-        ) { current ->
+            AnimatedContent(
+                targetState = step,
+                transitionSpec = {
+                    val forward = targetState > initialState
+                    val enter = if (forward)
+                        slideInHorizontally { it / 4 } + fadeIn()
+                    else
+                        slideInHorizontally { -it / 4 } + fadeIn()
+                    val exit = if (forward)
+                        slideOutHorizontally { -it / 4 } + fadeOut()
+                    else
+                        slideOutHorizontally { it / 4 } + fadeOut()
+                    enter togetherWith exit
+                },
+                modifier = Modifier.fillMaxSize().weight(1f)
+            ) { current ->
             when (current) {
                 0 -> ModeStep(
                     onPickAll = { pickMode(false) },
@@ -387,6 +396,7 @@ fun OnboardingScreen(
                     }
                 )
             }
+        }
         }
     }
 }
@@ -696,7 +706,7 @@ private fun ChannelsStep(
                     if (isSubscribed) {
                         FilledTonalButton(
                             onClick = { onToggle(result) },
-                            modifier = Modifier.height(38.dp),
+                            modifier = Modifier.heightIn(min = 48.dp),
                             contentPadding = PaddingValues(horizontal = 14.dp)
                         ) {
                             Icon(MIcons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -706,7 +716,7 @@ private fun ChannelsStep(
                     } else {
                         OutlinedButton(
                             onClick = { onToggle(result) },
-                            modifier = Modifier.height(38.dp),
+                            modifier = Modifier.heightIn(min = 48.dp),
                             contentPadding = PaddingValues(horizontal = 14.dp)
                         ) {
                             Icon(MIcons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))

@@ -21,6 +21,12 @@ enum class DarkModeSetting {
     DARK
 }
 
+enum class RefreshRateMode {
+    MAX,
+    SYSTEM,
+    SAVER_60
+}
+
 private val Context.appearanceDataStore by preferencesDataStore(
     name = "appearance_preferences",
     corruptionHandler = ReplaceFileCorruptionHandler(produceNewData = { emptyPreferences() })
@@ -34,6 +40,7 @@ class AppearancePreferences(private val context: Context) {
         private val KEY_PURE_BLACK = stringPreferencesKey("pure_black")
         private val KEY_THUMB_CORNER_DP = floatPreferencesKey("thumb_corner_dp")
         private val KEY_ACCENT_COLOR = stringPreferencesKey("accent_color")
+        private val KEY_REFRESH_RATE_MODE = stringPreferencesKey("refresh_rate_mode")
 
         const val ACCENT_AUTO = "AUTO"
 
@@ -101,5 +108,17 @@ class AppearancePreferences(private val context: Context) {
         context.appearanceDataStore.edit {
             it[KEY_THUMB_CORNER_DP] = dp.coerceIn(THUMB_CORNER_MIN, THUMB_CORNER_MAX)
         }
+    }
+
+    val refreshRateMode: Flow<RefreshRateMode> = context.appearanceDataStore.data.map { prefs ->
+        when (prefs[KEY_REFRESH_RATE_MODE]) {
+            "SYSTEM" -> RefreshRateMode.SYSTEM
+            "SAVER_60" -> RefreshRateMode.SAVER_60
+            else -> RefreshRateMode.MAX
+        }
+    }
+
+    suspend fun setRefreshRateMode(mode: RefreshRateMode) {
+        context.appearanceDataStore.edit { it[KEY_REFRESH_RATE_MODE] = mode.name }
     }
 }

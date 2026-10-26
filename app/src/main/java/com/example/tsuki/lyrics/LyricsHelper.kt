@@ -19,8 +19,16 @@ import com.example.tsuki.lyrics.providers.UnisonLyricsProvider
 import com.example.tsuki.lyrics.providers.YouLyPlusLyricsProvider
 import com.example.tsuki.lyrics.providers.YouTubeLyricsProvider
 import com.example.tsuki.lyrics.providers.YouTubeSubtitleLyricsProvider
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 
@@ -28,6 +36,8 @@ class LyricsHelper private constructor(private val context: Context) {
 
     private val db = LyricsDatabase.getInstance(context)
     private val cache = LruCache<String, String>(24)
+    private val upgradeAttempts = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    private val upgradeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val baseProviders: List<LyricsProvider> = listOf(
         PaxsenixAppleMusicLyricsProvider,
@@ -66,14 +76,14 @@ class LyricsHelper private constructor(private val context: Context) {
         forceRefresh: Boolean = false,
         preferredProvider: String? = null
     ): String = withContext(Dispatchers.IO) {
-        val cleanTitle = LyricsSanitizer.cleanTitle(title)
-        val cleanArtist = LyricsSanitizer.cleanArtist(artist)
-        val providerKey = preferredProvider ?: "auto"
-        val cacheKey = "${videoId}_${cleanArtist}_${cleanTitle}_${providerKey}".replace(" ", "")
+        val cacheKey = cacheKeyFor(videoId, artist, title, preferredProvider)
 
         if (!forceRefresh) {
             cache.get(cacheKey)?.let { cached ->
+                if (cached == LyricsUtils.LYRICS_NOT_FOUND) return@withContext cached
                 if (LyricsUtils.hasMeaningfulLyricsContent(cached)) {
+                    if (LyricsUtils.hasWordSyncedLyrics(cached)) return@withContext cached
+                    scheduleWordSyncedUpgrade(videoId, title, artist, durationSeconds, preferredProvider)
                     return@withContext cached
                 }
             }
@@ -87,51 +97,110 @@ class LyricsHelper private constructor(private val context: Context) {
                     cachedDb.source.equals(preferredProvider, ignoreCase = true)
                 if (isPreferredMatch) {
                     cache.put(cacheKey, cachedDb.raw)
+                    if (!LyricsUtils.hasWordSyncedLyrics(cachedDb.raw)) {
+                        scheduleWordSyncedUpgrade(videoId, title, artist, durationSeconds, preferredProvider)
+                    }
                     return@withContext cachedDb.raw
                 }
             }
         }
 
-        var lineSyncedCandidate: String? = null
-        var candidateProviderName: String? = null
-        var plainTextCandidate: String? = null
-        var plainTextProviderName: String? = null
-
-        for (provider in providerChain(preferredProvider)) {
-            try {
-                val result = withTimeout(4_000) { provider.getLyrics(videoId, title, artist, durationSeconds) }
-                result.getOrNull()?.let { lyrics ->
-                    if (LyricsUtils.hasMeaningfulLyricsContent(lyrics)) {
-                        if (LyricsUtils.hasWordSyncedLyrics(lyrics) || LyricsUtils.isTtmlLyrics(lyrics)) {
-                            cache.put(cacheKey, lyrics)
-                            db.saveLyrics(videoId, title, artist, lyrics, provider.name)
-                            return@withContext lyrics
-                        } else if (lineSyncedCandidate == null && LyricsUtils.isLineSyncedLrc(lyrics)) {
-                            lineSyncedCandidate = lyrics
-                            candidateProviderName = provider.name
-                        } else if (plainTextCandidate == null) {
-                            plainTextCandidate = lyrics
-                            plainTextProviderName = provider.name
-                        }
-                    }
-                }
-            } catch (e: TimeoutCancellationException) {
-                android.util.Log.w("LyricsHelper", "Provider ${provider.name} timed out")
-            } catch (e: Exception) {
-                if (e is kotlinx.coroutines.CancellationException) throw e
-                android.util.Log.e("LyricsHelper", "Provider ${provider.name} threw exception", e)
-            }
-        }
-
-        val finalLyrics = lineSyncedCandidate ?: plainTextCandidate
-        if (finalLyrics != null) {
-            cache.put(cacheKey, finalLyrics)
-            db.saveLyrics(videoId, title, artist, finalLyrics, (if (lineSyncedCandidate != null) candidateProviderName else plainTextProviderName) ?: "Cached")
-            return@withContext finalLyrics
+        val providers = providerChain(preferredProvider)
+        val result = fetchBest(videoId, title, artist, durationSeconds, providers)
+        if (result != null) {
+            cache.put(cacheKey, result.lyrics)
+            db.saveLyrics(videoId, title, artist, result.lyrics, providers.getOrNull(result.index)?.name ?: "Cached")
+            return@withContext result.lyrics
         }
 
         android.util.Log.w("LyricsHelper", "All providers exhausted, no lyrics found")
+        cache.put(cacheKey, LyricsUtils.LYRICS_NOT_FOUND)
         LyricsUtils.LYRICS_NOT_FOUND
+    }
+
+    private data class FetchResult(val index: Int, val lyrics: String)
+
+    private fun cacheKeyFor(videoId: String, artist: String, title: String, preferredProvider: String?): String =
+        "${videoId}_${LyricsSanitizer.cleanArtist(artist)}_${LyricsSanitizer.cleanTitle(title)}_${preferredProvider ?: "auto"}".replace(" ", "")
+
+    private suspend fun fetchBest(
+        videoId: String,
+        title: String,
+        artist: String,
+        durationSeconds: Int,
+        providers: List<LyricsProvider>
+    ): FetchResult? = coroutineScope {
+        val results = Channel<FetchResult>(Channel.UNLIMITED)
+        val finished = java.util.Collections.synchronizedSet(mutableSetOf<Int>())
+        val jobs: List<Job> = providers.mapIndexed { index, provider ->
+            launch {
+                try {
+                    val result = try {
+                        withTimeout(4_000) { provider.getLyrics(videoId, title, artist, durationSeconds) }
+                    } catch (e: TimeoutCancellationException) {
+                        android.util.Log.w("LyricsHelper", "Provider ${provider.name} timed out")
+                        null
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        android.util.Log.e("LyricsHelper", "Provider ${provider.name} threw exception", e)
+                        null
+                    }
+                    result?.getOrNull()?.takeIf { LyricsUtils.hasMeaningfulLyricsContent(it) }
+                        ?.let { results.send(FetchResult(index, it)) }
+                } finally {
+                    finished.add(index)
+                }
+            }
+        }
+        val closer = launch {
+            jobs.joinAll()
+            results.close()
+        }
+
+        var wordSynced: FetchResult? = null
+        val candidates = HashMap<Int, String>()
+        try {
+            for (result in results) {
+                if (LyricsUtils.hasWordSyncedLyrics(result.lyrics)) {
+                    wordSynced = result
+                    break
+                }
+                candidates[result.index] = result.lyrics
+                if (LyricsUtils.isLineSyncedLrc(result.lyrics) &&
+                    (0 until result.index).all { it in finished }) break
+            }
+        } finally {
+            closer.cancel()
+            jobs.forEach { it.cancel() }
+        }
+        wordSynced ?: pickBest(candidates)
+    }
+
+    private fun pickBest(candidates: Map<Int, String>): FetchResult? {
+        val lineSynced = candidates.entries.filter { LyricsUtils.isLineSyncedLrc(it.value) }.minByOrNull { it.key }
+        val chosen = lineSynced ?: candidates.entries.minByOrNull { it.key }
+        return chosen?.let { FetchResult(it.key, it.value) }
+    }
+
+    private fun scheduleWordSyncedUpgrade(
+        videoId: String,
+        title: String,
+        artist: String,
+        durationSeconds: Int,
+        preferredProvider: String?
+    ) {
+        val key = "${videoId}_${preferredProvider ?: "auto"}"
+        if (!upgradeAttempts.add(key)) return
+        upgradeScope.launch {
+            runCatching {
+                val providers = providerChain(preferredProvider)
+                val result = fetchBest(videoId, title, artist, durationSeconds, providers) ?: return@launch
+                if (!LyricsUtils.hasWordSyncedLyrics(result.lyrics)) return@launch
+                cache.put(cacheKeyFor(videoId, artist, title, preferredProvider), result.lyrics)
+                db.saveLyrics(videoId, title, artist, result.lyrics, providers.getOrNull(result.index)?.name ?: "Cached")
+            }
+        }
     }
 
     companion object {

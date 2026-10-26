@@ -79,6 +79,7 @@ import androidx.media3.common.util.UnstableApi
 import com.example.tsuki.auth.YouTubeAuthManager
 import com.example.tsuki.data.local.AppThemeMode
 import com.example.tsuki.data.local.AppearancePreferences
+import com.example.tsuki.data.local.RefreshRateMode
 import com.example.tsuki.data.local.HomePreferences
 import com.example.tsuki.data.local.LocalAudioScanner
 import com.example.tsuki.data.local.RecommendationEngine
@@ -110,15 +111,18 @@ import com.example.tsuki.ui.screens.SubscriptionsScreen
 import com.example.tsuki.ui.screens.TSukiShortsScreen
 import com.example.tsuki.ui.theme.TSukiTheme
 import com.example.tsuki.ui.theme.LocalThumbCornerDp
+import com.example.tsuki.ui.theme.PlayerColorManager
 import com.example.tsuki.ui.theme.extractPlayerColors
 import com.example.tsuki.ui.viewmodels.TSukiHomeViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.example.tsuki.util.DisplayRefreshRateManager
 
 class MainActivity : ComponentActivity() {
 
     private lateinit var playerController: PlayerController
+    private var activeRefreshRateMode: RefreshRateMode? = null
     companion object {
         val pendingWidgetIntent = kotlinx.coroutines.flow.MutableStateFlow<Intent?>(null)
     }
@@ -134,9 +138,23 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         playerController = PlayerController.getInstance(this)
+        android.view.Choreographer.getInstance().postFrameCallback {
+            playerController.startSession()
+        }
         enableEdgeToEdge()
-        requestHighestRefreshRate()
+        window.decorView.addOnAttachStateChangeListener(object : android.view.View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(v: android.view.View) {
+                activeRefreshRateMode?.let { DisplayRefreshRateManager.applyRefreshRate(this@MainActivity, it) }
+            }
+            override fun onViewDetachedFromWindow(v: android.view.View) {}
+        })
         setContent {
+            val refreshRateMode by appearancePreferences.refreshRateMode.collectAsState(initial = null)
+            LaunchedEffect(refreshRateMode) {
+                val mode = refreshRateMode ?: return@LaunchedEffect
+                activeRefreshRateMode = mode
+                DisplayRefreshRateManager.applyRefreshRate(this@MainActivity, mode)
+            }
             val themeMode by appearancePreferences.appThemeMode.collectAsState(initial = AppThemeMode.SYSTEM)
             val darkModeSetting by appearancePreferences.darkMode.collectAsState(initial = com.example.tsuki.data.local.DarkModeSetting.SYSTEM)
             val pureBlack by appearancePreferences.pureBlack.collectAsState(initial = false)
@@ -154,9 +172,9 @@ class MainActivity : ComponentActivity() {
                 var artworkColors by remember { mutableStateOf<Pair<Color, Color>?>(null) }
                 LaunchedEffect(artworkUrl, themeMode) {
                     if (themeMode == AppThemeMode.ARTWORK && artworkUrl != null) {
-                        val colors = extractPlayerColors(this@MainActivity, artworkUrl)
-                        Log.d("DynamicTheme", "artwork=$artworkUrl dom=${colors.first} acc=${colors.second}")
-                        artworkColors = colors
+                        val colors = PlayerColorManager.getOrExtract(this@MainActivity, artworkUrl)
+                        Log.d("DynamicTheme", "artwork=$artworkUrl dom=${colors.dominant} acc=${colors.accent}")
+                        artworkColors = Pair(colors.dominant, colors.accent)
                     } else {
                         Log.d("DynamicTheme", "mode=$themeMode artworkUrl=$artworkUrl -> system scheme")
                         artworkColors = null
@@ -189,19 +207,19 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        runCatching { requestHighestRefreshRate() }
+        activeRefreshRateMode?.let { DisplayRefreshRateManager.applyRefreshRate(this, it) }
     }
 
-    private fun requestHighestRefreshRate() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
-        try {
-            val display = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) display else @Suppress("DEPRECATION") windowManager.defaultDisplay
-            val best = display?.supportedModes?.maxByOrNull { it.refreshRate } ?: return
-            if (best.refreshRate > display.mode.refreshRate + 0.1f) {
-                window.attributes = window.attributes.apply { preferredDisplayModeId = best.modeId }
-            }
-        } catch (_: Exception) {
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            activeRefreshRateMode?.let { DisplayRefreshRateManager.applyRefreshRate(this, it) }
         }
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        activeRefreshRateMode?.let { DisplayRefreshRateManager.applyRefreshRate(this, it) }
     }
 
     private var lastHandledYouTubeLink: String? = null
@@ -303,17 +321,21 @@ fun TSukiMainScreen(playerController: PlayerController) {
     val isVideoPlayingNav = currentTrackForNav != null && isVideoModeForNav
     val isMusicPlayingNav = currentTrackForNav != null && !isVideoModeForNav
     val homePrefsOnboarding = remember { HomePreferences(context) }
-    var onboardingDone by remember { mutableStateOf<Boolean?>(null) }
+    var onboardingDone by rememberSaveable { mutableStateOf<Boolean?>(null) }
+    var contentMode by rememberSaveable { mutableStateOf<String?>(null) }
     LaunchedEffect(Unit) {
         homePrefsOnboarding.onboardingDone.collect { onboardingDone = it }
     }
-    val contentMode by homePrefsOnboarding.contentMode.collectAsStateWithLifecycle(initialValue = com.example.tsuki.data.local.HomePreferences.CONTENT_MODE_ALL)
+    LaunchedEffect(Unit) {
+        homePrefsOnboarding.contentMode.collect { contentMode = it }
+    }
     val musicOnly = contentMode == com.example.tsuki.data.local.HomePreferences.CONTENT_MODE_MUSIC_ONLY
     LaunchedEffect(musicOnly) {
         if (musicOnly && (currentDestination == TSukiDestination.HOME || currentDestination == TSukiDestination.SUBSCRIPTIONS)) {
             currentDestination = TSukiDestination.MUSIC
         }
     }
+    val effectiveDestination = if (musicOnly && (currentDestination == TSukiDestination.HOME || currentDestination == TSukiDestination.SUBSCRIPTIONS)) TSukiDestination.MUSIC else currentDestination
 
     fun enterSystemPip() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -414,6 +436,30 @@ fun TSukiMainScreen(playerController: PlayerController) {
     val isVideoPlaying = isVideoPlayingNav
     val isMusicPlaying = isMusicPlayingNav
 
+    val playerPreferences = remember { com.example.tsuki.data.local.PlayerPreferences(context) }
+    val batteryExemptionAsked by playerPreferences.batteryExemptionAsked.collectAsStateWithLifecycle(initialValue = false)
+    LaunchedEffect(isMusicPlaying, batteryExemptionAsked) {
+        if (!isMusicPlaying || batteryExemptionAsked) return@LaunchedEffect
+        val powerManager = context.getSystemService(android.os.PowerManager::class.java)
+        if (powerManager?.isIgnoringBatteryOptimizations(context.packageName) == true) return@LaunchedEffect
+        playerPreferences.setBatteryExemptionAsked()
+        val request = Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+            data = android.net.Uri.parse("package:${context.packageName}")
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        try {
+            context.startActivity(request)
+        } catch (_: Exception) {
+            try {
+                context.startActivity(
+                    Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                )
+            } catch (_: Exception) {}
+        }
+    }
+
     val configuration = LocalConfiguration.current
     val screenHeight = configuration.screenHeightDp.dp
     val windowSizeClass = activity?.let { calculateWindowSizeClass(it) }
@@ -476,18 +522,18 @@ fun TSukiMainScreen(playerController: PlayerController) {
         playerController.mediaController?.pause()
     }
 
-    BackHandler(enabled = showTogether) { showTogether = false }
-    BackHandler(enabled = showShorts) { showShorts = false }
-    BackHandler(enabled = showPersonalization) { showPersonalization = false }
-    BackHandler(enabled = showLogin) { showLogin = false }
-    BackHandler(enabled = showStats) { showStats = false }
-    BackHandler(enabled = showImportPlaylist) { showImportPlaylist = false }
     BackHandler(enabled = playerSheetState.isExpanded) {
         playerSheetState.collapseSoft()
     }
     BackHandler(enabled = isPlayerExpanded && isVideoPlaying) {
         minimizeToCornerPip()
     }
+    BackHandler(enabled = showTogether) { showTogether = false }
+    BackHandler(enabled = showShorts) { showShorts = false }
+    BackHandler(enabled = showPersonalization) { showPersonalization = false }
+    BackHandler(enabled = showLogin) { showLogin = false }
+    BackHandler(enabled = showStats) { showStats = false }
+    BackHandler(enabled = showImportPlaylist) { showImportPlaylist = false }
 
     LaunchedEffect(playerState.isVideoMode) {
         if (playerState.isVideoMode && !playerSheetState.isCollapsed) {
@@ -495,7 +541,7 @@ fun TSukiMainScreen(playerController: PlayerController) {
         }
     }
 
-    if (onboardingDone == null) {
+    if (onboardingDone == null || (onboardingDone == true && contentMode == null)) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
         }
@@ -540,7 +586,7 @@ fun TSukiMainScreen(playerController: PlayerController) {
         } else {
             val tabStateHolder = rememberSaveableStateHolder()
             AnimatedContent(
-                targetState = currentDestination,
+                targetState = effectiveDestination,
                 transitionSpec = {
                     m3SharedAxisX(
                         isForward = targetState.ordinal > initialState.ordinal
@@ -669,7 +715,6 @@ fun TSukiMainScreen(playerController: PlayerController) {
                                     onImportSpotifyClick = { showImportPlaylist = true },
                                     onPersonalizationClick = { showPersonalization = true },
                                     onStatsClick = { showStats = true },
-                                    onRecognitionClick = { currentDestination = TSukiDestination.RECOGNIZE },
                                     onTogetherClick = { showTogether = true }
                                 )
                             }
@@ -758,7 +803,10 @@ fun TSukiMainScreen(playerController: PlayerController) {
             val bottomBarVisibility = remember {
                 derivedStateOf { (1f - (playerSheetState.progress * 3.5f)).coerceIn(0f, 1f) }
             }
-            if (bottomBarVisibility.value > 0.01f) {
+            val showBottomBar = remember {
+                derivedStateOf { bottomBarVisibility.value > 0.01f }
+            }
+            if (showBottomBar.value) {
                 Box(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
@@ -767,7 +815,7 @@ fun TSukiMainScreen(playerController: PlayerController) {
                         .graphicsLayer { alpha = bottomBarVisibility.value },
                     contentAlignment = Alignment.Center
                 ) {
-                        val pillItems = remember(currentDestination, showTogether, musicOnly) {
+                        val pillItems = remember(effectiveDestination, showTogether, musicOnly) {
                             val visible = if (musicOnly) {
                                 listOf(TSukiDestination.MUSIC, TSukiDestination.LIBRARY, TSukiDestination.RECOGNIZE, TSukiDestination.SETTINGS)
                             } else {
@@ -777,7 +825,7 @@ fun TSukiMainScreen(playerController: PlayerController) {
                             TSukiNavTabItem(
                                 label = context.resources.getString(dest.labelRes),
                                 icon = dest.icon,
-                                selected = dest == currentDestination,
+                                selected = dest == effectiveDestination,
                                 onClick = { if (showTogether) showTogether = false; currentDestination = dest }
                             )
                         }

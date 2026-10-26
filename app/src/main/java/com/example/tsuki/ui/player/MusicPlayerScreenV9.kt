@@ -5,14 +5,20 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.material3.ripple
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -26,25 +32,19 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.FormatListBulleted
-import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Check
-import androidx.compose.material.icons.rounded.BlurOn
+import androidx.compose.material.icons.rounded.MoreHoriz
+import androidx.compose.material.icons.rounded.List
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.DownloadDone
-import androidx.compose.material.icons.rounded.Equalizer
-import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.Lyrics
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.DeleteSweep
-import androidx.compose.material.icons.rounded.Group
-import androidx.compose.material.icons.rounded.Radio
 import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.RepeatOne
 import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Shuffle
-import androidx.compose.material.icons.rounded.Speed
-import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -106,7 +106,9 @@ import coil3.compose.AsyncImage
 import com.example.tsuki.ui.components.AddToPlaylistSheet
 import com.example.tsuki.ui.components.TagSongSheet
 import com.example.tsuki.domain.model.MediaTrack
+import com.example.tsuki.network.AudioStreamChoice
 import com.example.tsuki.playback.PlayerController
+import com.example.tsuki.ui.theme.PlayerColorManager
 import com.example.tsuki.ui.theme.extractPlayerColors
 import kotlinx.coroutines.launch
 
@@ -129,8 +131,10 @@ fun MusicPlayerScreenV9(
     if (track == null) return
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var dominantColor by remember { mutableStateOf(Color(0xFF1E1B24)) }
-    var accentColor by remember { mutableStateOf(Color(0xFF6750A4)) }
+    val initialDominant = MaterialTheme.colorScheme.surfaceContainerHigh
+    val initialAccent = MaterialTheme.colorScheme.primary
+    var dominantColor by remember { mutableStateOf(initialDominant) }
+    var accentColor by remember { mutableStateOf(initialAccent) }
     var selectedTab by remember { mutableIntStateOf(0) }
     var showQueueSheet by remember { mutableStateOf(false) }
     var showEqualizerDialog by remember { mutableStateOf(false) }
@@ -249,7 +253,7 @@ fun MusicPlayerScreenV9(
                             showShareCard = false
                             saveAndShareBitmap(bitmap)
                         } else {
-                            android.widget.Toast.makeText(context, "No se pudo generar la imagen", android.widget.Toast.LENGTH_SHORT).show()
+                            android.widget.Toast.makeText(context, context.getString(R.string.player_image_fail), android.widget.Toast.LENGTH_SHORT).show()
                         }
                     },
                     android.os.Handler(android.os.Looper.getMainLooper())
@@ -304,10 +308,10 @@ fun MusicPlayerScreenV9(
 
     val themeBackgroundForContrast = MaterialTheme.colorScheme.background
     LaunchedEffect(track.artworkUrl, themeBackgroundForContrast) {
-        val (dom, acc) = extractPlayerColors(context, track.artworkUrl)
-        dominantColor = dom
+        val colors = PlayerColorManager.getOrExtract(context, track.artworkUrl)
+        dominantColor = colors.dominant
         accentColor = com.example.tsuki.ui.theme.ensureContrastAgainst(
-            foreground = acc,
+            foreground = colors.accent,
             background = themeBackgroundForContrast,
             minRatio = 3.2f
         )
@@ -320,7 +324,7 @@ fun MusicPlayerScreenV9(
         val useTwoPane = isExpandedWidth || isLandscape
 
         Box(modifier = Modifier.fillMaxSize()) {
-            PlayerBackgroundV9(dominantColor = dominantColor, modifier = Modifier.fillMaxSize())
+            PlayerBackgroundV9(dominantColor = dominantColor, accentColor = accentColor, modifier = Modifier.fillMaxSize())
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -334,8 +338,7 @@ fun MusicPlayerScreenV9(
                     isLyricsActive = selectedTab == 1,
                     onToggleLyrics = { selectedTab = if (selectedTab == 1) 0 else 1 },
                     onDismiss = onDismiss,
-                    onQueueClick = { showQueueSheet = true },
-                    onTogetherClick = onTogetherClick
+                    onQueueClick = { showQueueSheet = true }
                 )
 
                 if (useTwoPane) {
@@ -352,7 +355,10 @@ fun MusicPlayerScreenV9(
                             val seekExtra by seekPrefs.seekExtraSeconds.collectAsStateWithLifecycle(initialValue = false)
                             AnimatedContent(
                                 targetState = selectedTab,
-                                transitionSpec = { fadeIn() togetherWith fadeOut() },
+                                transitionSpec = {
+                                    (scaleIn(initialScale = 0.94f, animationSpec = spring(dampingRatio = 0.8f, stiffness = 420f)) + fadeIn(animationSpec = spring(dampingRatio = 0.8f, stiffness = 420f)))
+                                        .togetherWith(scaleOut(targetScale = 0.94f, animationSpec = spring(dampingRatio = 0.8f, stiffness = 420f)) + fadeOut(animationSpec = spring(dampingRatio = 0.8f, stiffness = 420f)))
+                                },
                                 label = "artworkLyricsV9TwoPane"
                             ) { tab ->
                                 if (tab == 0) {
@@ -412,17 +418,19 @@ fun MusicPlayerScreenV9(
                                 repeatMode = repeatMode,
                                 accentColor = accentColor,
                                 onShuffle = { playerController.toggleShuffle() },
-                                onRepeat = { playerController.toggleRepeat() },
-                                onAodClick = { showAodMode = true }
+                                onRepeat = { playerController.toggleRepeat() }
                             )
                             V9UtilityRowV9(
                                 accentColor = accentColor,
-                                qualityLabel = controllerState.audioQualityLabel,
                                 sleepActive = controllerState.sleepTimerActive,
                                 isDownloaded = isDownloaded,
                                 onSound = { showSoundSheet = true },
                                 onShare = shareTrack,
                                 onDownload = downloadTrack,
+                                audioStreams = controllerState.availableAudioStreams,
+                                selectedCodec = controllerState.selectedAudioCodec,
+                                selectedBitrate = controllerState.selectedAudioBitrate,
+                                onSelectStream = { playerController.selectAudioStream(it) },
                                 isDownloading = isDownloading,
                                 downloadProgress = downloadProgress
                             )
@@ -441,7 +449,10 @@ fun MusicPlayerScreenV9(
                         val seekExtra by seekPrefs.seekExtraSeconds.collectAsStateWithLifecycle(initialValue = false)
                         AnimatedContent(
                             targetState = selectedTab,
-                            transitionSpec = { fadeIn() togetherWith fadeOut() },
+                            transitionSpec = {
+                                (scaleIn(initialScale = 0.94f, animationSpec = spring(dampingRatio = 0.8f, stiffness = 420f)) + fadeIn(animationSpec = spring(dampingRatio = 0.8f, stiffness = 420f)))
+                                    .togetherWith(scaleOut(targetScale = 0.94f, animationSpec = spring(dampingRatio = 0.8f, stiffness = 420f)) + fadeOut(animationSpec = spring(dampingRatio = 0.8f, stiffness = 420f)))
+                            },
                             modifier = Modifier
                                 .weight(1f)
                                 .fillMaxWidth(),
@@ -504,17 +515,19 @@ fun MusicPlayerScreenV9(
                                             repeatMode = repeatMode,
                                             accentColor = accentColor,
                                             onShuffle = { playerController.toggleShuffle() },
-                                            onRepeat = { playerController.toggleRepeat() },
-                                            onAodClick = { showAodMode = true }
+                                            onRepeat = { playerController.toggleRepeat() }
                                         )
                                         V9UtilityRowV9(
                                             accentColor = accentColor,
-                                            qualityLabel = controllerState.audioQualityLabel,
                                             sleepActive = controllerState.sleepTimerActive,
                                             isDownloaded = isDownloaded,
                                             onSound = { showSoundSheet = true },
                                             onShare = shareTrack,
                                             onDownload = downloadTrack,
+                                            audioStreams = controllerState.availableAudioStreams,
+                                            selectedCodec = controllerState.selectedAudioCodec,
+                                            selectedBitrate = controllerState.selectedAudioBitrate,
+                                            onSelectStream = { playerController.selectAudioStream(it) },
                                             isDownloading = isDownloading,
                                             downloadProgress = downloadProgress
                                         )
@@ -558,7 +571,6 @@ fun MusicPlayerScreenV9(
         if (showSoundSheet) {
             V9SoundSheetV9(
                 playerController = playerController,
-                accentColor = accentColor,
                 qualityLabel = controllerState.audioQualityLabel,
                 sleepActive = controllerState.sleepTimerActive,
                 sleepRemainingMs = controllerState.sleepTimerRemainingMs,
@@ -569,7 +581,9 @@ fun MusicPlayerScreenV9(
                     showSoundSheet = false
                     showEqualizerDialog = true
                 },
-                onDismiss = { showSoundSheet = false }
+                onDismiss = { showSoundSheet = false },
+                onTogetherClick = onTogetherClick,
+                onAodClick = { showAodMode = true }
             )
         }
         if (showQueueSheet) {
@@ -751,26 +765,72 @@ private fun TopBarV9(
     onToggleLyrics: () -> Unit,
     onDismiss: () -> Unit,
     onQueueClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    onTogetherClick: (() -> Unit)? = null
+    modifier: Modifier = Modifier
 ) {
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val dismissInteraction = remember { MutableInteractionSource() }
+    val isDismissPressed by dismissInteraction.collectIsPressedAsState()
+    val dismissScale by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (isDismissPressed) 0.88f else 1f,
+        animationSpec = spring(dampingRatio = 0.65f, stiffness = 600f),
+        label = "dismissScale"
+    )
+
+    val lyricsInteraction = remember { MutableInteractionSource() }
+    val isLyricsPressed by lyricsInteraction.collectIsPressedAsState()
+    val lyricsScale by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (isLyricsPressed) 0.88f else 1f,
+        animationSpec = spring(dampingRatio = 0.65f, stiffness = 600f),
+        label = "lyricsScale"
+    )
+    val lyricsColor by androidx.compose.animation.animateColorAsState(
+        targetValue = if (isLyricsActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+        animationSpec = spring(dampingRatio = 0.8f, stiffness = 400f),
+        label = "lyricsColor"
+    )
+
+    val queueInteraction = remember { MutableInteractionSource() }
+    val isQueuePressed by queueInteraction.collectIsPressedAsState()
+    val queueScale by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (isQueuePressed) 0.88f else 1f,
+        animationSpec = spring(dampingRatio = 0.65f, stiffness = 600f),
+        label = "queueScale"
+    )
+
     Row(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Surface(
-            onClick = onDismiss,
             shape = CircleShape,
-            color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.8f),
-            modifier = Modifier.size(46.dp)
+            color = MaterialTheme.colorScheme.surfaceContainerLow,
+            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)),
+            modifier = Modifier
+                .size(48.dp)
+                .graphicsLayer {
+                    scaleX = dismissScale
+                    scaleY = dismissScale
+                }
         ) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable(
+                        interactionSource = dismissInteraction,
+                        indication = ripple(),
+                        onClick = {
+                            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                            onDismiss()
+                        }
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
                 Icon(
                     imageVector = Icons.Rounded.KeyboardArrowDown,
                     contentDescription = stringResource(R.string.common_close),
                     tint = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.size(28.dp)
+                    modifier = Modifier.size(22.dp)
                 )
             }
         }
@@ -788,54 +848,70 @@ private fun TopBarV9(
         )
 
         Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            if (onTogetherClick != null) {
-                Surface(
-                    onClick = onTogetherClick,
-                    shape = RoundedCornerShape(22.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.8f),
-                    modifier = Modifier.height(44.dp)
-                ) {
-                    Box(modifier = Modifier.padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Rounded.Group,
-                            contentDescription = stringResource(R.string.set_tool_together),
-                            tint = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
-                }
-            }
             Surface(
-                onClick = onToggleLyrics,
-                shape = RoundedCornerShape(22.dp),
-                color = if (isLyricsActive) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.8f),
-                modifier = Modifier.height(44.dp)
+                shape = RoundedCornerShape(topStart = 22.dp, bottomStart = 22.dp, topEnd = 4.dp, bottomEnd = 4.dp),
+                color = if (isLyricsActive) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+                border = if (isLyricsActive) null else androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)),
+                modifier = Modifier
+                    .size(width = 56.dp, height = 48.dp)
+                    .graphicsLayer {
+                        scaleX = lyricsScale
+                        scaleY = lyricsScale
+                    }
             ) {
-                Box(modifier = Modifier.padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clickable(
+                            interactionSource = lyricsInteraction,
+                            indication = ripple(),
+                            onClick = {
+                                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                                onToggleLyrics()
+                            }
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
                     Icon(
                         imageVector = Icons.Rounded.Lyrics,
                         contentDescription = stringResource(R.string.player_lyrics_label),
-                        tint = if (isLyricsActive) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.size(22.dp)
+                        tint = if (isLyricsActive) MaterialTheme.colorScheme.onSecondaryContainer else lyricsColor,
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
-
             Surface(
-                onClick = onQueueClick,
-                shape = RoundedCornerShape(22.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.8f),
-                modifier = Modifier.height(44.dp)
+                shape = RoundedCornerShape(topStart = 4.dp, bottomStart = 4.dp, topEnd = 22.dp, bottomEnd = 22.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)),
+                modifier = Modifier
+                    .size(width = 56.dp, height = 48.dp)
+                    .graphicsLayer {
+                        scaleX = queueScale
+                        scaleY = queueScale
+                    }
             ) {
-                Box(modifier = Modifier.padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clickable(
+                            interactionSource = queueInteraction,
+                            indication = ripple(),
+                            onClick = {
+                                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                                onQueueClick()
+                            }
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Rounded.FormatListBulleted,
                         contentDescription = stringResource(R.string.common_queue),
                         tint = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.size(22.dp)
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
@@ -866,20 +942,25 @@ private fun LyricsTabV9(
             )
         } else {
             Column(modifier = Modifier.fillMaxSize()) {
-                Text(
-                    text = stringResource(R.string.player_lyrics_from, playerState.lyricsProvider),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier
-                        .align(Alignment.End)
-                        .padding(horizontal = 8.dp)
-                        .clickable {
-                            val providers = playerController.availableLyricsProviders
-                            val idx = providers.indexOf(playerState.lyricsProvider)
-                            playerController.setPreferredLyricsProvider(providers[(idx + 1) % providers.size])
-                        }
-                        .padding(vertical = 4.dp, horizontal = 6.dp)
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = stringResource(R.string.player_lyrics_from, playerState.lyricsProvider),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .padding(horizontal = 8.dp)
+                            .clickable {
+                                val providers = playerController.availableLyricsProviders
+                                val idx = providers.indexOf(playerState.lyricsProvider)
+                                playerController.setPreferredLyricsProvider(providers[(idx + 1) % providers.size])
+                            }
+                            .padding(vertical = 4.dp, horizontal = 6.dp)
+                    )
+                }
                 LyricsPaneV9(
                     lyrics = lyrics,
                     currentPosition = currentPosition,
@@ -918,7 +999,22 @@ private fun AnimatedToggleIconV9(
         animationSpec = com.example.tsuki.ui.components.M3MotionTokens.effectsDefault(),
         label = "toggleTint"
     )
-    IconButton(onClick = onClick) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val pressScale by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (isPressed) 0.85f else 1f,
+        animationSpec = spring(dampingRatio = 0.65f, stiffness = 600f),
+        label = "togglePressScale"
+    )
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+
+    IconButton(
+        onClick = {
+            haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+            onClick()
+        },
+        interactionSource = interactionSource
+    ) {
         Icon(
             imageVector = icon,
             contentDescription = contentDescription,
@@ -926,8 +1022,8 @@ private fun AnimatedToggleIconV9(
             modifier = Modifier
                 .size(iconSize)
                 .graphicsLayer {
-                    scaleX = scale
-                    scaleY = scale
+                    scaleX = scale * pressScale
+                    scaleY = scale * pressScale
                 }
         )
     }
@@ -939,8 +1035,7 @@ private fun V9PlaybackModesRowV9(
     repeatMode: Int,
     accentColor: Color,
     onShuffle: () -> Unit,
-    onRepeat: () -> Unit,
-    onAodClick: () -> Unit
+    onRepeat: () -> Unit
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -954,14 +1049,6 @@ private fun V9PlaybackModesRowV9(
             accentColor = accentColor,
             onClick = onShuffle
         )
-        androidx.compose.material3.IconButton(onClick = onAodClick) {
-            Icon(
-                imageVector = Icons.Rounded.Bedtime,
-                contentDescription = stringResource(R.string.player_aod),
-                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                modifier = Modifier.size(26.dp)
-            )
-        }
         AnimatedToggleIconV9(
             active = repeatMode != androidx.media3.common.Player.REPEAT_MODE_OFF,
             icon = if (repeatMode == androidx.media3.common.Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
@@ -975,12 +1062,15 @@ private fun V9PlaybackModesRowV9(
 @Composable
 private fun V9UtilityRowV9(
     accentColor: Color,
-    qualityLabel: String?,
     sleepActive: Boolean,
     isDownloaded: Boolean,
     onSound: () -> Unit,
     onShare: () -> Unit,
     onDownload: () -> Unit,
+    audioStreams: List<AudioStreamChoice> = emptyList(),
+    selectedCodec: String? = null,
+    selectedBitrate: Int = 0,
+    onSelectStream: (AudioStreamChoice) -> Unit = {},
     isDownloading: Boolean = false,
     downloadProgress: Float? = null
 ) {
@@ -989,289 +1079,216 @@ private fun V9UtilityRowV9(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
+        val codecs = audioStreams.map { it.codec }.distinct()
+        val bitrates = audioStreams.map { it.bitrate }.distinct().sortedDescending()
+        val shortBitrate = if (selectedBitrate >= 1000) selectedBitrate / 1000 else selectedBitrate
+        val statusChips: List<Pair<String, (() -> Unit)?>> = when {
+            sleepActive -> listOf(stringResource(R.string.player_timer_active) to null)
+            else -> listOfNotNull(
+                selectedCodec?.let { codec ->
+                    codec to if (codecs.size > 1) ({
+                        val next = codecs[(codecs.indexOf(codec) + 1).mod(codecs.size)]
+                        audioStreams.filter { it.codec == next }.let { list ->
+                            list.firstOrNull { it.bitrate == selectedBitrate } ?: list.maxByOrNull { it.bitrate }
+                        }?.let(onSelectStream)
+                    }) else null
+                },
+                (if (selectedBitrate > 0) "${shortBitrate}k" else null)?.let { label ->
+                    label to if (bitrates.size > 1) ({
+                        val next = bitrates[(bitrates.indexOf(selectedBitrate) + 1).mod(bitrates.size)]
+                        audioStreams.filter { it.bitrate == next }.let { list ->
+                            list.firstOrNull { it.codec == selectedCodec } ?: list.first()
+                        }.let(onSelectStream)
+                    }) else null
+                }
+            )
+        }
         androidx.compose.animation.AnimatedVisibility(
-            visible = !qualityLabel.isNullOrBlank() || sleepActive,
+            visible = statusChips.isNotEmpty(),
             enter = androidx.compose.animation.expandHorizontally() + androidx.compose.animation.fadeIn(),
             exit = androidx.compose.animation.shrinkHorizontally() + androidx.compose.animation.fadeOut()
         ) {
-            Surface(
-                shape = RoundedCornerShape(100.dp),
-                color = MaterialTheme.colorScheme.secondaryContainer,
-                modifier = Modifier.height(32.dp)
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(modifier = Modifier.padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
-                    Text(
-                        text = when {
-                            sleepActive -> stringResource(R.string.player_timer_active)
-                            !qualityLabel.isNullOrBlank() -> qualityLabel
-                            else -> " "
+                statusChips.forEachIndexed { index, chip ->
+                    val chipTap = chip.second
+                    Surface(
+                        shape = when {
+                            statusChips.size == 1 -> RoundedCornerShape(22.dp)
+                            index == 0 -> RoundedCornerShape(topStart = 22.dp, bottomStart = 22.dp, topEnd = 4.dp, bottomEnd = 4.dp)
+                            else -> RoundedCornerShape(topStart = 4.dp, bottomStart = 4.dp, topEnd = 22.dp, bottomEnd = 22.dp)
                         },
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer
-                    )
-                }
-            }
-        }
-
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilledTonalButton(
-                onClick = onSound,
-                shape = RoundedCornerShape(100.dp),
-                contentPadding = PaddingValues(horizontal = 18.dp, vertical = 6.dp),
-                colors = ButtonDefaults.filledTonalButtonColors(
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                ),
-                modifier = Modifier.height(36.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.GraphicEq,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = stringResource(R.string.player_sound),
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-            IconButton(onClick = onShare) {
-                Icon(
-                    imageVector = Icons.Rounded.Share,
-                    contentDescription = stringResource(R.string.common_share),
-                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-                    modifier = Modifier.size(22.dp)
-                )
-            }
-            if (isDownloading) {
-                IconButton(onClick = {}, enabled = false) {
-                    val target = downloadProgress
-                    val smooth by androidx.compose.animation.core.animateFloatAsState(
-                        targetValue = target ?: 0f,
-                        animationSpec = com.example.tsuki.ui.components.M3MotionTokens.expressiveDefault(),
-                        label = "M3DownloadProgress"
-                    )
-                    if (target != null) {
-                        CircularProgressIndicator(
-                            progress = { smooth },
-                            modifier = Modifier.size(22.dp),
-                            color = MaterialTheme.colorScheme.primary,
-                            strokeWidth = 2.5.dp
-                        )
-                    } else {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(22.dp),
-                            color = MaterialTheme.colorScheme.primary,
-                            strokeWidth = 2.5.dp
-                        )
-                    }
-                }
-            } else {
-                AnimatedToggleIconV9(
-                    active = isDownloaded,
-                    icon = if (isDownloaded) Icons.Rounded.DownloadDone else Icons.Rounded.Download,
-                    contentDescription = if (isDownloaded) stringResource(R.string.player_downloaded_tap) else stringResource(R.string.common_download),
-                    accentColor = MaterialTheme.colorScheme.primary,
-                    onClick = onDownload,
-                    iconSize = 22.dp
-                )
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun V9SoundSheetV9(
-    playerController: PlayerController,
-    accentColor: Color,
-    qualityLabel: String?,
-    sleepActive: Boolean,
-    sleepRemainingMs: Long,
-    playbackSpeed: Float,
-    crossfadeEnabled: Boolean,
-    crossfadeDurationSeconds: Float,
-    onOpenEqualizer: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
-    val sleepTimerInfo by playerController.sleepTimerState.collectAsStateWithLifecycle()
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
-        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Text(
-                text = stringResource(R.string.player_sheet_title),
-                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(start = 4.dp, bottom = 2.dp)
-            )
-            val context = androidx.compose.ui.platform.LocalContext.current
-            val connectivity = remember { com.example.tsuki.util.ConnectivityObserver.getInstance(context) }
-            val isOnline by connectivity.networkStatus.collectAsStateWithLifecycle(initialValue = connectivity.isCurrentlyOnline())
-
-            SoundSheetCard {
-                playerController.uiState.value.currentTrack?.let { currentTrack ->
-                    SoundSheetRow(
-                        icon = Icons.Rounded.Radio,
-                        title = stringResource(R.string.player_radio),
-                        support = stringResource(R.string.player_radio_sub),
-                        onClick = {
-                            onDismiss()
-                            if (!isOnline) {
-                                android.widget.Toast.makeText(context, context.getString(R.string.common_no_connection), android.widget.Toast.LENGTH_SHORT).show()
-                            } else {
-                                playerController.startRadio(currentTrack)
-                                android.widget.Toast.makeText(context, context.getString(R.string.pld_starting_radio_artist, currentTrack.artist), android.widget.Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    )
-                }
-            }
-
-            SoundSheetCard {
-                SoundSheetRow(
-                    icon = Icons.Rounded.Equalizer,
-                    title = stringResource(R.string.player_eq),
-                    support = stringResource(R.string.player_eq_sub),
-                    onClick = {
-                        onDismiss()
-                        onOpenEqualizer()
-                    }
-                )
-            }
-
-            SoundSheetCard {
-                SoundSheetRow(
-                    icon = Icons.Rounded.Speed,
-                    title = stringResource(R.string.player_speed),
-                    support = if (playbackSpeed != 1f) "${playbackSpeed}x" else stringResource(R.string.player_speed_normal),
-                    supportActive = playbackSpeed != 1f
-                )
-                androidx.compose.foundation.lazy.LazyRow(
-                    modifier = Modifier.padding(start = 10.dp, end = 10.dp, bottom = 10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f)) { speed ->
-                        androidx.compose.material3.FilterChip(
-                            selected = kotlin.math.abs(playbackSpeed - speed) < 0.01f,
-                            onClick = { playerController.setPlaybackSpeed(speed) },
-                            label = { Text("${speed}x") }
-                        )
-                    }
-                }
-            }
-
-            SoundSheetCard {
-                SoundSheetRow(
-                    icon = Icons.Rounded.Bedtime,
-                    title = stringResource(R.string.player_sleep),
-                    support = when {
-                        sleepActive && sleepRemainingMs < 0 -> stringResource(R.string.player_sleep_end)
-                        sleepActive -> stringResource(R.string.player_sleep_in, (sleepRemainingMs / 60000).toInt(), ((sleepRemainingMs % 60000) / 1000).toInt())
-                        else -> stringResource(R.string.player_sleep_off)
-                    },
-                    supportActive = sleepActive,
-                    trailing = if (sleepActive) ({
-                        androidx.compose.material3.TextButton(onClick = { playerController.setSleepTimer(null) }) {
-                            Text(stringResource(R.string.player_stop))
-                        }
-                    }) else null
-                )
-                androidx.compose.foundation.lazy.LazyRow(
-                    modifier = Modifier.padding(start = 10.dp, end = 10.dp, bottom = 10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    item {
-                        androidx.compose.material3.FilterChip(
-                            selected = sleepTimerInfo.stopAtSongEnd,
-                            onClick = {
-                                if (sleepTimerInfo.stopAtSongEnd) {
-                                    playerController.cancelSleepTimer()
-                                } else {
-                                    playerController.setSleepTimerEndOfSong()
-                                }
-                            },
-                            label = { Text(stringResource(R.string.player_stop_at_end)) }
-                        )
-                    }
-                    items(listOf(5, 15, 30, 45, 60)) { minutes ->
-                        androidx.compose.material3.FilterChip(
-                            selected = sleepTimerInfo.selectedMinutes == minutes,
-                            onClick = {
-                                if (sleepTimerInfo.selectedMinutes == minutes) {
-                                    playerController.setSleepTimer(null)
-                                } else {
-                                    playerController.setSleepTimer(minutes)
-                                }
-                            },
-                            label = { Text(stringResource(R.string.player_minutes, minutes)) }
-                        )
-                    }
-                }
-            }
-
-            SoundSheetCard {
-                SoundSheetRow(
-                    icon = Icons.Rounded.BlurOn,
-                    title = stringResource(R.string.player_crossfade),
-                    support = stringResource(R.string.player_crossfade_sub),
-                    supportActive = crossfadeEnabled,
-                    trailing = {
-                        androidx.compose.material3.Switch(
-                            checked = crossfadeEnabled,
-                            onCheckedChange = { playerController.setCrossfadeEnabled(it) }
-                        )
-                    }
-                )
-                if (crossfadeEnabled) {
-                    androidx.compose.foundation.lazy.LazyRow(
-                        modifier = Modifier.padding(start = 10.dp, end = 10.dp, bottom = 10.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)),
+                        modifier = Modifier.height(40.dp)
                     ) {
-                        items(listOf(1f, 2f, 3f, 5f, 8f, 10f, 12f)) { seconds ->
-                            androidx.compose.material3.FilterChip(
-                                selected = kotlin.math.abs(crossfadeDurationSeconds - seconds) < 0.05f,
-                                onClick = { playerController.setCrossfadeDuration(seconds) },
-                                label = { Text("${seconds.toInt()}s") }
+                        Box(
+                            modifier = Modifier
+                                .fillMaxHeight()
+                                .then(if (chipTap != null) Modifier.clickable(onClick = chipTap) else Modifier)
+                                .padding(horizontal = 12.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = chip.first,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1
                             )
                         }
                     }
                 }
             }
-
-            val volumeNorm by playerController.volumeNormalization.collectAsStateWithLifecycle(initialValue = true)
-            SoundSheetCard {
-                SoundSheetRow(
-                    icon = Icons.Rounded.GraphicEq,
-                    title = stringResource(R.string.player_norm),
-                    support = if (volumeNorm) stringResource(R.string.player_norm_on) else stringResource(R.string.player_norm_off),
-                    supportActive = volumeNorm,
-                    trailing = {
-                        androidx.compose.material3.Switch(
-                            checked = volumeNorm,
-                            onCheckedChange = { playerController.setVolumeNormalization(it) }
+        }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
+            val soundInteraction = remember { MutableInteractionSource() }
+            val isSoundPressed by soundInteraction.collectIsPressedAsState()
+            val soundScale by androidx.compose.animation.core.animateFloatAsState(
+                targetValue = if (isSoundPressed) 0.88f else 1f,
+                animationSpec = spring(dampingRatio = 0.65f, stiffness = 600f),
+                label = "soundScale"
+            )
+            Surface(
+                shape = RoundedCornerShape(topStart = 20.dp, bottomStart = 20.dp, topEnd = 4.dp, bottomEnd = 4.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)),
+                modifier = Modifier
+                    .size(width = 52.dp, height = 48.dp)
+                    .graphicsLayer {
+                        scaleX = soundScale
+                        scaleY = soundScale
+                    }
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clickable(
+                            interactionSource = soundInteraction,
+                            indication = ripple(),
+                            onClick = {
+                                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                                onSound()
+                            }
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.MoreHoriz,
+                        contentDescription = stringResource(R.string.player_sound),
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+            val shareInteraction = remember { MutableInteractionSource() }
+            val isSharePressed by shareInteraction.collectIsPressedAsState()
+            val shareScale by androidx.compose.animation.core.animateFloatAsState(
+                targetValue = if (isSharePressed) 0.88f else 1f,
+                animationSpec = spring(dampingRatio = 0.65f, stiffness = 600f),
+                label = "shareScale"
+            )
+            Surface(
+                shape = RoundedCornerShape(4.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)),
+                modifier = Modifier
+                    .size(width = 52.dp, height = 48.dp)
+                    .graphicsLayer {
+                        scaleX = shareScale
+                        scaleY = shareScale
+                    }
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clickable(
+                            interactionSource = shareInteraction,
+                            indication = ripple(),
+                            onClick = {
+                                haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                                onShare()
+                            }
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Share,
+                        contentDescription = stringResource(R.string.common_share),
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+            val dlInteraction = remember { MutableInteractionSource() }
+            val isDlPressed by dlInteraction.collectIsPressedAsState()
+            val dlScale by androidx.compose.animation.core.animateFloatAsState(
+                targetValue = if (isDlPressed && !isDownloading) 0.88f else 1f,
+                animationSpec = spring(dampingRatio = 0.65f, stiffness = 600f),
+                label = "dlScale"
+            )
+            Surface(
+                shape = RoundedCornerShape(topStart = 4.dp, bottomStart = 4.dp, topEnd = 20.dp, bottomEnd = 20.dp),
+                color = MaterialTheme.colorScheme.surfaceContainerLow,
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)),
+                modifier = Modifier
+                    .size(width = 52.dp, height = 48.dp)
+                    .graphicsLayer {
+                        scaleX = dlScale
+                        scaleY = dlScale
+                    }
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .then(
+                            if (!isDownloading) Modifier.clickable(
+                                interactionSource = dlInteraction,
+                                indication = ripple(),
+                                onClick = {
+                                    haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+                                    onDownload()
+                                }
+                            ) else Modifier
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (isDownloading) {
+                        val target = downloadProgress
+                        val smooth by androidx.compose.animation.core.animateFloatAsState(
+                            targetValue = target ?: 0f,
+                            animationSpec = com.example.tsuki.ui.components.M3MotionTokens.expressiveDefault(),
+                            label = "M3DownloadProgress"
+                        )
+                        if (target != null) {
+                            CircularProgressIndicator(
+                                progress = { smooth },
+                                modifier = Modifier.size(18.dp),
+                                color = MaterialTheme.colorScheme.primary,
+                                strokeWidth = 2.5.dp
+                            )
+                        } else {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                color = MaterialTheme.colorScheme.primary,
+                                strokeWidth = 2.5.dp
+                            )
+                        }
+                    } else {
+                        Icon(
+                            imageVector = if (isDownloaded) Icons.Rounded.DownloadDone else Icons.Rounded.Download,
+                            contentDescription = if (isDownloaded) stringResource(R.string.player_downloaded_tap) else stringResource(R.string.common_download),
+                            tint = if (isDownloaded) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(20.dp)
                         )
                     }
-                )
-            }
-
-            SoundSheetCard {
-                SoundSheetRow(
-                    icon = Icons.Rounded.Tune,
-                    title = stringResource(R.string.player_quality),
-                    support = qualityLabel ?: stringResource(R.string.player_quality_auto)
-                )
+                }
             }
         }
     }
@@ -1350,7 +1367,6 @@ private fun QueueSheetV9Content(playerController: PlayerController, onDismiss: (
     val queue by playerController.uiState.collectAsStateWithLifecycle()
     val queueList = queue.queue
     val currentIndex = queue.queueIndex
-
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,

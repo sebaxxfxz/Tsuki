@@ -85,7 +85,7 @@ fun CanvasArtworkPlayer(
             }
     )
 
-    DisposableEffect(textureView) {
+    DisposableEffect(textureView, player) {
         val view = textureView
         if (view != null) player.setVideoTextureView(view)
         onDispose {

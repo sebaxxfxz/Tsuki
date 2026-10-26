@@ -109,7 +109,10 @@ object LyricsUtils {
 
             if (spanMatches.isEmpty()) {
                 text = flattenTtmlText(inner)
-                if (text.isEmpty()) continue
+                if (text.isEmpty()) {
+                    entries.add(ttmlInstrumentalEntry(start, end))
+                    continue
+                }
             } else {
                 val segments = mutableListOf<WordTimestamp>()
                 for (spanIndex in spanMatches.indices) {
@@ -141,7 +144,10 @@ object LyricsUtils {
                 }
                 if (segments.isEmpty()) {
                     text = flattenTtmlText(inner)
-                    if (text.isEmpty()) continue
+                    if (text.isEmpty()) {
+                        entries.add(ttmlInstrumentalEntry(start, end))
+                        continue
+                    }
                 } else {
                     words = segments
                     text = segments.joinToString("") { it.text }.replace(WHITESPACE_REGEX, " ").trim()
@@ -159,6 +165,13 @@ object LyricsUtils {
         }
         return if (entries.isEmpty()) emptyList() else entries.sorted()
     }
+
+    private fun ttmlInstrumentalEntry(start: Long, end: Long) = LyricsEntry(
+        time = start,
+        text = "",
+        durationMs = (end - start).coerceAtLeast(0L),
+        isInstrumental = true
+    )
 
     private fun ttmlAttributeValue(attributes: String, localName: String): String? {
         for (match in TTML_ATTRIBUTE_REGEX.findAll(attributes)) {
@@ -198,20 +211,21 @@ object LyricsUtils {
         }
         val lines = normalized.lines()
         val result = mutableListOf<LyricsEntry>()
+        val metadataTagRegex = Regex("^\\[([a-zA-Z]+|\\d{2}:).*?\\]$")
+        val plainAllowed = normalized.isNotEmpty() && normalized != LYRICS_NOT_FOUND
+        var lastTimedMs = -1L
 
         for (line in lines) {
             val parsed = parseLineSyncedLrcLine(line)
             if (parsed != null) {
                 result.addAll(parsed)
+                lastTimedMs = parsed.maxOf { it.time }
+                continue
             }
-        }
-
-        if (result.isEmpty() && normalized.isNotEmpty() && normalized != LYRICS_NOT_FOUND) {
-            val metadataTagRegex = Regex("^\\[([a-zA-Z]+|\\d{2}:).*?\\]$")
-            val plainLines = lines.map { it.trim() }.filter { line ->
-                line.isNotEmpty() && !metadataTagRegex.matches(line)
-            }
-            return plainLines.map { LyricsEntry(time = -1L, text = it) }
+            if (!plainAllowed) continue
+            val plain = line.trim()
+            if (plain.isEmpty() || metadataTagRegex.matches(plain)) continue
+            result.add(LyricsEntry(time = lastTimedMs, text = plain))
         }
 
         return result.sorted()
@@ -249,7 +263,16 @@ object LyricsUtils {
         val words = parseEnhancedLrcWords(textPart, times.first())
         val cleanText = unescapeHtml(ENHANCED_LRC_WORD_TIME_REGEX.replace(textPart, "")).replace(WHITESPACE_REGEX, " ").trim()
 
-        if (cleanText.isEmpty()) return null
+        if (cleanText.isEmpty()) {
+            return times.map { time ->
+                LyricsEntry(
+                    time = time,
+                    text = "",
+                    agent = agent,
+                    isInstrumental = true
+                )
+            }
+        }
 
         return times.map { time ->
             LyricsEntry(

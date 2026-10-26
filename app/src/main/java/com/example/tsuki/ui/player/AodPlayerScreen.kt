@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -86,6 +87,7 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.example.tsuki.domain.model.MediaTrack
 import com.example.tsuki.domain.model.LyricsEntry
+import com.example.tsuki.ui.components.M3MotionTokens
 import kotlinx.coroutines.delay
 import kotlin.math.abs
 
@@ -244,7 +246,7 @@ fun AodPlayerScreen(
 
     val contentAlpha by animateFloatAsState(
         targetValue = if (isDimmed) AUTO_DIM_ALPHA else 1f,
-        animationSpec = tween(500),
+        animationSpec = tween(M3MotionTokens.DurationLong2),
         label = "aodContentFade"
     )
 
@@ -373,16 +375,16 @@ fun AodPlayerScreen(
                 targetState = lyricLine,
                 transitionSpec = {
                     (androidx.compose.animation.slideInVertically(
-                        animationSpec = tween(280)
-                    ) { it / 2 } + fadeIn(tween(280)))
+                        animationSpec = tween(M3MotionTokens.DurationMedium2)
+                    ) { it / 2 } + fadeIn(tween(M3MotionTokens.DurationMedium2)))
                         .togetherWith(
                             androidx.compose.animation.slideOutVertically(
-                                animationSpec = tween(280)
-                            ) { -it / 2 } + fadeOut(tween(200))
+                                animationSpec = tween(M3MotionTokens.DurationMedium2)
+                            ) { -it / 2 } + fadeOut(tween(M3MotionTokens.DurationShort4))
                         )
                 },
                 label = "AodLyricLine",
-                modifier = Modifier.height(22.dp)
+                modifier = Modifier.heightIn(min = 22.dp)
             ) { line ->
                 Text(
                     text = line ?: "",
@@ -435,8 +437,8 @@ fun AodPlayerScreen(
 
             AnimatedVisibility(
                 visible = !isLocked,
-                enter = fadeIn(tween(300)),
-                exit = fadeOut(tween(300)),
+                enter = fadeIn(tween(M3MotionTokens.DurationMedium2)),
+                exit = fadeOut(tween(M3MotionTokens.DurationMedium2)),
                 modifier = Modifier.padding(top = 12.dp)
             ) {
                 AodSlideToLockButton(

@@ -104,6 +104,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import com.example.tsuki.R
@@ -130,6 +131,8 @@ import com.example.tsuki.ui.components.m3ExpressiveClickable
 import com.example.tsuki.ui.components.playlistCoverFile
 import com.example.tsuki.ui.components.rememberHiResImageModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -158,13 +161,13 @@ fun PlaylistDetailScreen(
     modifier: Modifier = Modifier,
     initialTracks: List<MediaTrack>? = null
 ) {
-    var tracks by remember { mutableStateOf<List<MediaTrack>>(emptyList()) }
-    var isLoading by remember { mutableStateOf(true) }
-    var loadFailed by remember { mutableStateOf(false) }
+    var tracks by remember(playlist.id) { mutableStateOf<List<MediaTrack>>(initialTracks ?: emptyList()) }
+    var isLoading by remember(playlist.id) { mutableStateOf(initialTracks == null) }
+    var loadFailed by remember(playlist.id) { mutableStateOf(false) }
     var retryKey by remember { mutableStateOf(0) }
     var isLocalPlaylist by remember { mutableStateOf(false) }
     var displayTitle by remember(playlist.id) { mutableStateOf(playlist.title) }
-    var query by remember { mutableStateOf("") }
+    var query by remember(playlist.id) { mutableStateOf("") }
     var sortMode by remember { mutableStateOf(PlaylistSort.RECENT) }
     var showSortMenu by remember { mutableStateOf(false) }
     var showDockMenu by remember { mutableStateOf(false) }
@@ -288,7 +291,22 @@ fun PlaylistDetailScreen(
                     localPl.tracks
                 } else {
                     try {
-                        innerTubeClient.fetchPlaylistTracks(playlist.id, cookieVal, visitorData, dataSyncId)
+                        val playlistTracks = if (playlist.id.startsWith("MPRE")) {
+                            innerTubeClient.fetchAlbumTracks(playlist.id, visitorData, cookie)?.tracks ?: emptyList()
+                        } else {
+                            val fetched = innerTubeClient.fetchPlaylistTracks(playlist.id, cookieVal, visitorData, dataSyncId)
+                            if (fetched.isNotEmpty()) fetched
+                            else innerTubeClient.fetchAlbumTracks(playlist.id, visitorData, cookie)?.tracks ?: emptyList()
+                        }
+                        if (playlistTracks.isNotEmpty()) {
+                            playlistTracks.map { track ->
+                                track.copy(
+                                    album = if (track.album.isBlank()) playlist.title else track.album,
+                                    artist = if ((track.artist.isBlank() || track.artist == "YouTube Music") && playlist.subtitle.isNotBlank() && !playlist.subtitle.contains("YouTube Music", ignoreCase = true)) playlist.subtitle else track.artist,
+                                    artworkUrl = if ((track.artworkUrl.isNullOrBlank() || track.artworkUrl.contains("hqdefault.jpg")) && !playlist.thumbnailUrl.isNullOrBlank()) playlist.thumbnailUrl else track.artworkUrl
+                                )
+                            }
+                        } else emptyList()
                     } catch (_: Exception) {
                         loadFailed = true
                         emptyList()
@@ -303,6 +321,7 @@ fun PlaylistDetailScreen(
         } else null
         isLocalPlaylist = localCheck != null
         if (localCheck != null) displayTitle = localCheck.name
+        else if (displayTitle.isBlank()) displayTitle = playlist.title
         tracks = if (localCheck != null) localCheck.tracks else loaded
         isLoading = false
     }
@@ -333,6 +352,7 @@ fun PlaylistDetailScreen(
     val haptic = LocalHapticFeedback.current
     val canReorder = isLocalPlaylist && localId != null && query.isBlank() && sortMode == PlaylistSort.RECENT && tracks.size > 1
     val trackIndexOffset = 2 + if (!isLoading && !loadFailed && tracks.size >= 5) 1 else 0
+    var orderSaveJob by remember { mutableStateOf<Job?>(null) }
     val itemKeys = remember(visibleTracks) {
         val occurrenceMap = mutableMapOf<String, Int>()
         visibleTracks.map { item ->
@@ -351,13 +371,18 @@ fun PlaylistDetailScreen(
             val moved = updated.removeAt(f)
             updated.add(t, moved)
             tracks = updated
-            scope.launch { localManager.moveTrack(lid, f, t) }
+            orderSaveJob?.cancel()
+            orderSaveJob = scope.launch {
+                delay(200)
+                localManager.setTrackOrder(lid, updated)
+            }
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
         }
     }
 
-    val showBar by remember {
-        derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 260 }
+    val barThresholdPx = with(LocalDensity.current) { 270.dp.roundToPx() }
+    val showBar by remember(barThresholdPx) {
+        derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > barThresholdPx }
     }
     val barColor by animateColorAsState(
         targetValue = if (showBar) MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.94f) else Color.Transparent,
@@ -418,7 +443,7 @@ fun PlaylistDetailScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(460.dp)
+                            .height(340.dp)
                             .graphicsLayer { alpha = entrance.value }
                             .m3ExpressiveClickable(onClick = { showCoverPreview = true })
                     ) {
@@ -430,24 +455,14 @@ fun PlaylistDetailScreen(
                         )
                         Box(
                             Modifier
-                                .fillMaxWidth()
-                                .height(150.dp)
+                                .fillMaxSize()
                                 .background(
                                     Brush.verticalGradient(
-                                        listOf(
-                                            MaterialTheme.colorScheme.scrim.copy(alpha = 0.45f),
-                                            Color.Transparent
-                                        )
-                                    )
-                                )
-                        )
-                        Box(
-                            Modifier.fillMaxSize()
-                                .background(
-                                    Brush.verticalGradient(
-                                        listOf(
-                                            Color.Transparent,
-                                            MaterialTheme.colorScheme.background
+                                        colorStops = arrayOf(
+                                            0.0f to MaterialTheme.colorScheme.scrim.copy(alpha = 0.45f),
+                                            0.35f to Color.Transparent,
+                                            0.65f to Color.Transparent,
+                                            1.0f to MaterialTheme.colorScheme.background
                                         )
                                     )
                                 )
@@ -469,7 +484,7 @@ fun PlaylistDetailScreen(
                                 modifier = Modifier.fillMaxWidth()
                             )
                             Spacer(Modifier.height(6.dp))
-                            val subtitleVal = if (playlist.subtitle.isNotBlank()) playlist.subtitle else if (isLocalPlaylist) "Playlist local" else "YouTube Music"
+                            val subtitleVal = if (playlist.subtitle.isNotBlank()) playlist.subtitle else if (isLocalPlaylist) stringResource(R.string.music_source_local_playlist) else stringResource(R.string.music_source_ytm)
                             Text(
                                 subtitleVal,
                                 style = MaterialTheme.typography.bodyMedium,
@@ -905,7 +920,6 @@ fun PlaylistDetailScreen(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(20.dp))
                                     .graphicsLayer {
                                         val s = if (isDragging) 0.97f else 1f
                                         scaleX = s
@@ -1120,7 +1134,7 @@ fun PlaylistDetailScreen(
                     FilledTonalIconButton(
                         onClick = { startPlayback(tracks, 0, shuffle = false) },
                         enabled = tracks.isNotEmpty(),
-                        modifier = Modifier.size(44.dp)
+                        modifier = Modifier.size(48.dp)
                     ) {
                         Icon(Icons.Rounded.PlayArrow, contentDescription = stringResource(R.string.common_play))
                     }

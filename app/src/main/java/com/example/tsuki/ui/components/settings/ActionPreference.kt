@@ -31,9 +31,11 @@ fun ActionPreference(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .m3PressBounce(targetScale = 0.98f) {
-                if (enabled) onClick()
-            }
+            .then(
+                if (enabled) {
+                    Modifier.m3PressBounce(targetScale = 0.98f, onClick = onClick)
+                } else Modifier
+            )
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

@@ -33,6 +33,12 @@ data class AudioTrackOption(
     val languageCode: String = ""
 )
 
+data class AudioStreamChoice(
+    val url: String,
+    val codec: String?,
+    val bitrate: Int
+)
+
 data class StreamResult(
     val audioUrl: String?,
     val videoUrl: String?,
@@ -43,6 +49,7 @@ data class StreamResult(
     val videoQuality: String? = null,
     val availableQualities: List<QualityOption> = emptyList(),
     val availableAudioTracks: List<AudioTrackOption> = emptyList(),
+    val availableAudioStreams: List<AudioStreamChoice> = emptyList(),
     val selectedAudioTrack: String? = null,
     val channelAvatarUrl: String? = null,
     val channelId: String? = null,
@@ -275,6 +282,10 @@ class YouTubeExtractor(private val appContext: Context? = null) {
             streamMemoryCache.remove(videoId)
         }
 
+        fun evictAllStreamCache() {
+            streamMemoryCache.clear()
+        }
+
         @Synchronized
         private fun putStreamCache(videoId: String, result: StreamResult) {
             val now = System.currentTimeMillis()
@@ -397,6 +408,18 @@ class YouTubeExtractor(private val appContext: Context? = null) {
                 }
             }
             val selectedAudioTrackName = originalTrack?.label ?: appContext?.getString(R.string.xtr_audio_original) ?: "Original audio"
+            val audioStreamChoices = sortedOriginalAudioStreams.mapNotNull { s ->
+                val u = s.getUrl() ?: return@mapNotNull null
+                val avgBr = s.getAverageBitrate()
+                val br = if (avgBr > 0) avgBr else s.getBitrate()
+                val fmt = s.getFormat()?.name?.lowercase() ?: ""
+                val codec = when {
+                    fmt.contains("opus") || fmt.contains("webm") -> "Opus"
+                    fmt.contains("m4a") || fmt.contains("mp4") || fmt.contains("aac") -> "AAC"
+                    else -> null
+                }
+                AudioStreamChoice(u, codec, br)
+            }.distinctBy { it.codec to it.bitrate }
 
             var bestProgressiveVideoUrl: String? = null
             var maxProgressiveBitrate = 0
@@ -486,6 +509,7 @@ class YouTubeExtractor(private val appContext: Context? = null) {
                     videoQuality = bestVideoQuality,
                     availableQualities = distinctQualities,
                     availableAudioTracks = distinctAudioTracks,
+                    availableAudioStreams = audioStreamChoices,
                     selectedAudioTrack = selectedAudioTrackName,
                     channelAvatarUrl = channelAvatar,
                     channelId = channelId,

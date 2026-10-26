@@ -10,6 +10,7 @@ import com.example.tsuki.data.local.HomeLayoutMode
 import com.example.tsuki.data.local.HomePreferences
 import com.example.tsuki.data.local.PlayerPreferences
 import com.example.tsuki.data.local.ProgressBarStyle
+import com.example.tsuki.data.local.RefreshRateMode
 import com.example.tsuki.lyrics.LyricsHelper
 import com.example.tsuki.playback.PlayerCacheProvider
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,6 +38,7 @@ data class SettingsUiState(
     val darkModeSetting: DarkModeSetting = DarkModeSetting.SYSTEM,
     val pureBlack: Boolean = false,
     val thumbCornerDp: Float = AppearancePreferences.THUMB_CORNER_DEFAULT,
+    val refreshRateMode: RefreshRateMode = RefreshRateMode.MAX,
     val lyricsTextSize: Int = PlayerPreferences.LYRICS_TEXT_SIZE_DEFAULT,
     val lyricsLineBlur: Boolean = true,
     val progressBarStyle: ProgressBarStyle = ProgressBarStyle.STANDARD,
@@ -45,10 +47,10 @@ data class SettingsUiState(
     val syncLikedEnabled: Boolean = true,
     val syncPlaylistsEnabled: Boolean = true,
     val syncHistoryEnabled: Boolean = true,
+    val recoSource: String = PlayerPreferences.RECO_SOURCE_MIXED,
     val skipSilenceEnabled: Boolean = false,
     val accentColor: String = AppearancePreferences.ACCENT_AUTO,
     val privateMode: Boolean = false,
-    val precacheLyrics: Boolean = true,
     val musicOnly: Boolean = false
 )
 
@@ -59,8 +61,7 @@ private data class PlayerSettingsData(
     val autoQueueEnabled: Boolean,
     val preferredLyricsProvider: String,
     val skipSilenceEnabled: Boolean,
-    val privateMode: Boolean,
-    val precacheLyrics: Boolean
+    val privateMode: Boolean
 )
 
 private data class AudioDataSettingsData(
@@ -117,11 +118,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             playerPrefs.preferredLyricsProvider,
             playerPrefs.skipSilenceEnabled
         ) { autoQueue, lyrics, skipSilence -> Triple(autoQueue, lyrics, skipSilence) },
-        combine(
-            playerPrefs.privateMode,
-            playerPrefs.precacheLyrics
-        ) { privateMode, precache -> privateMode to precache }
-    ) { (crossfadeEnabled, crossfadeDuration, crossfadeGapless), (autoQueueEnabled, preferredLyricsProvider, skipSilenceEnabled), (privateMode, precacheLyrics) ->
+        playerPrefs.privateMode
+    ) { (crossfadeEnabled, crossfadeDuration, crossfadeGapless), (autoQueueEnabled, preferredLyricsProvider, skipSilenceEnabled), privateMode ->
         PlayerSettingsData(
             crossfadeEnabled = crossfadeEnabled,
             crossfadeDuration = crossfadeDuration,
@@ -129,8 +127,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             autoQueueEnabled = autoQueueEnabled,
             preferredLyricsProvider = preferredLyricsProvider,
             skipSilenceEnabled = skipSilenceEnabled,
-            privateMode = privateMode,
-            precacheLyrics = precacheLyrics
+            privateMode = privateMode
         )
     }
 
@@ -167,7 +164,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         val darkMode: DarkModeSetting,
         val pureBlack: Boolean,
         val thumbCornerDp: Float,
-        val accentColor: String
+        val accentColor: String,
+        val refreshRateMode: RefreshRateMode
     )
 
     private data class LyricsDisplayData(
@@ -181,22 +179,25 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private data class SyncSettingsData(
         val liked: Boolean,
         val playlists: Boolean,
-        val history: Boolean
+        val history: Boolean,
+        val recoSource: String
     )
 
     private val appearanceSettings = combine(
         appearancePrefs.appThemeMode,
         appearancePrefs.darkMode,
         appearancePrefs.pureBlack,
-        appearancePrefs.thumbCornerDp
-    ) { themeMode, darkMode, pureBlack, thumbCornerDp ->
-        listOf(themeMode, darkMode, pureBlack, thumbCornerDp)
+        appearancePrefs.thumbCornerDp,
+        appearancePrefs.refreshRateMode
+    ) { themeMode, darkMode, pureBlack, thumbCornerDp, refreshRateMode ->
+        listOf(themeMode, darkMode, pureBlack, thumbCornerDp, refreshRateMode)
     }.combine(appearancePrefs.accentColor) { values, accent ->
         AppearanceSettingsData(
             themeMode = values[0] as AppThemeMode,
             darkMode = values[1] as DarkModeSetting,
             pureBlack = values[2] as Boolean,
             thumbCornerDp = values[3] as Float,
+            refreshRateMode = values[4] as RefreshRateMode,
             accentColor = accent
         )
     }
@@ -214,8 +215,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val syncSettings = combine(
         playerPrefs.syncLikedEnabled,
         playerPrefs.syncPlaylistsEnabled,
-        playerPrefs.syncHistoryEnabled
-    ) { liked, playlists, history -> SyncSettingsData(liked, playlists, history) }
+        playerPrefs.syncHistoryEnabled,
+        playerPrefs.recoSource
+    ) { liked, playlists, history, recoSource -> SyncSettingsData(liked, playlists, history, recoSource) }
 
     private val baseState = combine(
         playerSettings,
@@ -242,6 +244,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             darkModeSetting = ap.darkMode,
             pureBlack = ap.pureBlack,
             thumbCornerDp = ap.thumbCornerDp,
+            refreshRateMode = ap.refreshRateMode,
             lyricsTextSize = l.textSize,
             lyricsLineBlur = l.lineBlur,
             progressBarStyle = l.progressBarStyle,
@@ -250,7 +253,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             skipSilenceEnabled = p.skipSilenceEnabled,
             accentColor = ap.accentColor,
             privateMode = p.privateMode,
-            precacheLyrics = p.precacheLyrics,
             musicOnly = h.contentMode == HomePreferences.CONTENT_MODE_MUSIC_ONLY
         )
     }
@@ -259,7 +261,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         base.copy(
             syncLikedEnabled = s.liked,
             syncPlaylistsEnabled = s.playlists,
-            syncHistoryEnabled = s.history
+            syncHistoryEnabled = s.history,
+            recoSource = s.recoSource
         )
     }.stateIn(
         scope = viewModelScope,
@@ -296,12 +299,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun setPrecacheLyrics(enabled: Boolean) {
-        viewModelScope.launch {
-            playerPrefs.setPrecacheLyrics(enabled)
-        }
-    }
-
     fun clearWatchHistory(onDone: (Int) -> Unit = {}) {
         viewModelScope.launch {
             val manager = com.example.tsuki.data.local.WatchHistoryManager.getInstance(getApplication())
@@ -314,12 +311,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun setAutoQueueEnabled(enabled: Boolean) {
         viewModelScope.launch {
             playerPrefs.setAutoQueueEnabled(enabled)
-        }
-    }
-
-    fun setCrossfadeEnabled(enabled: Boolean) {
-        viewModelScope.launch {
-            playerPrefs.setCrossfadeEnabled(enabled)
         }
     }
 
@@ -343,6 +334,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun setCacheSizeMb(sizeMb: Int) {
+        PlayerCacheProvider.persistSizeMb(getApplication(), sizeMb)
         viewModelScope.launch {
             playerPrefs.setCacheSizeMb(sizeMb)
         }
@@ -429,6 +421,12 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun setRefreshRateMode(mode: RefreshRateMode) {
+        viewModelScope.launch {
+            appearancePrefs.setRefreshRateMode(mode)
+        }
+    }
+
     fun setLyricsTextSize(size: Int) {
         viewModelScope.launch {
             playerPrefs.setLyricsTextSize(size)
@@ -462,6 +460,14 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     else -> ProgressBarStyle.STANDARD
                 }
             )
+        }
+    }
+
+    fun setRecoSource(value: String) {
+        viewModelScope.launch {
+            playerPrefs.setRecoSource(value)
+            try { com.example.tsuki.ui.screens.MusicHomeMemory.invalidate() } catch (_: Exception) {}
+            try { com.example.tsuki.ui.screens.MusicRefreshBus.trigger() } catch (_: Exception) {}
         }
     }
 

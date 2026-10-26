@@ -12,8 +12,10 @@ import androidx.glance.GlanceId
 import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.state.updateAppWidgetState
 import androidx.glance.state.PreferencesGlanceStateDefinition
+import androidx.compose.ui.graphics.toArgb
 import androidx.palette.graphics.Palette
 import coil3.BitmapImage
+import com.example.tsuki.ui.theme.PlayerColorManager
 import coil3.SingletonImageLoader
 import coil3.request.ImageRequest
 import coil3.request.SuccessResult
@@ -254,9 +256,9 @@ object TSukiGlanceSync {
 
     suspend fun updateProgress(appContext: Context, positionMs: Long, durationMs: Long, force: Boolean = false) {
         if (durationMs <= 0L) return
-        val currentSec = positionMs / 1000L
-        val prevSec = lastPositionMs / 1000L
-        if (!force && lastPositionMs >= 0L && currentSec == prevSec && durationMs == lastDurationMs) return
+        val currentBucket = positionMs / 5000L
+        val prevBucket = lastPositionMs / 5000L
+        if (!force && lastPositionMs >= 0L && currentBucket == prevBucket && durationMs == lastDurationMs) return
         lastPositionMs = positionMs
         lastDurationMs = durationMs
         withContext(Dispatchers.IO) {
@@ -396,11 +398,9 @@ object TSukiGlanceSync {
         val cached = colorMemoryCache.get(mediaId)
         if (cached != null) return cached
         return runCatching {
-            val palette = Palette.from(bmp).maximumColorCount(16).generate()
-            val dom = palette.dominantSwatch ?: palette.vibrantSwatch ?: palette.mutedSwatch
-            val acc = palette.vibrantSwatch ?: palette.lightVibrantSwatch ?: palette.dominantSwatch
-            val domLong = (dom?.rgb?.toLong() ?: 0xFF111218L) and 0xFFFFFFFFL
-            val accLong = (acc?.rgb?.toLong() ?: 0xFFB48CFFL) and 0xFFFFFFFFL
+            val colors = PlayerColorManager.extractHarmonizedColors(bmp)
+            val domLong = (colors.dominant.toArgb().toLong()) and 0xFFFFFFFFL
+            val accLong = (colors.accent.toArgb().toLong()) and 0xFFFFFFFFL
             val pair = Pair(domLong, accLong)
             colorMemoryCache.put(mediaId, pair)
             pair

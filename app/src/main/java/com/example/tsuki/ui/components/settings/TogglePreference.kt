@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -15,8 +16,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
-import com.example.tsuki.ui.components.m3PressBounce
 
 @Composable
 fun TogglePreference(
@@ -36,9 +37,15 @@ fun TogglePreference(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .m3PressBounce(targetScale = 0.98f) {
-                if (enabled) onCheckedChange(!checked)
-            }
+            .then(
+                if (enabled) {
+                    Modifier.toggleable(
+                        value = checked,
+                        role = Role.Switch,
+                        onValueChange = onCheckedChange
+                    )
+                } else Modifier
+            )
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -68,7 +75,7 @@ fun TogglePreference(
         Spacer(modifier = Modifier.width(12.dp))
         Switch(
             checked = checked,
-            onCheckedChange = onCheckedChange,
+            onCheckedChange = null,
             enabled = enabled
         )
     }

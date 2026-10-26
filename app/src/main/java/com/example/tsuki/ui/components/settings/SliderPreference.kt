@@ -1,11 +1,5 @@
 package com.example.tsuki.ui.components.settings
 
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -76,20 +70,12 @@ fun SliderPreference(
                     )
                     .padding(horizontal = 10.dp, vertical = 4.dp)
             ) {
-                AnimatedContent(
-                    targetState = valueFormatter(value),
-                    transitionSpec = {
-                        (slideInVertically { -it } + fadeIn()).togetherWith(slideOutVertically { it } + fadeOut())
-                    },
-                    label = "SliderFormattedValue"
-                ) { formatted ->
-                    Text(
-                        text = formatted,
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = if (enabled) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                    )
-                }
+                Text(
+                    text = valueFormatter(value),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = if (enabled) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                )
             }
         }
         Slider(

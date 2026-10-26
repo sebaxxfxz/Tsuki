@@ -3,6 +3,8 @@ package com.example.tsuki.ui.components.settings
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -49,9 +51,11 @@ fun ListPreference(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .m3PressBounce(targetScale = 0.98f) {
-                if (enabled) showDialog = true
-            }
+            .then(
+                if (enabled) {
+                    Modifier.m3PressBounce(targetScale = 0.98f) { showDialog = true }
+                } else Modifier
+            )
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -101,10 +105,14 @@ fun ListPreference(
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(16.dp))
                                 .background(itemBgColor)
-                                .clickable {
-                                    onValueChange(value)
-                                    showDialog = false
-                                }
+                                .selectable(
+                                    selected = isSelected,
+                                    role = Role.RadioButton,
+                                    onClick = {
+                                        onValueChange(value)
+                                        showDialog = false
+                                    }
+                                )
                                 .padding(vertical = 12.dp, horizontal = 12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {

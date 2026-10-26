@@ -26,6 +26,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -114,6 +115,50 @@ data class MusicPersonalizedFeed(
     val continuation: String? = null
 )
 
+sealed interface MusicSearchResult {
+    data class Song(val track: MediaTrack) : MusicSearchResult
+    data class Album(val item: MusicAlbumItem) : MusicSearchResult
+    data class Artist(val item: MusicArtistItem) : MusicSearchResult
+    data class Playlist(val item: MusicPlaylistItem) : MusicSearchResult
+}
+
+data class MusicAlbumItem(
+    val browseId: String,
+    val title: String,
+    val artist: String,
+    val year: String?,
+    val thumbnails: List<String>,
+    val trackCount: Int?
+)
+
+data class MusicArtistItem(
+    val browseId: String,
+    val name: String,
+    val subscribers: String?,
+    val thumbnails: List<String>
+)
+
+data class MusicPlaylistItem(
+    val playlistId: String,
+    val title: String,
+    val author: String?,
+    val trackCount: Int?,
+    val thumbnails: List<String>
+)
+
+data class AlbumDetail(
+    val header: MusicAlbumItem,
+    val tracks: List<MediaTrack>
+)
+
+data class ArtistDetail(
+    val name: String,
+    val topSongs: List<MediaTrack>,
+    val albums: List<MusicAlbumItem>,
+    val avatarUrl: String? = null,
+    val topSongsPlaylistId: String? = null
+)
+
 @Serializable
 data class TSukiAccountChannel(
     val channelId: String,
@@ -141,6 +186,13 @@ enum class MusicSearchFilter(val label: String, val params: String) {
     ARTISTS("Artistas", "EgWKAQIgAWoQEAMQBBAJEAoQBRAREBAQFQ%3D%3D"),
     PLAYLISTS("Playlists", "EgWKAQIwAWoQEAMQBBAJEAoQBRAREBAQFQ%3D%3D")
 }
+
+data class MusicTypedSearchResult(
+    val songs: List<MediaTrack> = emptyList(),
+    val albums: List<MusicAlbumItem> = emptyList(),
+    val artists: List<MusicArtistItem> = emptyList(),
+    val playlists: List<MusicPlaylistItem> = emptyList()
+)
 
 class TSukiInnerTubeClient private constructor() {
 
@@ -177,6 +229,9 @@ class TSukiInnerTubeClient private constructor() {
             }
         }
     }
+
+    private val albumMemoryCache = java.util.concurrent.ConcurrentHashMap<String, AlbumDetail>()
+    private val artistMemoryCache = java.util.concurrent.ConcurrentHashMap<String, ArtistDetail>()
 
     private fun parseCookieMap(cookieString: String): Map<String, String> {
         return cookieString.split(";").associate { pair ->
@@ -275,6 +330,37 @@ class TSukiInnerTubeClient private constructor() {
                 TSukiHomeFeed(emptyList())
             }
         }
+
+    suspend fun fetchMusicExploreFeed(
+        cookie: String,
+        visitorData: String? = null,
+        dataSyncId: String? = null,
+        kind: String = "explore"
+    ): List<TSukiFeedSection> = withContext(Dispatchers.IO) {
+        if (cookie.isBlank()) return@withContext emptyList()
+        try {
+            withRetry {
+                val response = postAuthorizedBrowse("FEmusic_explore", cookie, visitorData, dataSyncId)
+                parseMusicHomeFeed(response).sections
+            }
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            Log.e(TAG, "fetchMusicExploreFeed failed: ${e.message}", e)
+            emptyList()
+        }
+    }
+
+    suspend fun fetchMixTracks(seedId: String): List<MediaTrack> = withContext(Dispatchers.IO) {
+        try {
+            val clean = seedId.removePrefix("RDAMVM").removePrefix("RD")
+            if (clean.length == 11 && clean != seedId) fetchRelatedVideos(clean)
+            else fetchYouTubePlaylistVideos(seedId)
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            Log.e(TAG, "fetchMixTracks failed: ${e.message}", e)
+            emptyList()
+        }
+    }
 
     suspend fun fetchRelatedTracks(videoId: String, visitorData: String? = null): List<MediaTrack> =
         fetchRelatedVideos(videoId, visitorData)
@@ -1492,6 +1578,46 @@ class TSukiInnerTubeClient private constructor() {
         cookie: String? = null
     ): List<MediaTrack> = withContext(Dispatchers.IO) {
         if (query.isBlank()) return@withContext emptyList()
+        val resp = searchMusicRaw(query, filter, visitorData, cookie) ?: return@withContext emptyList()
+        parseMusicSearchResults(resp)
+    }
+
+    suspend fun searchMusicTyped(
+        query: String,
+        visitorData: String? = null,
+        cookie: String? = null
+    ): MusicTypedSearchResult = coroutineScope {
+        if (query.isBlank()) return@coroutineScope MusicTypedSearchResult()
+        val deferred = MusicSearchFilter.entries.map { filter ->
+            async {
+                try {
+                    withTimeoutOrNull(3_500) {
+                        val resp = searchMusicRaw(query, filter, visitorData, cookie)
+                            ?: return@withTimeoutOrNull emptyList()
+                        parseTypedSearchResults(resp)
+                    } ?: emptyList()
+                } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    emptyList()
+                }
+            }
+        }
+        val combined = deferred.awaitAll().flatten()
+        MusicTypedSearchResult(
+            songs = combined.filterIsInstance<MusicSearchResult.Song>().map { it.track },
+            albums = combined.filterIsInstance<MusicSearchResult.Album>().map { it.item },
+            artists = combined.filterIsInstance<MusicSearchResult.Artist>().map { it.item },
+            playlists = combined.filterIsInstance<MusicSearchResult.Playlist>().map { it.item }
+        )
+    }
+
+    private suspend fun searchMusicRaw(
+        query: String,
+        filter: MusicSearchFilter,
+        visitorData: String?,
+        cookie: String?
+    ): JsonElement? = withContext(Dispatchers.IO) {
+        if (query.isBlank()) return@withContext null
         val sapisidHash = cookie?.let { buildSapisidHash(it) }
 
         val body = buildJsonObject {
@@ -1512,7 +1638,7 @@ class TSukiInnerTubeClient private constructor() {
         }
 
         try {
-            val resp = withRetry {
+            withRetry {
                 httpClient.post("${YTM_API_BASE}search") {
                     contentType(ContentType.Application.Json)
                     parameter("prettyPrint", false)
@@ -1531,11 +1657,10 @@ class TSukiInnerTubeClient private constructor() {
                     setBody(body)
                 }.body<JsonElement>()
             }
-            parseMusicSearchResults(resp)
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
             Log.w(TAG, "searchMusic failed for '$query': ${e.message}")
-            emptyList()
+            null
         }
     }
 
@@ -2249,9 +2374,10 @@ class TSukiInnerTubeClient private constructor() {
 
     suspend fun fetchPlaylistTracks(
         playlistId: String,
-        cookie: String,
+        cookie: String = "",
         visitorData: String? = null,
-        dataSyncId: String? = null
+        dataSyncId: String? = null,
+        maxTracks: Int = Int.MAX_VALUE
     ): List<MediaTrack> = withContext(Dispatchers.IO) {
         if (playlistId.isBlank()) return@withContext emptyList()
         val browseId = if (playlistId.startsWith("VL") || playlistId.startsWith("RD")) playlistId else "VL$playlistId"
@@ -2263,7 +2389,7 @@ class TSukiInnerTubeClient private constructor() {
             var parsed = parsePlaylistTracks(response)
             for (t in parsed) if (seen.add(t.id)) allTracks.add(t)
             var pages = 0
-            while (!continuation.isNullOrBlank() && pages < 12) {
+            while (!continuation.isNullOrBlank() && pages < 12 && allTracks.size < maxTracks) {
                 pages++
                 try {
                     response = postBrowseContinuation(continuation, cookie, visitorData, dataSyncId)
@@ -2282,9 +2408,336 @@ class TSukiInnerTubeClient private constructor() {
             allTracks
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
-            } catch (e: Exception) {
+        } catch (e: Exception) {
             Log.w(TAG, "fetchPlaylistTracks failed: ${e.message}", e)
             emptyList()
+        }
+    }
+
+    private fun responsiveAlbumHeaders(root: JsonElement): Sequence<JsonObject> = sequence {
+        try {
+            root.jsonObject["header"]?.jsonObject?.get("musicResponsiveHeaderRenderer")?.jsonObject?.let { yield(it) }
+            val twoCol = root.jsonObject["contents"]?.jsonObject?.get("twoColumnBrowseResultsRenderer")?.jsonObject
+            twoCol?.get("tabs")?.jsonArray?.forEach { tab ->
+                val contents = tab.jsonObject["tabRenderer"]?.jsonObject?.get("content")?.jsonObject
+                    ?.get("sectionListRenderer")?.jsonObject?.get("contents")?.jsonArray ?: return@forEach
+                for (section in contents) {
+                    section.jsonObject["musicResponsiveHeaderRenderer"]?.jsonObject?.let { yield(it) }
+                }
+            }
+            val singleCol = root.jsonObject["contents"]?.jsonObject?.get("singleColumnBrowseResultsRenderer")?.jsonObject
+            singleCol?.get("tabs")?.jsonArray?.forEach { tab ->
+                val contents = tab.jsonObject["tabRenderer"]?.jsonObject?.get("content")?.jsonObject
+                    ?.get("sectionListRenderer")?.jsonObject?.get("contents")?.jsonArray ?: return@forEach
+                for (section in contents) {
+                    section.jsonObject["musicResponsiveHeaderRenderer"]?.jsonObject?.let { yield(it) }
+                }
+            }
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+        }
+    }
+
+    private fun extractResponsiveHeaderButtonPlaylistId(root: JsonElement): String? {
+        for (h in responsiveAlbumHeaders(root)) {
+            h["buttons"]?.jsonArray?.forEach { b ->
+                val ep = b.jsonObject["musicPlayButtonRenderer"]?.jsonObject?.get("playNavigationEndpoint")?.jsonObject ?: return@forEach
+                ep["watchEndpoint"]?.jsonObject?.get("playlistId")?.jsonPrimitive?.content?.let { return it }
+                ep["watchPlaylistEndpoint"]?.jsonObject?.get("playlistId")?.jsonPrimitive?.content?.let { return it }
+            }
+        }
+        return null
+    }
+
+    private fun parseResponsiveAlbumHeader(root: JsonElement, browseId: String, trackCount: Int): MusicAlbumItem? {
+        for (h in responsiveAlbumHeaders(root)) {
+            val title = h["title"]?.jsonObject?.get("runs")?.jsonArray
+                ?.joinToString("") { it.jsonObject["text"]?.jsonPrimitive?.content ?: "" }
+                ?.takeIf { it.isNotBlank() } ?: continue
+            val subtitle = h["subtitle"]?.jsonObject?.get("runs")?.jsonArray
+                ?.joinToString(" ") { it.jsonObject["text"]?.jsonPrimitive?.content ?: "" } ?: ""
+            val thumb = h["thumbnail"]?.jsonObject?.get("musicThumbnailRenderer")?.jsonObject
+                ?.get("thumbnail")?.jsonObject?.get("thumbnails")?.jsonArray
+                ?.lastOrNull()?.jsonObject?.get("url")?.jsonPrimitive?.content ?: ""
+            return MusicAlbumItem(
+                browseId = browseId,
+                title = title,
+                artist = subtitle,
+                year = null,
+                thumbnails = listOfNotNull(thumb.takeIf { it.isNotBlank() }),
+                trackCount = trackCount
+            )
+        }
+        return null
+    }
+
+    suspend fun fetchAlbumTracks(
+        browseId: String,
+        visitorData: String? = null,
+        cookie: String? = null
+    ): AlbumDetail? = withContext(Dispatchers.IO) {
+        if (browseId.isBlank()) return@withContext null
+        albumMemoryCache[browseId]?.let { return@withContext it }
+        try {
+            val response = postAuthorizedBrowse(browseId, cookie, visitorData, null)
+            parseAlbumBrowse(response)?.let { parsed ->
+                val full = parsed.copy(header = parsed.header.copy(browseId = browseId))
+                if (albumMemoryCache.size > 50) albumMemoryCache.clear()
+                albumMemoryCache[browseId] = full
+                return@withContext full
+            }
+            val playlistId = extractResponsiveHeaderButtonPlaylistId(response) ?: return@withContext null
+            val rawTracks = fetchPlaylistTracks(playlistId, cookie ?: "", visitorData, null)
+            if (rawTracks.isEmpty()) return@withContext null
+            val header = parseResponsiveAlbumHeader(response, browseId, rawTracks.size)
+                ?: MusicAlbumItem(browseId, "", "", null, emptyList(), rawTracks.size)
+            val enriched = rawTracks.map { track ->
+                track.copy(
+                    album = if (track.album.isBlank()) header.title else track.album,
+                    artist = if ((track.artist.isBlank() || track.artist == "YouTube Music") && header.artist.isNotBlank()) header.artist else track.artist,
+                    artworkUrl = if ((track.artworkUrl.isNullOrBlank() || track.artworkUrl.contains("hqdefault.jpg")) && header.thumbnails.isNotEmpty()) header.thumbnails.first() else track.artworkUrl
+                )
+            }
+            val result = AlbumDetail(header = header, tracks = enriched)
+            if (albumMemoryCache.size > 50) albumMemoryCache.clear()
+            albumMemoryCache[browseId] = result
+            result
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "fetchAlbumTracks failed: ${e.message}", e)
+            null
+        }
+    }
+
+    internal fun parseAlbumBrowse(root: JsonElement): AlbumDetail? {
+        return try {
+            val obj = root.jsonObject
+            val headerRenderer = obj["header"]?.jsonObject?.get("musicDetailHeaderRenderer")?.jsonObject
+                ?: obj["header"]?.jsonObject?.get("musicImmersiveHeaderRenderer")?.jsonObject
+                ?: obj["header"]?.jsonObject?.get("musicVisualHeaderRenderer")?.jsonObject
+                ?: obj["contents"]?.jsonObject?.get("twoColumnBrowseResultsRenderer")?.jsonObject?.get("header")?.jsonObject?.get("musicDetailHeaderRenderer")?.jsonObject
+                ?: obj["contents"]?.jsonObject?.get("twoColumnBrowseResultsRenderer")?.jsonObject?.get("header")?.jsonObject?.get("musicImmersiveHeaderRenderer")?.jsonObject
+                ?: obj["contents"]?.jsonObject?.get("singleColumnBrowseResultsRenderer")?.jsonObject?.get("header")?.jsonObject?.get("musicDetailHeaderRenderer")?.jsonObject
+                ?: obj["contents"]?.jsonObject?.get("singleColumnBrowseResultsRenderer")?.jsonObject?.get("header")?.jsonObject?.get("musicImmersiveHeaderRenderer")?.jsonObject
+
+            val respHeader = if (headerRenderer == null) responsiveAlbumHeaders(root).firstOrNull() else null
+            if (headerRenderer == null && respHeader == null) return null
+
+            val title = (headerRenderer?.get("title") ?: respHeader?.get("title"))?.jsonObject
+                ?.get("runs")?.jsonArray?.firstOrNull()?.jsonObject
+                ?.get("text")?.jsonPrimitive?.content
+                ?: respHeader?.get("title")?.jsonObject?.get("runs")?.jsonArray?.joinToString("") { it.jsonObject["text"]?.jsonPrimitive?.content ?: "" }
+                ?: return null
+            val subtitle = (headerRenderer?.get("subtitle") ?: respHeader?.get("subtitle"))?.jsonObject
+                ?.get("runs")?.jsonArray?.joinToString("") { it.jsonObject["text"]?.jsonPrimitive?.content ?: "" } ?: ""
+            val secondSubtitle = (headerRenderer?.get("secondSubtitle") ?: respHeader?.get("secondSubtitle"))?.jsonObject
+                ?.get("runs")?.jsonArray?.joinToString("") { it.jsonObject["text"]?.jsonPrimitive?.content ?: "" } ?: ""
+            val strapline = respHeader?.get("straplineTextOne")?.jsonObject
+                ?.get("runs")?.jsonArray?.joinToString("") { it.jsonObject["text"]?.jsonPrimitive?.content ?: "" } ?: ""
+            val body = typedSubtitleBody(subtitle)
+            val year = body.lastOrNull()?.takeIf { typedYearRegex.matches(it) }
+                ?: Regex("\\b(19\\d\\d|20\\d\\d)\\b").find(subtitle)?.value
+            val countPart = body.firstOrNull { typedTrackCountRegex.containsMatchIn(it) }
+                ?: secondSubtitle.takeIf { typedTrackCountRegex.containsMatchIn(it) }
+            val artist = strapline.takeIf { it.isNotBlank() }
+                ?: body.filter { it != year && it != countPart }.joinToString(" • ")
+            val thumbObj = headerRenderer?.get("thumbnail")?.jsonObject ?: respHeader?.get("thumbnail")?.jsonObject
+            val thumbArray = thumbObj?.get("croppedSquareThumbnailRenderer")?.jsonObject
+                ?.get("thumbnail")?.jsonObject?.get("thumbnails")?.jsonArray
+                ?: thumbObj?.get("musicThumbnailRenderer")?.jsonObject
+                    ?.get("thumbnail")?.jsonObject?.get("thumbnails")?.jsonArray
+            val thumbnails = thumbArray?.mapNotNull { it.jsonObject["url"]?.jsonPrimitive?.content } ?: emptyList()
+            val contents = obj["contents"]?.jsonObject
+            val sections = mutableListOf<JsonArray>()
+            contents?.get("twoColumnBrowseResultsRenderer")?.jsonObject?.get("tabs")?.jsonArray?.forEach { tab ->
+                tab.jsonObject["tabRenderer"]?.jsonObject?.get("content")?.jsonObject
+                    ?.get("sectionListRenderer")?.jsonObject?.get("contents")?.jsonArray?.let { sections.add(it) }
+            }
+            contents?.get("singleColumnBrowseResultsRenderer")?.jsonObject?.get("tabs")?.jsonArray?.forEach { tab ->
+                tab.jsonObject["tabRenderer"]?.jsonObject?.get("content")?.jsonObject
+                    ?.get("sectionListRenderer")?.jsonObject?.get("contents")?.jsonArray?.let { sections.add(it) }
+            }
+            contents?.get("twoColumnBrowseResultsRenderer")?.jsonObject
+                ?.get("secondaryContents")?.jsonObject
+                ?.get("sectionListRenderer")?.jsonObject?.get("contents")?.jsonArray?.let { sections.add(it) }
+            contents?.get("sectionListRenderer")?.jsonObject?.get("contents")?.jsonArray?.let { sections.add(it) }
+            val tracks = mutableListOf<MediaTrack>()
+            for (sectionArr in sections) {
+                for (section in sectionArr) {
+                    val shelfItems = section.jsonObject["musicShelfRenderer"]?.jsonObject?.get("contents")?.jsonArray
+                        ?: section.jsonObject["musicPlaylistShelfRenderer"]?.jsonObject?.get("contents")?.jsonArray
+                    val items = shelfItems ?: continue
+                    val filtered = items.filter { !it.jsonObject.containsKey("continuationItemRenderer") }
+                    tracks.addAll(parseMusicShelfItems(JsonArray(filtered), ""))
+                }
+            }
+            val enriched = tracks.map { track ->
+                track.copy(
+                    album = if (track.album.isBlank()) title else track.album,
+                    artist = if ((track.artist.isBlank() || track.artist == "YouTube Music") && artist.isNotBlank()) artist else track.artist,
+                    artworkUrl = if ((track.artworkUrl.isNullOrBlank() || track.artworkUrl.contains("hqdefault.jpg")) && thumbnails.isNotEmpty()) thumbnails.first() else track.artworkUrl
+                )
+            }
+            AlbumDetail(
+                header = MusicAlbumItem(
+                    browseId = "",
+                    title = title,
+                    artist = artist,
+                    year = year,
+                    thumbnails = thumbnails,
+                    trackCount = countPart?.let { typedTrackCount(listOf(it)) } ?: enriched.size
+                ),
+                tracks = enriched
+            )
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            Log.w(TAG, "parseAlbumBrowse error: ${e.message}")
+            null
+        }
+    }
+
+    suspend fun fetchArtistContent(
+        browseId: String,
+        visitorData: String? = null,
+        cookie: String? = null
+    ): ArtistDetail? = withContext(Dispatchers.IO) {
+        if (browseId.isBlank()) return@withContext null
+        artistMemoryCache[browseId]?.let { return@withContext it }
+        try {
+            val response = postAuthorizedBrowse(browseId, cookie, visitorData, null)
+            val parsed = parseArtistBrowse(response) ?: return@withContext null
+            val fullTopSongs = if (!parsed.topSongsPlaylistId.isNullOrBlank()) {
+                val fetched = try {
+                    fetchPlaylistTracks(
+                        playlistId = parsed.topSongsPlaylistId,
+                        cookie = cookie ?: "",
+                        visitorData = visitorData,
+                        maxTracks = 25
+                    ).take(25)
+                } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    emptyList()
+                }
+                if (fetched.isNotEmpty()) fetched else parsed.topSongs
+            } else {
+                parsed.topSongs
+            }
+            val enriched = parsed.copy(topSongs = fullTopSongs)
+            if (artistMemoryCache.size > 50) artistMemoryCache.clear()
+            artistMemoryCache[browseId] = enriched
+            enriched
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "fetchArtistContent failed: ${e.message}", e)
+            null
+        }
+    }
+
+    internal fun parseArtistBrowse(root: JsonElement): ArtistDetail? {
+        return try {
+            val obj = root.jsonObject
+            val headerRenderer = obj["header"]?.jsonObject?.get("musicVisualHeaderRenderer")?.jsonObject
+                ?: obj["header"]?.jsonObject?.get("musicImmersiveHeaderRenderer")?.jsonObject
+                ?: obj["header"]?.jsonObject?.get("musicDetailHeaderRenderer")?.jsonObject
+                ?: obj["contents"]?.jsonObject?.get("twoColumnBrowseResultsRenderer")?.jsonObject?.get("header")?.jsonObject?.get("musicVisualHeaderRenderer")?.jsonObject
+                ?: obj["contents"]?.jsonObject?.get("twoColumnBrowseResultsRenderer")?.jsonObject?.get("header")?.jsonObject?.get("musicImmersiveHeaderRenderer")?.jsonObject
+                ?: obj["contents"]?.jsonObject?.get("twoColumnBrowseResultsRenderer")?.jsonObject?.get("header")?.jsonObject?.get("musicDetailHeaderRenderer")?.jsonObject
+                ?: obj["contents"]?.jsonObject?.get("singleColumnBrowseResultsRenderer")?.jsonObject?.get("header")?.jsonObject?.get("musicVisualHeaderRenderer")?.jsonObject
+                ?: obj["contents"]?.jsonObject?.get("singleColumnBrowseResultsRenderer")?.jsonObject?.get("header")?.jsonObject?.get("musicImmersiveHeaderRenderer")?.jsonObject
+                ?: obj["contents"]?.jsonObject?.get("singleColumnBrowseResultsRenderer")?.jsonObject?.get("header")?.jsonObject?.get("musicDetailHeaderRenderer")?.jsonObject
+                ?: return null
+            val name = headerRenderer["title"]?.jsonObject
+                ?.get("runs")?.jsonArray?.firstOrNull()?.jsonObject
+                ?.get("text")?.jsonPrimitive?.content ?: return null
+            val avatarUrl = typedRendererThumbnails(headerRenderer).lastOrNull()
+                ?: headerRenderer["thumbnail"]?.jsonObject?.get("thumbnails")?.jsonArray?.mapNotNull { it.jsonObject["url"]?.jsonPrimitive?.content }?.lastOrNull()
+                ?: headerRenderer["thumbnails"]?.jsonArray?.mapNotNull { it.jsonObject["url"]?.jsonPrimitive?.content }?.lastOrNull()
+            val contents = obj["contents"]?.jsonObject
+            val sections = mutableListOf<JsonArray>()
+            contents?.get("twoColumnBrowseResultsRenderer")?.jsonObject?.get("tabs")?.jsonArray?.forEach { tab ->
+                tab.jsonObject["tabRenderer"]?.jsonObject?.get("content")?.jsonObject
+                    ?.get("sectionListRenderer")?.jsonObject?.get("contents")?.jsonArray?.let { sections.add(it) }
+            }
+            contents?.get("singleColumnBrowseResultsRenderer")?.jsonObject?.get("tabs")?.jsonArray?.forEach { tab ->
+                tab.jsonObject["tabRenderer"]?.jsonObject?.get("content")?.jsonObject
+                    ?.get("sectionListRenderer")?.jsonObject?.get("contents")?.jsonArray?.let { sections.add(it) }
+            }
+            contents?.get("twoColumnBrowseResultsRenderer")?.jsonObject
+                ?.get("secondaryContents")?.jsonObject
+                ?.get("sectionListRenderer")?.jsonObject?.get("contents")?.jsonArray?.let { sections.add(it) }
+            contents?.get("sectionListRenderer")?.jsonObject?.get("contents")?.jsonArray?.let { sections.add(it) }
+            val topSongs = mutableListOf<MediaTrack>()
+            val albums = mutableListOf<MusicAlbumItem>()
+            var topSongsPlaylistId: String? = null
+            for (sectionArr in sections) {
+                for (section in sectionArr) {
+                    val shelf = section.jsonObject["musicShelfRenderer"]?.jsonObject
+                        ?: section.jsonObject["musicPlaylistShelfRenderer"]?.jsonObject
+                    if (shelf != null) {
+                        val playlistId = shelf["bottomEndpoint"]?.jsonObject
+                            ?.get("browseEndpoint")?.jsonObject
+                            ?.get("browseId")?.jsonPrimitive?.content
+                            ?: shelf["title"]?.jsonObject
+                                ?.get("runs")?.jsonArray?.firstOrNull()?.jsonObject
+                                ?.get("navigationEndpoint")?.jsonObject
+                                ?.get("browseEndpoint")?.jsonObject
+                                ?.get("browseId")?.jsonPrimitive?.content
+                        if (playlistId != null && topSongsPlaylistId == null) {
+                            topSongsPlaylistId = playlistId
+                        }
+                        val shelfItems = shelf["contents"]?.jsonArray
+                        shelfItems?.let { items ->
+                            val filtered = items.filter { !it.jsonObject.containsKey("continuationItemRenderer") }
+                            topSongs.addAll(parseMusicShelfItems(JsonArray(filtered), ""))
+                        }
+                    }
+                    section.jsonObject["musicCarouselShelfRenderer"]?.jsonObject?.get("contents")?.jsonArray?.let { items ->
+                        for (item in items) {
+                            parseCarouselAlbumItem(item.jsonObject, name)?.let { albums.add(it) }
+                        }
+                    }
+                }
+            }
+            if (topSongs.isEmpty() && albums.isEmpty()) return null
+            ArtistDetail(
+                name = name,
+                topSongs = topSongs,
+                albums = albums,
+                avatarUrl = avatarUrl,
+                topSongsPlaylistId = topSongsPlaylistId
+            )
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            Log.w(TAG, "parseArtistBrowse error: ${e.message}")
+            null
+        }
+    }
+
+    private fun parseCarouselAlbumItem(obj: JsonObject, fallbackArtist: String): MusicAlbumItem? {
+        return try {
+            val renderer = obj["musicTwoRowItemRenderer"]?.jsonObject ?: return null
+            val browseId = renderer["navigationEndpoint"]?.jsonObject
+                ?.get("browseEndpoint")?.jsonObject
+                ?.get("browseId")?.jsonPrimitive?.content
+                ?.takeIf { it.startsWith("MPRE") } ?: return null
+            val title = typedRendererTitle(renderer) ?: return null
+            val body = typedSubtitleBody(typedRendererSubtitle(renderer))
+            val year = body.lastOrNull()?.takeIf { typedYearRegex.matches(it) }
+            val countPart = body.firstOrNull { typedTrackCountRegex.containsMatchIn(it) }
+            val artist = body.filter { it != year && it != countPart }.joinToString(" • ").ifBlank { fallbackArtist }
+            MusicAlbumItem(
+                browseId = browseId,
+                title = title,
+                artist = artist,
+                year = year,
+                thumbnails = typedRendererThumbnails(renderer),
+                trackCount = countPart?.let { typedTrackCount(listOf(it)) }
+            )
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            null
         }
     }
 
@@ -2825,6 +3278,40 @@ class TSukiInnerTubeClient private constructor() {
         return tracks
     }
 
+    internal fun parseTypedSearchResults(root: JsonElement): List<MusicSearchResult> {
+        val results = mutableListOf<MusicSearchResult>()
+        try {
+            val tabs = root.jsonObject["contents"]?.jsonObject
+                ?.get("tabbedSearchResultsRenderer")?.jsonObject
+                ?.get("tabs")?.jsonArray
+                ?: root.jsonObject["contents"]?.jsonObject
+                    ?.get("twoColumnBrowseResultsRenderer")?.jsonObject
+                    ?.get("tabs")?.jsonArray
+                ?: JsonArray(emptyList())
+
+            val tabRenderer = tabs.firstOrNull()?.jsonObject?.get("tabRenderer")?.jsonObject
+            val sectionListRenderer = tabRenderer?.get("content")?.jsonObject?.get("sectionListRenderer")?.jsonObject
+            val contents = sectionListRenderer?.get("contents")?.jsonArray ?: JsonArray(emptyList())
+
+            for (section in contents) {
+                val musicShelf = section.jsonObject["musicShelfRenderer"]?.jsonObject
+                    ?: section.jsonObject["musicCardShelfRenderer"]?.jsonObject
+                val items = musicShelf?.get("contents")?.jsonArray ?: continue
+                for (item in items) {
+                    val renderer = item.jsonObject["musicResponsiveListItemRenderer"]?.jsonObject
+                        ?: item.jsonObject["musicTwoRowItemRenderer"]?.jsonObject
+                        ?: continue
+                    val typed = parseMusicRendererTyped(renderer, "Search")
+                    if (typed != null) results.add(typed)
+                }
+            }
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            Log.w(TAG, "parseTypedSearchResults error: ${e.message}")
+        }
+        return results
+    }
+
     private fun parseMusicPersonalizedFeed(root: JsonElement): MusicPersonalizedFeed {
         val sections = mutableListOf<TSukiFeedSection>()
         var chips: List<MusicChip> = emptyList()
@@ -3078,7 +3565,144 @@ class TSukiInnerTubeClient private constructor() {
         val videoIdRegex = Regex("^[A-Za-z0-9_-]{11}$")
         val candidate = watchEndpoint?.get("videoId")?.jsonPrimitive?.content
             ?: obj["onTap"]?.jsonObject?.get("watchEndpoint")?.jsonObject?.get("videoId")?.jsonPrimitive?.content
+            ?: obj["playlistItemData"]?.jsonObject?.get("videoId")?.jsonPrimitive?.content
+            ?: obj["flexColumns"]?.jsonArray?.firstOrNull()?.jsonObject
+                ?.get("musicResponsiveListItemFlexColumnRenderer")?.jsonObject
+                ?.get("text")?.jsonObject
+                ?.get("runs")?.jsonArray?.firstOrNull()?.jsonObject
+                ?.get("navigationEndpoint")?.jsonObject?.get("watchEndpoint")?.jsonObject?.get("videoId")?.jsonPrimitive?.content
         return candidate?.takeIf { videoIdRegex.matches(it) }
+    }
+
+    private val typedVideoIdRegex = Regex("^[A-Za-z0-9_-]{11}$")
+    private val typedYearRegex = Regex("^\\d{4}$")
+    private val typedTrackCountRegex = Regex("(\\d[\\d\\s.,]*)\\s*(canci|songs?|tracks?|temas?|t[ií]tulos?|videos?|chansons?|titres?|brani|tracce|musik)", RegexOption.IGNORE_CASE)
+    private val typedLabelRegex = Regex("^(álbum|album|single|sencillo|ep|lp|compilation|recopilatorio|playlist|lista de reproducci[oó]n|artista|artist)$", RegexOption.IGNORE_CASE)
+
+    internal fun parseMusicRendererTyped(renderer: JsonObject, sectionTitle: String): MusicSearchResult? {
+        return try {
+            val navEndpoint = renderer["navigationEndpoint"]?.jsonObject
+            val directVideoId = navEndpoint?.get("watchEndpoint")?.jsonObject
+                ?.get("videoId")?.jsonPrimitive?.content
+                ?.takeIf { typedVideoIdRegex.matches(it) }
+            if (directVideoId != null) {
+                val track = parseMusicRenderer(renderer, sectionTitle) ?: return null
+                return MusicSearchResult.Song(track)
+            }
+            val browseId = navEndpoint?.get("browseEndpoint")?.jsonObject
+                ?.get("browseId")?.jsonPrimitive?.content
+            if (browseId != null) {
+                when {
+                    browseId.startsWith("MPRE") -> return parseTypedAlbum(renderer, browseId)
+                    browseId.startsWith("UC") || browseId.startsWith("MPLA") -> return parseTypedArtist(renderer, browseId)
+                    browseId.startsWith("VL") || browseId.startsWith("PL") -> return parseTypedPlaylist(renderer, browseId.removePrefix("VL"))
+                }
+            }
+            val playlistId = navEndpoint?.get("watchPlaylistEndpoint")?.jsonObject
+                ?.get("playlistId")?.jsonPrimitive?.content
+            if (playlistId != null) return parseTypedPlaylist(renderer, playlistId.removePrefix("VL"))
+
+            val fallbackVideoId = findVideoId(renderer)
+            if (fallbackVideoId != null) {
+                val track = parseMusicRenderer(renderer, sectionTitle) ?: return null
+                return MusicSearchResult.Song(track)
+            }
+            null
+        } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            null
+        }
+    }
+
+    private fun typedRendererTitle(renderer: JsonObject): String? {
+        return renderer["title"]?.jsonObject
+            ?.get("runs")?.jsonArray?.firstOrNull()?.jsonObject
+            ?.get("text")?.jsonPrimitive?.content
+            ?: renderer["flexColumns"]?.jsonArray?.firstOrNull()?.jsonObject
+                ?.get("musicResponsiveListItemFlexColumnRenderer")?.jsonObject
+                ?.get("text")?.jsonObject
+                ?.get("runs")?.jsonArray?.firstOrNull()?.jsonObject
+                ?.get("text")?.jsonPrimitive?.content
+    }
+
+    private fun typedRendererSubtitle(renderer: JsonObject): String {
+        return renderer["subtitle"]?.jsonObject
+            ?.get("runs")?.jsonArray?.joinToString("") { it.jsonObject["text"]?.jsonPrimitive?.content ?: "" }
+            ?: renderer["flexColumns"]?.jsonArray?.getOrNull(1)?.jsonObject
+                ?.get("musicResponsiveListItemFlexColumnRenderer")?.jsonObject
+                ?.get("text")?.jsonObject
+                ?.get("runs")?.jsonArray?.firstOrNull()?.jsonObject
+                ?.get("text")?.jsonPrimitive?.content
+            ?: ""
+    }
+
+    private fun typedRendererThumbnails(renderer: JsonObject): List<String> {
+        val thumbs = renderer["thumbnailRenderer"]?.jsonObject
+            ?.get("musicThumbnailRenderer")?.jsonObject
+            ?.get("thumbnail")?.jsonObject
+            ?.get("thumbnails")?.jsonArray
+            ?: renderer["thumbnail"]?.jsonObject
+                ?.get("musicThumbnailRenderer")?.jsonObject
+                ?.get("thumbnail")?.jsonObject
+                ?.get("thumbnails")?.jsonArray
+            ?: return emptyList()
+        return thumbs.mapNotNull { it.jsonObject["url"]?.jsonPrimitive?.content }
+    }
+
+    private fun typedSubtitleBody(subtitle: String): List<String> {
+        val parts = subtitle.split("•").map { it.trim() }.filter { it.isNotEmpty() }
+        return if (parts.size > 1 && typedLabelRegex.matches(parts.first())) parts.drop(1) else parts
+    }
+
+    private fun typedTrackCount(body: List<String>): Int? {
+        val part = body.firstOrNull { typedTrackCountRegex.containsMatchIn(it) } ?: return null
+        return typedTrackCountRegex.find(part)?.groupValues?.getOrNull(1)?.filter { it.isDigit() }?.toIntOrNull()
+    }
+
+    private fun parseTypedAlbum(renderer: JsonObject, browseId: String): MusicSearchResult.Album? {
+        val title = typedRendererTitle(renderer) ?: return null
+        val body = typedSubtitleBody(typedRendererSubtitle(renderer))
+        val year = body.lastOrNull()?.takeIf { typedYearRegex.matches(it) }
+        val countPart = body.firstOrNull { typedTrackCountRegex.containsMatchIn(it) }
+        val artist = body.filter { it != year && it != countPart }.joinToString(" • ")
+        return MusicSearchResult.Album(
+            MusicAlbumItem(
+                browseId = browseId,
+                title = title,
+                artist = artist,
+                year = year,
+                thumbnails = typedRendererThumbnails(renderer),
+                trackCount = countPart?.let { typedTrackCount(listOf(it)) }
+            )
+        )
+    }
+
+    private fun parseTypedArtist(renderer: JsonObject, browseId: String): MusicSearchResult.Artist? {
+        val name = typedRendererTitle(renderer) ?: return null
+        return MusicSearchResult.Artist(
+            MusicArtistItem(
+                browseId = browseId,
+                name = name,
+                subscribers = typedRendererSubtitle(renderer).trim().ifEmpty { null },
+                thumbnails = typedRendererThumbnails(renderer)
+            )
+        )
+    }
+
+    private fun parseTypedPlaylist(renderer: JsonObject, playlistId: String): MusicSearchResult.Playlist? {
+        val title = typedRendererTitle(renderer) ?: return null
+        val body = typedSubtitleBody(typedRendererSubtitle(renderer))
+        val countPart = body.firstOrNull { typedTrackCountRegex.containsMatchIn(it) }
+        val author = body.filter { it != countPart }.joinToString(" • ").ifEmpty { null }
+        return MusicSearchResult.Playlist(
+            MusicPlaylistItem(
+                playlistId = playlistId,
+                title = title,
+                author = author,
+                trackCount = countPart?.let { typedTrackCount(listOf(it)) },
+                thumbnails = typedRendererThumbnails(renderer)
+            )
+        )
     }
 
     private fun parseYouTubeHomeFeed(root: JsonElement): TSukiHomeFeed {

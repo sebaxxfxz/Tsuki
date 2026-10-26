@@ -28,7 +28,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
-import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
@@ -47,14 +46,19 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import androidx.compose.ui.res.pluralStringResource
 import com.example.tsuki.R
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.example.tsuki.domain.model.MediaTrack
+import com.example.tsuki.network.MusicAlbumItem
+import com.example.tsuki.network.MusicArtistItem
+import com.example.tsuki.network.MusicPlaylistItem
 import com.example.tsuki.network.TSukiPlaylist
 import com.example.tsuki.ui.theme.CardHeroShape
 import com.example.tsuki.ui.theme.LocalThumbCornerDp
@@ -91,15 +95,17 @@ fun optimizeListThumbnail(url: String?): String? {
 }
 
 @Composable
-fun rememberHiResImageModel(url: String?): Any? {
+fun rememberHiResImageModel(url: String?, compact: Boolean = false): Any? {
     val context = LocalContext.current
-    return remember(url) {
+    return remember(url, compact) {
         if (url.isNullOrBlank()) null
         else ImageRequest.Builder(context)
             .data(upgradeImageUrl(url))
             .memoryCacheKey(upgradeImageUrl(url) ?: url)
             .diskCacheKey(upgradeImageUrl(url) ?: url)
-            .crossfade(true)
+            .apply {
+                if (compact) size(600).crossfade(false) else crossfade(true)
+            }
             .build()
     }
 }
@@ -142,7 +148,7 @@ fun MusicHomeSkeleton(modifier: Modifier = Modifier) {
     val pulse by transition.animateFloat(
         initialValue = 0.38f,
         targetValue = 0.9f,
-        animationSpec = infiniteRepeatable(tween(750), RepeatMode.Reverse),
+        animationSpec = infiniteRepeatable(tween(M3MotionTokens.DurationExtraLong2), RepeatMode.Reverse),
         label = "pulse"
     )
     Column(modifier = modifier.padding(bottom = 24.dp)) {
@@ -220,6 +226,7 @@ fun MusicSectionHeader(
     title: String,
     modifier: Modifier = Modifier,
     count: Int? = null,
+    sublabel: String? = null,
     onClick: (() -> Unit)? = null
 ) {
     Row(
@@ -260,11 +267,20 @@ fun MusicSectionHeader(
                     }
                 }
             }
+            if (sublabel != null) {
+                Text(
+                    text = sublabel,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
         if (onClick != null) {
             FilledTonalIconButton(
                 onClick = onClick,
-                modifier = Modifier.size(36.dp),
+                modifier = Modifier.size(48.dp),
                 colors = IconButtonDefaults.filledTonalIconButtonColors(
                     containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     contentColor = MaterialTheme.colorScheme.onSurfaceVariant
@@ -272,7 +288,7 @@ fun MusicSectionHeader(
             ) {
                 Icon(
                     Icons.AutoMirrored.Rounded.KeyboardArrowRight,
-                    contentDescription = null,
+                    contentDescription = stringResource(R.string.common_see_all),
                     modifier = Modifier.size(20.dp)
                 )
             }
@@ -358,15 +374,14 @@ fun MusicHeroCard(
     Surface(
         shape = CardHeroShape,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        tonalElevation = 2.dp,
-        shadowElevation = 4.dp,
+        shadowElevation = 1.dp,
         modifier = modifier
             .size(width = 260.dp, height = 340.dp)
             .m3PressBounce(targetScale = 0.97f, onClick = onClick)
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
             AsyncImage(
-                model = rememberHiResImageModel(track.artworkUrl),
+                model = rememberHiResImageModel(track.artworkUrl, compact = true),
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize()
@@ -384,26 +399,10 @@ fun MusicHeroCard(
                         )
                     )
             )
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(14.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(Color.Black.copy(alpha = 0.42f))
-                    .padding(horizontal = 10.dp, vertical = 6.dp)
-            ) {
-                Text(
-                    stringResource(R.string.common_play).uppercase(),
-                    color = Color.White,
-                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Black, letterSpacing = 0.6.sp),
-                    maxLines = 1
-                )
-            }
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
                     .padding(16.dp)
-                    .padding(end = 52.dp)
             ) {
                 Text(
                     track.title,
@@ -430,24 +429,6 @@ fun MusicHeroCard(
                     )
                 }
             }
-            Surface(
-                shape = CircleShape,
-                color = Color.White,
-                shadowElevation = 6.dp,
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(14.dp)
-                    .size(44.dp)
-            ) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Icon(
-                        Icons.Rounded.PlayArrow,
-                        contentDescription = null,
-                        tint = Color.Black,
-                        modifier = Modifier.size(26.dp)
-                    )
-                }
-            }
         }
     }
 }
@@ -467,7 +448,6 @@ fun PlaylistCard(
         Surface(
             shape = RoundedCornerShape(thumbCorner.dp),
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            tonalElevation = 1.dp,
             shadowElevation = 1.dp,
             modifier = Modifier.fillMaxWidth().aspectRatio(1f)
         ) {
@@ -492,5 +472,210 @@ fun PlaylistCard(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
+    }
+}
+
+@Composable
+fun TypedSearchSectionTitle(
+    title: String,
+    modifier: Modifier = Modifier
+) {
+    Text(
+        title,
+        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier.padding(vertical = 8.dp)
+    )
+}
+
+@Composable
+fun AlbumSearchCard(
+    item: MusicAlbumItem,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .width(148.dp)
+            .m3PressBounce(targetScale = 0.96f, onClick = onClick)
+    ) {
+        val thumbCorner = LocalThumbCornerDp.current
+        Surface(
+            shape = RoundedCornerShape(thumbCorner.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shadowElevation = 1.dp,
+            modifier = Modifier.fillMaxWidth().aspectRatio(1f)
+        ) {
+            AsyncImage(
+                model = rememberListImageModel(item.thumbnails.firstOrNull()),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+        Spacer(Modifier.size(10.dp))
+        Text(
+            item.title,
+            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        val subtitle = listOfNotNull(
+            item.artist.takeIf { it.isNotBlank() },
+            item.year
+        ).joinToString(" • ")
+        if (subtitle.isNotBlank()) {
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+fun ArtistSearchCard(
+    item: MusicArtistItem,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = modifier
+            .width(152.dp)
+            .m3PressBounce(targetScale = 0.96f, onClick = onClick)
+    ) {
+        Surface(
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shadowElevation = 1.dp,
+            modifier = Modifier.size(140.dp)
+        ) {
+            AsyncImage(
+                model = rememberListImageModel(item.thumbnails.firstOrNull()),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+        Spacer(Modifier.size(10.dp))
+        Text(
+            item.name,
+            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center
+        )
+        if (!item.subscribers.isNullOrBlank()) {
+            Text(
+                item.subscribers ?: "",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center
+            )
+        }
+    }
+}
+
+@Composable
+fun PlaylistSearchCard(
+    item: MusicPlaylistItem,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .width(148.dp)
+            .m3PressBounce(targetScale = 0.96f, onClick = onClick)
+    ) {
+        val thumbCorner = LocalThumbCornerDp.current
+        Surface(
+            shape = RoundedCornerShape(thumbCorner.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            shadowElevation = 1.dp,
+            modifier = Modifier.fillMaxWidth().aspectRatio(1f)
+        ) {
+            AsyncImage(
+                model = rememberListImageModel(item.thumbnails.firstOrNull()),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+        Spacer(Modifier.size(10.dp))
+        Text(
+            item.title,
+            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        val count = item.trackCount
+        val subtitle = listOfNotNull(
+            item.author?.takeIf { it.isNotBlank() },
+            count?.let { pluralStringResource(R.plurals.songs_count, it, it) }
+        ).joinToString(" • ")
+        if (subtitle.isNotBlank()) {
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+fun AlbumSearchRow(
+    albums: List<MusicAlbumItem>,
+    onAlbumClick: (MusicAlbumItem) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = modifier
+    ) {
+        items(albums, key = { it.browseId }) { album ->
+            AlbumSearchCard(item = album, onClick = { onAlbumClick(album) })
+        }
+    }
+}
+
+@Composable
+fun ArtistSearchRow(
+    artists: List<MusicArtistItem>,
+    onArtistClick: (MusicArtistItem) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = modifier
+    ) {
+        items(artists, key = { it.browseId }) { artist ->
+            ArtistSearchCard(item = artist, onClick = { onArtistClick(artist) })
+        }
+    }
+}
+
+@Composable
+fun PlaylistSearchRow(
+    playlists: List<MusicPlaylistItem>,
+    onPlaylistClick: (MusicPlaylistItem) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    LazyRow(
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = modifier
+    ) {
+        items(playlists, key = { it.playlistId }) { playlist ->
+            PlaylistSearchCard(item = playlist, onClick = { onPlaylistClick(playlist) })
+        }
     }
 }

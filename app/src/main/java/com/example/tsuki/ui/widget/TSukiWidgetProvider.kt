@@ -20,27 +20,23 @@ class TSukiWidgetProvider : AppWidgetProvider() {
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
         val appContext = context.applicationContext
-        when (intent.action) {
-            ACTION_PLAY_PAUSE -> {
-                CoroutineScope(Dispatchers.Main).launch {
-                    runCatching {
-                        PlayerController.getInstance(appContext).togglePlayPause()
+        val action = intent.action
+        if (action != ACTION_PLAY_PAUSE && action != ACTION_NEXT && action != ACTION_PREV) {
+            return
+        }
+        val pending = goAsync()
+        CoroutineScope(Dispatchers.Main).launch {
+            try {
+                runCatching {
+                    val controller = PlayerController.getInstance(appContext)
+                    when (action) {
+                        ACTION_PLAY_PAUSE -> controller.togglePlayPause()
+                        ACTION_NEXT -> controller.playNext()
+                        ACTION_PREV -> controller.playPrevious()
                     }
                 }
-            }
-            ACTION_NEXT -> {
-                CoroutineScope(Dispatchers.Main).launch {
-                    runCatching {
-                        PlayerController.getInstance(appContext).playNext()
-                    }
-                }
-            }
-            ACTION_PREV -> {
-                CoroutineScope(Dispatchers.Main).launch {
-                    runCatching {
-                        PlayerController.getInstance(appContext).playPrevious()
-                    }
-                }
+            } finally {
+                pending.finish()
             }
         }
     }

@@ -106,7 +106,7 @@ fun m3SharedAxisTransition(isForward: Boolean): ContentTransform {
         ),
         initialOffsetX = { fullWidth -> direction * (fullWidth / 5) }
     ) + fadeIn(
-        animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing)
+        animationSpec = tween(durationMillis = M3MotionTokens.DurationMedium2, easing = FastOutSlowInEasing)
     )).togetherWith(
         slideOutHorizontally(
             animationSpec = spring(
@@ -115,7 +115,7 @@ fun m3SharedAxisTransition(isForward: Boolean): ContentTransform {
             ),
             targetOffsetX = { fullWidth -> -direction * (fullWidth / 5) }
         ) + fadeOut(
-            animationSpec = tween(durationMillis = 200, easing = FastOutLinearInEasing)
+            animationSpec = tween(durationMillis = M3MotionTokens.DurationShort4, easing = FastOutLinearInEasing)
         )
     )
 }
@@ -483,9 +483,6 @@ object M3MotionTokens {
 
     val ExpressiveHeroSpring: SpringSpec<Float> =
         spring(dampingRatio = 0.68f, stiffness = 340f)
-
-    val AuraBreathingSpring: SpringSpec<Float> =
-        spring(dampingRatio = 0.85f, stiffness = 180f)
 
     val ExpressiveCornerSpring: SpringSpec<Dp> =
         spring(dampingRatio = 0.76f, stiffness = 400f)
@@ -922,70 +919,6 @@ fun M3EqualizerLiveWave(
 }
 
 @Composable
-fun M3DynamicGlowAura(
-    isPlaying: Boolean,
-    glowColor: Color,
-    modifier: Modifier = Modifier,
-    radius: Dp = 260.dp
-) {
-    val infiniteTransition = rememberInfiniteTransition(label = "M3AuraGlow")
-    val breathingScale by infiniteTransition.animateFloat(
-        initialValue = 1.05f,
-        targetValue = 1.25f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 2400, easing = M3MotionTokens.EmphasizedEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "M3AuraScale"
-    )
-    val breathingAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.45f,
-        targetValue = 0.85f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 2400, easing = M3MotionTokens.EmphasizedEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "M3AuraAlpha"
-    )
-
-    val animatedScale by animateFloatAsState(
-        targetValue = if (isPlaying) breathingScale else 1.0f,
-        animationSpec = M3MotionTokens.AuraBreathingSpring,
-        label = "M3AuraStateScale"
-    )
-    val animatedAlpha by animateFloatAsState(
-        targetValue = if (isPlaying) breathingAlpha else 0.25f,
-        animationSpec = M3MotionTokens.effectsDefault(),
-        label = "M3AuraStateAlpha"
-    )
-
-    androidx.compose.foundation.Canvas(
-        modifier = modifier
-            .size(radius * 2)
-            .graphicsLayer {
-                scaleX = animatedScale
-                scaleY = animatedScale
-                alpha = animatedAlpha
-            }
-    ) {
-        drawCircle(
-            brush = Brush.radialGradient(
-                colors = listOf(
-                    glowColor.copy(alpha = 0.95f),
-                    glowColor.copy(alpha = 0.65f),
-                    glowColor.copy(alpha = 0.25f),
-                    Color.Transparent
-                ),
-                center = center,
-                radius = size.minDimension / 2f
-            ),
-            radius = size.minDimension / 2f,
-            center = center
-        )
-    }
-}
-
-@Composable
 fun Modifier.m3Shimmer(
     enabled: Boolean = true,
     durationMillis: Int = 1200
@@ -1026,7 +959,7 @@ fun Modifier.m3StaggeredEntrance(
     val alpha by animateFloatAsState(
         targetValue = if (visible) 1f else 0f,
         animationSpec = tween(
-            durationMillis = 320,
+            durationMillis = M3MotionTokens.DurationMedium2,
             delayMillis = (index * baseDelayMs).coerceAtMost(350),
             easing = M3MotionTokens.EmphasizedDecelerateEasing
         ),
@@ -1138,13 +1071,13 @@ fun M3AnimatedCounter(
 
 fun m3ContainerTransform(): ContentTransform {
     return (fadeIn(
-        animationSpec = tween(durationMillis = 280, easing = M3MotionTokens.EmphasizedDecelerateEasing)
+        animationSpec = tween(durationMillis = M3MotionTokens.DurationMedium2, easing = M3MotionTokens.EmphasizedDecelerateEasing)
     ) + scaleIn(
         initialScale = 0.90f,
         animationSpec = M3MotionTokens.spatialDefault()
     )).togetherWith(
         fadeOut(
-            animationSpec = tween(durationMillis = 180, easing = M3MotionTokens.EmphasizedAccelerateEasing)
+            animationSpec = tween(durationMillis = M3MotionTokens.DurationShort4, easing = M3MotionTokens.EmphasizedAccelerateEasing)
         ) + scaleOut(
             targetScale = 0.94f,
             animationSpec = M3MotionTokens.spatialFast()

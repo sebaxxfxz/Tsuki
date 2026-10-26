@@ -95,7 +95,7 @@ class TSukiBackupRepository(private val context: Context) {
                     withAvatars.addAll(res)
                 }
             }
-            withAvatars.forEach { subRepo.subscribe(it) }
+            subRepo.subscribeAll(withAvatars)
             try { TSukiNeuroEngine.bootstrapFromSubscriptions(context, withAvatars.map { it.channelName }) } catch (_: Exception) {}
             Result.success(withAvatars.size)
         } catch (e: Exception) {
@@ -137,7 +137,7 @@ class TSukiBackupRepository(private val context: Context) {
                     withAvatars.addAll(res)
                 }
             }
-            withAvatars.forEach { subRepo.subscribe(it) }
+            subRepo.subscribeAll(withAvatars)
             try { TSukiNeuroEngine.bootstrapFromSubscriptions(context, withAvatars.map { it.channelName }) } catch (_: Exception) {}
             Result.success(withAvatars.size)
         } catch (e: Exception) {

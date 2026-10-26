@@ -55,6 +55,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -70,7 +71,6 @@ import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import kotlinx.coroutines.launch
 import com.example.tsuki.ui.components.M3MotionTokens
-import com.example.tsuki.ui.components.m3StaggeredEntrance
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import java.text.SimpleDateFormat
@@ -203,7 +203,7 @@ fun StatsScreen(
         ) {
             item(key = "period_chips") {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).m3StaggeredEntrance(0),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     periods.forEachIndexed { index, (label, _) ->
@@ -227,7 +227,7 @@ fun StatsScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(horizontal = 16.dp)
-                                .m3StaggeredEntrance(0)
+                                
                                 .clickable { showMonthlyWrapped = true }
                         ) {
                             Row(
@@ -305,7 +305,7 @@ fun StatsScreen(
             }
 
             item(key = "heatmap") {
-                Column(modifier = Modifier.fillMaxWidth().m3StaggeredEntrance(1), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(
                         stringResource(R.string.stats_year),
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
@@ -317,7 +317,7 @@ fun StatsScreen(
 
             if (weekly.any { it.plays > 0 }) {
                 item(key = "weekly_wrapped") {
-                    Column(modifier = Modifier.fillMaxWidth().m3StaggeredEntrance(2), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text(
                             stringResource(R.string.stats_week_wrap),
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
@@ -329,7 +329,7 @@ fun StatsScreen(
             }
 
             item(key = "patterns_hour") {
-                Column(modifier = Modifier.fillMaxWidth().m3StaggeredEntrance(3)) {
+                Column(modifier = Modifier.fillMaxWidth()) {
                     StatsBarChart(
                         title = stringResource(R.string.stats_hours),
                         buckets = stats.hourBuckets,
@@ -351,11 +351,11 @@ fun StatsScreen(
                     Text(
                         stringResource(R.string.stats_top_songs),
                         style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                        modifier = Modifier.padding(horizontal = 16.dp).m3StaggeredEntrance(4)
+                        modifier = Modifier.padding(horizontal = 16.dp)
                     )
                 }
                 itemsIndexed(stats.topSongs, key = { index, entry -> "song_${entry.title}_${entry.subtitle}_$index" }) { index, entry ->
-                    TopEntryRow(entry = entry, rank = index + 1, modifier = Modifier.m3StaggeredEntrance(5 + index))
+                    TopEntryRow(entry = entry, rank = index + 1, modifier = Modifier)
                 }
             }
 
@@ -368,7 +368,7 @@ fun StatsScreen(
                     )
                 }
                 itemsIndexed(stats.topArtists, key = { index, entry -> "artist_${entry.title}_$index" }) { index, entry ->
-                    TopEntryRow(entry = entry, rank = index + 1, modifier = Modifier.m3StaggeredEntrance(index))
+                    TopEntryRow(entry = entry, rank = index + 1, modifier = Modifier)
                 }
             }
         }
@@ -613,6 +613,7 @@ private fun ListenHeatmap(daily: List<WatchHistoryManager.DailyListen>) {
                                             interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
                                             indication = null
                                         ) { selectedDay = dayStart }
+                                        .clearAndSetSemantics { }
                                 )
                             }
                         }

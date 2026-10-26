@@ -94,7 +94,7 @@ fun PulsingLiveDot(modifier: Modifier = Modifier) {
         initialValue = 0.4f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 700, easing = FastOutSlowInEasing),
+            animation = tween(durationMillis = M3MotionTokens.DurationExtraLong1, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "dot_visibility"
@@ -559,8 +559,8 @@ fun VideoCardEnhanced(
 
             androidx.compose.animation.AnimatedVisibility(
                 visible = isScrubbing,
-                enter = fadeIn(tween(150)),
-                exit = fadeOut(tween(200)),
+                enter = fadeIn(tween(M3MotionTokens.DurationShort3)),
+                exit = fadeOut(tween(M3MotionTokens.DurationShort4)),
                 modifier = Modifier.align(Alignment.Center)
             ) {
                 val currentSeekSec = (scrubPercent * video.durationSeconds).toInt()
@@ -690,7 +690,7 @@ fun VideoCardEnhanced(
             Box {
                 IconButton(
                     onClick = { showMenu = true },
-                    modifier = Modifier.size(36.dp)
+                    modifier = Modifier.size(48.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Rounded.MoreVert,
@@ -889,7 +889,7 @@ fun VideoCardCompact(
 
         IconButton(
             onClick = { showQuickActions = true },
-            modifier = Modifier.size(32.dp)
+            modifier = Modifier.size(48.dp)
         ) {
             Icon(
                 imageVector = Icons.Default.MoreVert,

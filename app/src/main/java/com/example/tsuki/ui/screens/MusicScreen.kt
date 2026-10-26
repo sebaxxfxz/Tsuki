@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -45,6 +46,8 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
@@ -77,12 +80,18 @@ import coil3.compose.AsyncImage
 import com.example.tsuki.R
 import com.example.tsuki.auth.YouTubeAuthManager
 import com.example.tsuki.network.MusicSearchFilter
+import com.example.tsuki.network.MusicTypedSearchResult
 import com.example.tsuki.network.TSukiContentLocale
 import com.example.tsuki.network.TSukiFeedSection
+import com.example.tsuki.network.MusicPlaylistItem
 import com.example.tsuki.network.TSukiInnerTubeClient
 import com.example.tsuki.network.TSukiPlaylist
 import com.example.tsuki.network.YouTubeExtractor
 import com.example.tsuki.ui.components.AccountPlaylistsHeader
+import com.example.tsuki.ui.components.AlbumSearchRow
+import com.example.tsuki.ui.components.ArtistSearchRow
+import com.example.tsuki.ui.components.PlaylistSearchRow
+import com.example.tsuki.ui.components.TypedSearchSectionTitle
 import com.example.tsuki.ui.components.MusicHeroCard
 import com.example.tsuki.ui.components.MusicHomeSkeleton
 import com.example.tsuki.ui.components.MusicSectionHeader
@@ -104,10 +113,23 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import com.example.tsuki.ui.components.AddToPlaylistSheet
 import com.example.tsuki.ui.components.TagSongSheet
 import com.example.tsuki.data.local.WatchHistoryManager
+import com.example.tsuki.data.local.SearchHistoryStore
+import com.example.tsuki.ui.components.M3MotionTokens
+import com.example.tsuki.ui.components.ShimmerChipRow
+import com.example.tsuki.ui.components.ShimmerTrackListRows
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
+import androidx.compose.material.icons.rounded.History
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.style.TextOverflow
 
 @Serializable
 private data class TSukiPersonalizedCache(
     val hl: String,
+    val version: Int = 3,
     val savedAt: Long = 0L,
     val sections: List<TSukiFeedSection> = emptyList(),
     val playlists: List<TSukiPlaylist> = emptyList(),
@@ -116,11 +138,12 @@ private data class TSukiPersonalizedCache(
     val continuation: String? = null,
     val keepListening: List<MediaTrack> = emptyList(),
     val forgotten: List<MediaTrack> = emptyList(),
-    val similarSections: List<TSukiFeedSection> = emptyList()
+    val similarSections: List<TSukiFeedSection> = emptyList(),
+    val exploreSections: List<TSukiFeedSection> = emptyList()
 )
 
 internal object MusicHomeMemory {
-    private const val MAX_AGE_MS = 30 * 60_000L
+    private const val MAX_AGE_MS = 5 * 60_000L
 
     @Volatile var savedAt = 0L
     @Volatile var sections: List<TSukiFeedSection> = emptyList()
@@ -131,6 +154,7 @@ internal object MusicHomeMemory {
     @Volatile var keepListening: List<MediaTrack> = emptyList()
     @Volatile var forgotten: List<MediaTrack> = emptyList()
     @Volatile var similarSections: List<TSukiFeedSection> = emptyList()
+    @Volatile var exploreSections: List<TSukiFeedSection> = emptyList()
 
     fun isFresh(): Boolean =
         System.currentTimeMillis() - savedAt < MAX_AGE_MS && sections.isNotEmpty()
@@ -147,9 +171,10 @@ internal object MusicHomeMemory {
         cont: String?,
         keep: List<MediaTrack>,
         forg: List<MediaTrack>,
-        sim: List<TSukiFeedSection>
+        sim: List<TSukiFeedSection>,
+        exp: List<TSukiFeedSection> = emptyList()
     ) {
-        sections = s; playlists = p; history = h; chips = c; continuation = cont; keepListening = keep; forgotten = forg; similarSections = sim; savedAt = System.currentTimeMillis()
+        sections = s; playlists = p; history = h; chips = c; continuation = cont; keepListening = keep; forgotten = forg; similarSections = sim; exploreSections = exp; savedAt = System.currentTimeMillis()
     }
 
     fun invalidate() {
@@ -162,6 +187,7 @@ internal object MusicHomeMemory {
         keepListening = emptyList()
         forgotten = emptyList()
         similarSections = emptyList()
+        exploreSections = emptyList()
     }
 }
 
@@ -169,6 +195,55 @@ object MusicRefreshBus {
     private val _refreshFlow = MutableStateFlow(0)
     val refreshFlow: StateFlow<Int> = _refreshFlow
     fun trigger() { _refreshFlow.value++ }
+}
+
+private fun dedupeFeedSections(sections: List<TSukiFeedSection>): List<TSukiFeedSection> {
+    val seenIds = mutableSetOf<String>()
+    return sections.mapNotNull { section ->
+        val perChannel = mutableMapOf<String, Int>()
+        val tracks = section.tracks.filter { track ->
+            if (!seenIds.add(track.id)) return@filter false
+            val key = track.channelId ?: track.artist.ifBlank { track.id }
+            val used = perChannel[key] ?: 0
+            if (used >= 4) false else {
+                perChannel[key] = used + 1
+                true
+            }
+        }
+        if (tracks.isNotEmpty()) section.copy(tracks = tracks) else null
+    }
+}
+
+@Composable
+private fun ExploreFeedSectionBlock(
+    section: TSukiFeedSection,
+    keyPrefix: String,
+    playerController: com.example.tsuki.playback.PlayerController?,
+    onExpandPlayer: () -> Unit,
+    onTrackClick: (MediaTrack) -> Unit,
+    isOnline: Boolean,
+    context: android.content.Context
+) {
+    Column(modifier = Modifier.padding(bottom = 20.dp)) {
+        MusicSectionHeader(label = stringResource(R.string.music_explore_label), title = section.title, count = section.tracks.size, onClick = {
+            if (playerController != null) { playerController.playQueue(section.tracks, 0, false); onExpandPlayer() }
+        })
+        LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            itemsIndexed(section.tracks, key = { tIdx, track -> "${keyPrefix}_${track.id}_$tIdx" }) { _, track ->
+                TrackCard(
+                    track = track,
+                    onClick = {
+                        if (playerController != null) { playerController.playWithRadio(track, false); onExpandPlayer() } else onTrackClick(track)
+                    },
+                    onPlayRadio = {
+                        if (!isOnline) {
+                            android.widget.Toast.makeText(context, context.getString(R.string.common_no_connection), android.widget.Toast.LENGTH_SHORT).show()
+                        } else if (playerController != null) { playerController.playWithRadio(track, false); onExpandPlayer() }
+                    }
+                )
+            }
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -195,29 +270,36 @@ fun MusicScreen(
     var showAccountDialog by remember { mutableStateOf(false) }
     var isSearchActive by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
-    var searchResults by remember { mutableStateOf<List<MediaTrack>>(emptyList()) }
+    var typedSearch by remember { mutableStateOf<MusicTypedSearchResult?>(null) }
+    var searchFilterChip by remember { mutableStateOf<MusicSearchFilter?>(null) }
+    var selectedArtistId by remember { mutableStateOf<String?>(null) }
+    val detailSnack = remember { SnackbarHostState() }
     var isSearching by remember { mutableStateOf(false) }
     var musicSearchJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    val searchHistoryStore = remember { SearchHistoryStore(context) }
+    val recentSearches by searchHistoryStore.history.collectAsStateWithLifecycle(initialValue = emptyList<String>())
 
     var personalizedSections by remember { mutableStateOf<List<TSukiFeedSection>>(emptyList()) }
     var isPersonalizedLoading by remember { mutableStateOf(false) }
     var userPlaylists by remember { mutableStateOf<List<TSukiPlaylist>>(emptyList()) }
     var historyTracks by remember { mutableStateOf<List<MediaTrack>>(emptyList()) }
     var musicChips by remember { mutableStateOf<List<com.example.tsuki.network.MusicChip>>(emptyList()) }
-    var selectedChip by remember { mutableStateOf<com.example.tsuki.network.MusicChip?>(null) }
     var personalizedContinuation by remember { mutableStateOf<String?>(null) }
     var keepListeningTracks by remember { mutableStateOf<List<MediaTrack>>(emptyList()) }
     var forgottenTracks by remember { mutableStateOf<List<MediaTrack>>(emptyList()) }
     var similarSections by remember { mutableStateOf<List<TSukiFeedSection>>(emptyList()) }
+    var exploreSections by remember { mutableStateOf<List<TSukiFeedSection>>(emptyList()) }
     var likedTracks by remember { mutableStateOf<List<MediaTrack>>(emptyList()) }
     var isLoadingMore by remember { mutableStateOf(false) }
     var isSessionExpired by remember { mutableStateOf(false) }
     val historyManager = remember { WatchHistoryManager.getInstance(context) }
-    val localRecentTracks by historyManager.recentTracksFlow(limit = 20, audioOnly = true).collectAsStateWithLifecycle(initialValue = emptyList())
+    val localRecentTracksFlow = remember(historyManager) { historyManager.recentTracksFlow(limit = 20, audioOnly = true) }
+    val localRecentTracks by localRecentTracksFlow.collectAsStateWithLifecycle(initialValue = emptyList())
     val effectiveHistoryTracks = remember(localRecentTracks, historyTracks) {
         if (localRecentTracks.isNotEmpty()) localRecentTracks else historyTracks.filter { !it.isVideoItem }
     }
     var shuffleNonce by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    var lastSimilarSeedsKey by remember { mutableStateOf<String?>(null) }
     val quickPicks: List<MediaTrack> by remember {
         androidx.compose.runtime.derivedStateOf<List<MediaTrack>> {
             val n = shuffleNonce
@@ -237,6 +319,19 @@ fun MusicScreen(
     val syncLikedEnabled by playerPrefs.syncLikedEnabled.collectAsStateWithLifecycle(initialValue = true)
     val syncPlaylistsEnabled by playerPrefs.syncPlaylistsEnabled.collectAsStateWithLifecycle(initialValue = true)
     val syncHistoryEnabled by playerPrefs.syncHistoryEnabled.collectAsStateWithLifecycle(initialValue = true)
+    val recoSource by playerPrefs.recoSource.collectAsStateWithLifecycle(initialValue = com.example.tsuki.data.local.PlayerPreferences.RECO_SOURCE_MIXED)
+    val tasteRepository = remember { com.example.tsuki.data.recommendation.MusicTasteRepository.getInstance(context) }
+    val tasteVersion by tasteRepository.versionFlow.collectAsStateWithLifecycle(initialValue = 0L)
+    var adaptiveSections by remember { mutableStateOf<List<TSukiFeedSection>>(emptyList()) }
+    LaunchedEffect(isLoggedIn, cookie, recoSource, tasteVersion, lastSimilarSeedsKey) {
+        val ck = cookie
+        if (isLoggedIn && !ck.isNullOrBlank() && recoSource != com.example.tsuki.data.local.PlayerPreferences.RECO_SOURCE_YOUTUBE) {
+            val seedIds = lastSimilarSeedsKey?.split(",")?.filter { it.isNotBlank() }?.toSet().orEmpty()
+            adaptiveSections = buildMusicAdaptiveSections(context, visitorData, ck, seedIds)
+        } else {
+            adaptiveSections = emptyList()
+        }
+    }
     val speedDialPins by homePrefs.speedDialPins.collectAsStateWithLifecycle(initialValue = emptySet())
     val localPlaylistManager = remember { com.example.tsuki.data.local.LocalPlaylistManager.getInstance(context) }
     val favManager = remember { com.example.tsuki.data.local.FavoritesManager.getInstance(context) }
@@ -260,7 +355,8 @@ fun MusicScreen(
         cal.set(java.util.Calendar.MILLISECOND, 0)
         cal.timeInMillis
     }
-    val wrappedPending by homePrefs.pendingWrappedWeek(currentWrappedWeekStart).collectAsStateWithLifecycle(initialValue = false)
+    val wrappedPendingFlow = remember(homePrefs, currentWrappedWeekStart) { homePrefs.pendingWrappedWeek(currentWrappedWeekStart) }
+    val wrappedPending by wrappedPendingFlow.collectAsStateWithLifecycle(initialValue = false)
     var showWrappedOverlay by remember { mutableStateOf(false) }
     var wrappedWeek by remember { mutableStateOf<com.example.tsuki.data.local.WatchHistoryManager.WeeklyWrapped?>(null) }
     if (showWrappedOverlay) {
@@ -295,6 +391,7 @@ fun MusicScreen(
                 keepListeningTracks = MusicHomeMemory.keepListening
                 forgottenTracks = MusicHomeMemory.forgotten
                 similarSections = MusicHomeMemory.similarSections
+                exploreSections = MusicHomeMemory.exploreSections
                 isPersonalizedLoading = false
                 return@LaunchedEffect
             }
@@ -306,8 +403,8 @@ fun MusicScreen(
                     else null
                 } catch (_: Exception) { null }
             }
-            if (cached != null && cached.hl == TSukiContentLocale.hl() &&
-                System.currentTimeMillis() - cached.savedAt < 6L * 3600_000L
+            if (cached != null && cached.version >= 3 && cached.hl == TSukiContentLocale.hl() &&
+                System.currentTimeMillis() - cached.savedAt < 45 * 60_000L
             ) {
                 personalizedSections = cached.sections
                 userPlaylists = cached.playlists
@@ -317,15 +414,17 @@ fun MusicScreen(
                 keepListeningTracks = cached.keepListening
                 forgottenTracks = cached.forgotten
                 similarSections = cached.similarSections
+                exploreSections = cached.exploreSections
                 isPersonalizedLoading = false
             } else {
                 isPersonalizedLoading = true
             }
+            val loadedSignature = (personalizedSections.flatMap { it.tracks } + similarSections.flatMap { it.tracks } + exploreSections.flatMap { it.tracks }).joinToString(",") { it.id }
 
             val ck = cookie ?: ""
             try {
                 coroutineScope {
-                    val feedDeferred = async(Dispatchers.IO) { innerTubeClient.fetchMusicPersonalizedFeed(ck, visitorData, dataSyncId, selectedChip?.params) }
+                    val feedDeferred = async(Dispatchers.IO) { innerTubeClient.fetchMusicPersonalizedFeed(ck, visitorData, dataSyncId, null) }
                     val playlistsDeferred = async(Dispatchers.IO) {
                         val cloud = if (syncPlaylistsEnabled && ck.isNotBlank()) {
                             try { innerTubeClient.fetchUserPlaylists(ck, visitorData, dataSyncId) } catch (_: Exception) { emptyList() }
@@ -342,6 +441,7 @@ fun MusicScreen(
                         } catch (_: Exception) { emptyList() }
                         local + cloud
                     }
+                    delay(350)
                     val likedDeferred = async(Dispatchers.IO) { 
                         if (syncLikedEnabled && ck.isNotBlank()) {
                             val f = try { innerTubeClient.fetchLikedMusicTracks(ck, visitorData, dataSyncId) } catch (_: Exception) { emptyList() }
@@ -357,20 +457,42 @@ fun MusicScreen(
                     }
                     val keepDeferred = async(Dispatchers.IO) { historyManager.getMostPlayedTracks(15, 14) }
                     val forgDeferred = async(Dispatchers.IO) { historyManager.getForgottenFavorites(20) }
+                    val exploreDeferred = async(Dispatchers.IO) {
+                        val recoVal = recoSource
+                        if (recoVal != com.example.tsuki.data.local.PlayerPreferences.RECO_SOURCE_YOUTUBE && ck.isNotBlank()) {
+                            try {
+                                val seen = mutableSetOf<String>()
+                                val out = mutableListOf<TSukiFeedSection>()
+                                for (kind in listOf("explore", "new_releases")) {
+                                    val fetched = innerTubeClient.fetchMusicExploreFeed(ck, visitorData, dataSyncId, kind)
+                                    for (section in fetched) {
+                                        val fresh = section.tracks.filter { seen.add(it.id) }
+                                        if (fresh.isNotEmpty()) out.add(section.copy(tracks = fresh))
+                                    }
+                                }
+                                out
+                            } catch (_: Exception) { emptyList() }
+                        } else emptyList()
+                    }
                     val feed = feedDeferred.await()
                     if (feed.sections.isNotEmpty()) {
-                        personalizedSections = feed.sections
+                        personalizedSections = dedupeFeedSections(feed.sections)
                         musicChips = feed.chips
                         personalizedContinuation = feed.continuation
                     } else {
                         val fallback = innerTubeClient.fetchPersonalizedHomeFeed(ck, visitorData, dataSyncId)
-                        personalizedSections = fallback.sections
+                        personalizedSections = dedupeFeedSections(fallback.sections)
                     }
                     userPlaylists = playlistsDeferred.await()
                     likedTracks = likedDeferred.await()
+                    try {
+                        Log.i("PlCover", "playlists=" + userPlaylists.joinToString("; ") { it.title + "|thumb=" + (it.thumbnailUrl?.take(90) ?: "NULL") })
+                        Log.i("PlCover", "likedN=" + likedTracks.size + " likedFirst=" + (likedTracks.firstOrNull()?.artworkUrl?.take(90) ?: "NULL"))
+                    } catch (_: Exception) {}
                     historyTracks = historyDeferred.await()
                     keepListeningTracks = keepDeferred.await().filter { !it.isVideoItem }
                     forgottenTracks = forgDeferred.await().filter { !it.isVideoItem }
+                    exploreSections = exploreDeferred.await()
                 }
                 isSessionExpired = false
             } catch (e: Exception) {
@@ -378,20 +500,25 @@ fun MusicScreen(
             }
             isPersonalizedLoading = false
             shuffleNonce++
-            MusicHomeMemory.storeAdvanced(personalizedSections, userPlaylists, historyTracks, musicChips, personalizedContinuation, keepListeningTracks, forgottenTracks, similarSections)
-            val seedsForSimilar = keepListeningTracks.take(6).ifEmpty { historyTracks.take(6) }.ifEmpty { effectiveHistoryTracks.take(6) }
-            if (seedsForSimilar.isNotEmpty()) {
+            MusicHomeMemory.storeAdvanced(personalizedSections, userPlaylists, historyTracks, musicChips, personalizedContinuation, keepListeningTracks, forgottenTracks, similarSections, exploreSections)
+            val mixedSeeds = (keepListeningTracks.take(2) + forgottenTracks.take(2) + likedTracks.take(2) + historyTracks.take(2)).distinctBy { it.id }
+            val seedsForSimilar = mixedSeeds.ifEmpty { keepListeningTracks.take(6) }.ifEmpty { historyTracks.take(6) }.ifEmpty { effectiveHistoryTracks.take(6) }
+            val seedsKey = seedsForSimilar.joinToString(",") { it.id }
+            if (seedsForSimilar.isNotEmpty() && seedsKey != lastSimilarSeedsKey) {
+                lastSimilarSeedsKey = seedsKey
                 scope.launch(Dispatchers.IO) {
                     try {
                         val blocks = innerTubeClient.fetchSimilarBlocks(seedsForSimilar, visitorData, 5, 8)
                         val mapped = blocks.map { (title, tracks) -> TSukiFeedSection(title, tracks) }
                         withContext(Dispatchers.Main) {
                             similarSections = mapped
-                            MusicHomeMemory.storeAdvanced(personalizedSections, userPlaylists, historyTracks, musicChips, personalizedContinuation, keepListeningTracks, forgottenTracks, similarSections)
+                            MusicHomeMemory.storeAdvanced(personalizedSections, userPlaylists, historyTracks, musicChips, personalizedContinuation, keepListeningTracks, forgottenTracks, similarSections, exploreSections)
                         }
                     } catch (_: Exception) {}
                 }
             }
+            val freshSignature = (personalizedSections.flatMap { it.tracks } + similarSections.flatMap { it.tracks } + exploreSections.flatMap { it.tracks }).joinToString(",") { it.id }
+            if (freshSignature != loadedSignature) {
             withContext(Dispatchers.IO) {
                 try {
                     personalCacheFile.writeText(
@@ -407,11 +534,13 @@ fun MusicScreen(
                                 continuation = personalizedContinuation,
                                 keepListening = keepListeningTracks,
                                 forgotten = forgottenTracks,
-                                similarSections = similarSections
+                                similarSections = similarSections,
+                                exploreSections = exploreSections
                             )
                         )
                     )
                 } catch (_: Exception) {}
+            }
             }
         } else {
             personalizedSections = emptyList()
@@ -421,6 +550,7 @@ fun MusicScreen(
             keepListeningTracks = emptyList()
             forgottenTracks = emptyList()
             similarSections = emptyList()
+            exploreSections = emptyList()
             isSessionExpired = false
             try {
                 val localSummaries = withContext(Dispatchers.IO) { localPlaylistManager.getPlaylistSummaries() }
@@ -441,40 +571,28 @@ fun MusicScreen(
         shuffleNonce++
     }
 
-    LaunchedEffect(selectedChip) {
-        if (!isLoggedIn || cookie.isNullOrBlank() || selectedChip == null) return@LaunchedEffect
-        val ck = cookie ?: return@LaunchedEffect
-        isPersonalizedLoading = true
-        try {
-            val feed = withContext(Dispatchers.IO) { innerTubeClient.fetchMusicPersonalizedFeed(ck, visitorData, dataSyncId, selectedChip?.params) }
-            personalizedSections = feed.sections
-            personalizedContinuation = feed.continuation
-            if (feed.chips.isNotEmpty()) musicChips = feed.chips
-            MusicHomeMemory.storeAdvanced(personalizedSections, userPlaylists, historyTracks, musicChips, personalizedContinuation, keepListeningTracks, forgottenTracks, similarSections)
-        } catch (_: Exception) {}
-        isPersonalizedLoading = false
-    }
 
     fun doSearch() {
         if (searchQuery.isBlank()) return
         val q = searchQuery
+        scope.launch { searchHistoryStore.add(q) }
         isSearching = true
         focusManager.clearFocus()
         musicSearchJob?.cancel()
         musicSearchJob = scope.launch {
             val res = withContext(Dispatchers.IO) {
                 val cookieVal = cookie
-                val innerTubeResults = innerTubeClient.searchMusic(
+                val typed = innerTubeClient.searchMusicTyped(
                     query = q,
-                    filter = MusicSearchFilter.SONGS,
                     visitorData = visitorData,
                     cookie = cookieVal
                 )
-                if (innerTubeResults.isNotEmpty()) innerTubeResults
-                else extractor.searchMusic(q)
+                if (typed.songs.isEmpty() && typed.albums.isEmpty() && typed.artists.isEmpty() && typed.playlists.isEmpty())
+                    typed.copy(songs = extractor.searchMusic(q))
+                else typed
             }
             if (searchQuery == q) {
-                searchResults = res
+                typedSearch = res
                 isSearching = false
             }
         }
@@ -513,11 +631,20 @@ fun MusicScreen(
             else -> context.getString(R.string.music_greeting_evening)
         }
     }
+    val greetingName = accountInfo?.name?.trim()?.substringBefore(' ')?.takeIf { it.isNotBlank() }
+    val headerTitle = if (greetingName != null) {
+        stringResource(R.string.music_greeting_personalized, greeting, greetingName)
+    } else {
+        greeting
+    }
 
-    BackHandler(enabled = isSearchActive) {
+    BackHandler(enabled = isSearchActive && openPlaylist == null && selectedArtistId == null) {
+        musicSearchJob?.cancel()
+        isSearching = false
         isSearchActive = false
         searchQuery = ""
-        searchResults = emptyList()
+        typedSearch = null
+        searchFilterChip = null
     }
 
     LaunchedEffect(isSearchActive) {
@@ -527,8 +654,90 @@ fun MusicScreen(
         }
     }
 
+    openPlaylist?.let { playlist ->
+        PlaylistDetailScreen(
+            playlist = playlist,
+            innerTubeClient = innerTubeClient,
+            cookie = cookie,
+            visitorData = visitorData,
+            dataSyncId = dataSyncId,
+            playerController = playerController,
+            onTrackClick = onTrackClick,
+            onExpandPlayer = onExpandPlayer,
+            onBack = { openPlaylist = null }
+        )
+        playlistTrackTarget?.let { track ->
+            AddToPlaylistSheet(
+                track = track,
+                onDismiss = { playlistTrackTarget = null },
+                onTag = {
+                    tagTrackTarget = playlistTrackTarget
+                    playlistTrackTarget = null
+                }
+            )
+        }
+        tagTrackTarget?.let { track ->
+            TagSongSheet(track = track, onDismiss = { tagTrackTarget = null })
+        }
+        return
+    }
+
+    selectedArtistId?.let { artistId ->
+        val clearDetail = { selectedArtistId = null }
+        val onBrowseInvalid: () -> Unit = {
+            scope.launch {
+                detailSnack.showSnackbar(context.getString(R.string.common_error))
+                clearDetail()
+            }
+        }
+        ArtistDetailScreen(
+            browseId = artistId,
+            cookie = cookie,
+            visitorData = visitorData,
+            playerController = playerController,
+            isOnline = isOnline,
+            onExpandPlayer = onExpandPlayer,
+            onBack = clearDetail,
+            onAlbumClick = { album ->
+                openPlaylist = TSukiPlaylist(
+                    id = album.browseId,
+                    title = album.title,
+                    subtitle = album.artist,
+                    thumbnailUrl = album.thumbnails.firstOrNull()
+                )
+            },
+            onTrackMore = { playlistTrackTarget = it },
+            onInvalid = onBrowseInvalid
+        )
+        playlistTrackTarget?.let { track ->
+            AddToPlaylistSheet(
+                track = track,
+                onDismiss = { playlistTrackTarget = null },
+                onTag = {
+                    tagTrackTarget = playlistTrackTarget
+                    playlistTrackTarget = null
+                }
+            )
+        }
+        tagTrackTarget?.let { track ->
+            TagSongSheet(track = track, onDismiss = { tagTrackTarget = null })
+        }
+        return
+    }
+
     if (isSearchActive) {
-        Column(modifier = modifier.fillMaxSize().statusBarsPadding().padding(horizontal = 16.dp)) {
+        val searchEntrance = remember { Animatable(0f) }
+        LaunchedEffect(Unit) { searchEntrance.animateTo(1f, M3MotionTokens.expressiveDefault()) }
+        Column(
+            modifier = modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .padding(horizontal = 16.dp)
+                .graphicsLayer {
+                    alpha = searchEntrance.value
+                    translationY = (1f - searchEntrance.value) * 36f
+                }
+        ) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -536,19 +745,29 @@ fun MusicScreen(
             ) {
                 Text(stringResource(R.string.music_search_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 IconButton(onClick = {
+                    musicSearchJob?.cancel()
+                    isSearching = false
                     isSearchActive = false
                     searchQuery = ""
-                    searchResults = emptyList()
+                    typedSearch = null
+                    searchFilterChip = null
+                    selectedArtistId = null
                 }) { Icon(Icons.Rounded.Close, contentDescription = stringResource(R.string.common_close)) }
             }
             Spacer(Modifier.height(8.dp))
             TextField(
                 value = searchQuery,
-                onValueChange = { searchQuery = it },
+                onValueChange = {
+                    searchQuery = it
+                    if (it.isBlank()) {
+                        typedSearch = null
+                        searchFilterChip = null
+                    }
+                },
                 placeholder = { Text(stringResource(R.string.music_search_placeholder)) },
                 leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
                 trailingIcon = {
-                    if (searchQuery.isNotEmpty()) IconButton(onClick = { searchQuery = ""; searchResults = emptyList() }) {
+                    if (searchQuery.isNotEmpty()) IconButton(onClick = { musicSearchJob?.cancel(); isSearching = false; searchQuery = ""; typedSearch = null; searchFilterChip = null }) {
                         Icon(Icons.Rounded.Clear, contentDescription = stringResource(R.string.common_clear))
                     }
                 },
@@ -562,38 +781,195 @@ fun MusicScreen(
                 ),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = { doSearch() }),
-                modifier = Modifier.fillMaxWidth().focusRequester(focusRequester)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(focusRequester)
             )
             Spacer(Modifier.height(4.dp))
             OfflineBanner(visible = !isOnline)
-            Text(stringResource(R.string.music_results), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.height(12.dp))
+            if (typedSearch != null) {
+                Text(stringResource(R.string.music_results), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(12.dp))
+            }
+            val typed = typedSearch
+            val showSongs = searchFilterChip == null || searchFilterChip == MusicSearchFilter.SONGS
+            val showAlbums = searchFilterChip == null || searchFilterChip == MusicSearchFilter.ALBUMS
+            val showArtists = searchFilterChip == null || searchFilterChip == MusicSearchFilter.ARTISTS
+            val showPlaylists = searchFilterChip == null || searchFilterChip == MusicSearchFilter.PLAYLISTS
+            val hasVisibleResults = typed != null && (
+                (showSongs && typed.songs.isNotEmpty()) ||
+                    (showAlbums && typed.albums.isNotEmpty()) ||
+                    (showArtists && typed.artists.isNotEmpty()) ||
+                    (showPlaylists && typed.playlists.isNotEmpty())
+                )
             when {
-                isSearching -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = MaterialTheme.colorScheme.primary) }
-                searchQuery.isBlank() && searchResults.isEmpty() -> Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-                    Text(stringResource(R.string.music_search_hint), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+                isSearching -> Column(modifier = Modifier.fillMaxSize()) {
+                    Spacer(Modifier.height(4.dp))
+                    ShimmerChipRow()
+                    Spacer(Modifier.height(10.dp))
+                    ShimmerTrackListRows(rowCount = 6)
                 }
-                searchResults.isEmpty() -> Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+                typed == null && searchQuery.isBlank() -> {
+                    if (recentSearches.isEmpty()) {
+                        Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+                            Text(stringResource(R.string.music_search_hint), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    } else {
+                        LazyColumn(contentPadding = PaddingValues(bottom = 120.dp)) {
+                            item(key = "search_history_header") {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        stringResource(R.string.music_search_history_title),
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    TextButton(onClick = { scope.launch { searchHistoryStore.clear() } }) {
+                                        Text(stringResource(R.string.music_search_history_clear_all), style = MaterialTheme.typography.labelMedium)
+                                    }
+                                }
+                            }
+                            items(recentSearches, key = { "search_history_$it" }) { entry ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(14.dp))
+                                        .clickable {
+                                            searchQuery = entry
+                                            doSearch()
+                                        }
+                                        .padding(horizontal = 8.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        Icons.Rounded.History,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(Modifier.width(14.dp))
+                                    Text(
+                                        entry,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    IconButton(onClick = { scope.launch { searchHistoryStore.remove(entry) } }) {
+                                        Icon(
+                                            Icons.Rounded.Close,
+                                            contentDescription = stringResource(R.string.music_search_history_remove),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                !hasVisibleResults -> Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
                     Text(
                         if (!isOnline) stringResource(R.string.home_no_results_offline) else stringResource(R.string.music_no_results, searchQuery),
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 120.dp)) {
-                    item {
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            itemsIndexed(searchResults.take(6), key = { i, track -> "search_top_${track.id}_$i" }) { _, track -> TrackCard(track = track, onClick = { playSearchResult(track) }) }
+                else -> {
+                    LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(bottom = 120.dp)) {
+                        item(key = "search_chips") {
+                            LazyRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier
+                            ) {
+                                item(key = "search_chip_all") {
+                                    FilterChip(
+                                        selected = searchFilterChip == null,
+                                        onClick = { searchFilterChip = null },
+                                        label = { Text(stringResource(R.string.common_all)) },
+                                        shape = CircleShape
+                                    )
+                                }
+                                items(MusicSearchFilter.entries, key = { it.name }) { filter ->
+                                    FilterChip(
+                                        selected = searchFilterChip == filter,
+                                        onClick = { searchFilterChip = if (searchFilterChip == filter) null else filter },
+                                        label = { Text(filter.label) },
+                                        shape = CircleShape
+                                    )
+                                }
+                            }
                         }
-                    }
-                    itemsIndexed(searchResults, key = { i, track -> "search_list_${track.id}_$i" }) { _, track ->
-                        TrackListItem(
-                            track = track,
-                            onClick = { playSearchResult(track) },
-                            onMoreClick = { playlistTrackTarget = track }
-                        )
+                        if (showSongs && typed.songs.isNotEmpty()) {
+                            item(key = "search_songs_top") {
+                                Column(modifier = Modifier) {
+                                    TypedSearchSectionTitle(MusicSearchFilter.SONGS.label)
+                                    LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                        itemsIndexed(typed.songs.take(6), key = { i, track -> "search_top_${track.id}_$i" }) { _, track -> TrackCard(track = track, onClick = { playSearchResult(track) }) }
+                                    }
+                                }
+                            }
+                            itemsIndexed(typed.songs, key = { i, track -> "search_list_${track.id}_$i" }) { _, track ->
+                                TrackListItem(
+                                    track = track,
+                                    onClick = { playSearchResult(track) },
+                                    onMoreClick = { playlistTrackTarget = track }
+                                )
+                            }
+                        }
+                        if (showAlbums && typed.albums.isNotEmpty()) {
+                            item(key = "search_albums") {
+                                Column(modifier = Modifier) {
+                                    TypedSearchSectionTitle(MusicSearchFilter.ALBUMS.label)
+                                    AlbumSearchRow(
+                                        albums = typed.albums,
+                                        onAlbumClick = {
+                                            openPlaylist = TSukiPlaylist(
+                                                id = it.browseId,
+                                                title = it.title,
+                                                subtitle = it.artist,
+                                                thumbnailUrl = it.thumbnails.firstOrNull()
+                                            )
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                        if (showArtists && typed.artists.isNotEmpty()) {
+                            item(key = "search_artists") {
+                                Column(modifier = Modifier) {
+                                    TypedSearchSectionTitle(MusicSearchFilter.ARTISTS.label)
+                                    ArtistSearchRow(
+                                        artists = typed.artists,
+                                        onArtistClick = { selectedArtistId = it.browseId }
+                                    )
+                                }
+                            }
+                        }
+                        if (showPlaylists && typed.playlists.isNotEmpty()) {
+                            item(key = "search_playlists") {
+                                Column(modifier = Modifier) {
+                                    TypedSearchSectionTitle(MusicSearchFilter.PLAYLISTS.label)
+                                    PlaylistSearchRow(
+                                        playlists = typed.playlists,
+                                        onPlaylistClick = {
+                                            openPlaylist = TSukiPlaylist(
+                                                id = it.playlistId,
+                                                title = it.title,
+                                                subtitle = it.author.orEmpty(),
+                                                thumbnailUrl = it.thumbnails.firstOrNull()
+                                            )
+                                        }
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
+            SnackbarHost(hostState = detailSnack, modifier = Modifier.padding(vertical = 12.dp))
         }
         playlistTrackTarget?.let { track ->
             AddToPlaylistSheet(
@@ -660,7 +1036,7 @@ fun MusicScreen(
                         if (fresh.isNotEmpty()) {
                             personalizedSections = personalizedSections + fresh
                             personalizedContinuation = more.continuation
-                            MusicHomeMemory.storeAdvanced(personalizedSections, userPlaylists, historyTracks, musicChips, personalizedContinuation, keepListeningTracks, forgottenTracks, similarSections)
+                            MusicHomeMemory.storeAdvanced(personalizedSections, userPlaylists, historyTracks, musicChips, personalizedContinuation, keepListeningTracks, forgottenTracks, similarSections, exploreSections)
                         } else {
                             personalizedContinuation = more.continuation
                         }
@@ -689,15 +1065,12 @@ fun MusicScreen(
                 isPullRefreshing = true
                 isPersonalizedLoading = true
                 try {
-                    var feed = withContext(Dispatchers.IO) { innerTubeClient.fetchMusicPersonalizedFeed(ck, visitorData, dataSyncId, selectedChip?.params) }
-                    if (feed.sections.isEmpty()) {
-                        feed = withContext(Dispatchers.IO) { innerTubeClient.fetchMusicPersonalizedFeed(ck, visitorData, dataSyncId, null) }
-                    }
+                    val feed = withContext(Dispatchers.IO) { innerTubeClient.fetchMusicPersonalizedFeed(ck, visitorData, dataSyncId, null) }
                     if (feed.sections.isNotEmpty()) {
-                        personalizedSections = feed.sections
+                        personalizedSections = dedupeFeedSections(feed.sections)
                         musicChips = feed.chips
                         personalizedContinuation = feed.continuation
-                        MusicHomeMemory.storeAdvanced(personalizedSections, userPlaylists, historyTracks, musicChips, personalizedContinuation, keepListeningTracks, forgottenTracks, similarSections)
+                        MusicHomeMemory.storeAdvanced(personalizedSections, userPlaylists, historyTracks, musicChips, personalizedContinuation, keepListeningTracks, forgottenTracks, similarSections, exploreSections)
                         withContext(Dispatchers.IO) {
                             try { personalCacheFile.delete() } catch (_: Exception) {}
                         }
@@ -725,23 +1098,33 @@ fun MusicScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text(
-                            text = greeting,
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Text(
-                            text = stringResource(R.string.music_title),
-                            style = MaterialTheme.typography.headlineMedium,
-                            fontWeight = FontWeight.Black,
-                            color = MaterialTheme.colorScheme.onBackground
-                        )
-                    }
+                    Text(
+                        text = headerTitle,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f).padding(end = 12.dp)
+                    )
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         if (wrappedPending) {
                             com.example.tsuki.ui.components.WrappedBadgeButton(onClick = { showWrappedOverlay = true })
+                        }
+                        Surface(
+                            onClick = { isSearchActive = true },
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            modifier = Modifier.size(42.dp)
+                        ) {
+                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Search,
+                                    contentDescription = stringResource(R.string.music_search_title),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
                         }
                         if (isLoggedIn && accountInfo != null) {
                         Box(
@@ -784,33 +1167,6 @@ fun MusicScreen(
                     }
                     }
                 }
-                Surface(
-                    shape = RoundedCornerShape(28.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp)
-                        .clip(RoundedCornerShape(28.dp))
-                        .clickable { isSearchActive = true }
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(horizontal = 16.dp)
-                    ) {
-                        Icon(
-                            Icons.Rounded.Search,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(22.dp)
-                        )
-                        Spacer(Modifier.width(12.dp))
-                        Text(
-                            stringResource(R.string.music_search_placeholder),
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
             }
         }
 
@@ -842,37 +1198,14 @@ fun MusicScreen(
                 }
             }
 
-            if (musicChips.isNotEmpty()) {
-                item(key = "music_chips") {
-                    LazyRow(
-                        contentPadding = PaddingValues(horizontal = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    ) {
-                        item(key = "chip_all") {
-                            FilterChip(
-                                selected = selectedChip == null,
-                                onClick = { selectedChip = null },
-                                label = { Text(stringResource(R.string.common_all)) },
-                                shape = CircleShape
-                            )
-                        }
-                        itemsIndexed(musicChips, key = { i, chip -> "${chip.title}_$i" }) { _, chip ->
-                            FilterChip(
-                                selected = selectedChip?.title == chip.title,
-                                onClick = { selectedChip = if (selectedChip?.title == chip.title) null else chip },
-                                label = { Text(chip.title) },
-                                shape = CircleShape
-                            )
-                        }
-                    }
-                }
-            }
 
-            val duplicateTitlePattern = Regex("selección rápida|quick picks|selección", RegexOption.IGNORE_CASE)
-            val restSections = personalizedSections.filterNot { section ->
-                duplicateTitlePattern.containsMatchIn(section.title)
-            }
+            val restSections = personalizedSections
+            val recoSourceVal = recoSource
+            val recoYoutube = recoSourceVal == com.example.tsuki.data.local.PlayerPreferences.RECO_SOURCE_YOUTUBE
+            val recoTsuki = recoSourceVal == com.example.tsuki.data.local.PlayerPreferences.RECO_SOURCE_TSUKI
+            val mixedExploreHead = if (!recoYoutube && !recoTsuki) exploreSections.take(1) else emptyList()
+            val mixedExploreTail = if (!recoYoutube && !recoTsuki) exploreSections.drop(1) else emptyList()
+            val fullExplore = if (recoTsuki) exploreSections else emptyList()
 
             if (quickPicks.isNotEmpty()) {
                 item(key = "quick_picks_hero") {
@@ -884,9 +1217,9 @@ fun MusicScreen(
                             contentPadding = PaddingValues(horizontal = 16.dp),
                             horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            itemsIndexed(quickPicks, key = { i, track -> "qp_hero_${track.id}_$i" }) { idx, track ->
+                            itemsIndexed(quickPicks, key = { i, track -> "qp_hero_${track.id}_$i" }) { _, track ->
                                 MusicHeroCard(track = track, onClick = {
-                                    if (playerController != null) { playerController.playQueue(quickPicks, idx, false); onExpandPlayer() } else onTrackClick(track)
+                                    if (playerController != null) { playerController.playWithRadio(track, false); onExpandPlayer() } else onTrackClick(track)
                                 })
                             }
                         }
@@ -901,11 +1234,11 @@ fun MusicScreen(
                             if (playerController != null && keepListeningTracks.isNotEmpty()) { playerController.playQueue(keepListeningTracks, 0, false); onExpandPlayer() }
                         })
                         LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            itemsIndexed(keepListeningTracks, key = { i, track -> "keep_${track.id}_$i" }) { idx, track ->
+                            itemsIndexed(keepListeningTracks, key = { i, track -> "keep_${track.id}_$i" }) { _, track ->
                                 TrackCard(
                                     track = track,
                                     onClick = {
-                                        if (playerController != null) { playerController.playQueue(keepListeningTracks, idx, false); onExpandPlayer() } else onTrackClick(track)
+                                        if (playerController != null) { playerController.playWithRadio(track, false); onExpandPlayer() } else onTrackClick(track)
                                     },
                                     onPlayRadio = {
                                         if (!isOnline) {
@@ -919,6 +1252,14 @@ fun MusicScreen(
                 }
             }
 
+            if (mixedExploreHead.isNotEmpty()) {
+                mixedExploreHead.forEachIndexed { eIdx, section ->
+                    item(key = "explore_head_${section.title}_$eIdx") {
+                        ExploreFeedSectionBlock(section = section, keyPrefix = "expl_head_$eIdx", playerController = playerController, onExpandPlayer = onExpandPlayer, onTrackClick = onTrackClick, isOnline = isOnline, context = context)
+                    }
+                }
+            }
+
             if (forgottenTracks.isNotEmpty()) {
                 item(key = "forgotten") {
                     Column(modifier = Modifier.padding(bottom = 20.dp)) {
@@ -926,11 +1267,11 @@ fun MusicScreen(
                             if (playerController != null && forgottenTracks.isNotEmpty()) { playerController.playQueue(forgottenTracks, 0, false); onExpandPlayer() }
                         })
                         LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            itemsIndexed(forgottenTracks, key = { i, track -> "forg_${track.id}_$i" }) { idx, track ->
+                            itemsIndexed(forgottenTracks, key = { i, track -> "forg_${track.id}_$i" }) { _, track ->
                                 TrackCard(
                                     track = track,
                                     onClick = {
-                                        if (playerController != null) { playerController.playQueue(forgottenTracks, idx, false); onExpandPlayer() } else onTrackClick(track)
+                                        if (playerController != null) { playerController.playWithRadio(track, false); onExpandPlayer() } else onTrackClick(track)
                                     },
                                     onPlayRadio = {
                                         if (!isOnline) {
@@ -952,11 +1293,11 @@ fun MusicScreen(
                                 if (playerController != null) { playerController.playQueue(section.tracks, 0, false); onExpandPlayer() }
                             })
                             LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                itemsIndexed(section.tracks, key = { tIdx, track -> "sim_${section.title}_${track.id}_${sIdx}_$tIdx" }) { idx, track ->
+                                itemsIndexed(section.tracks, key = { tIdx, track -> "sim_${section.title}_${track.id}_${sIdx}_$tIdx" }) { _, track ->
                                     TrackCard(
                                         track = track,
                                         onClick = {
-                                            if (playerController != null) { playerController.playQueue(section.tracks, idx, false); onExpandPlayer() } else onTrackClick(track)
+                                            if (playerController != null) { playerController.playWithRadio(track, false); onExpandPlayer() } else onTrackClick(track)
                                         },
                                         onPlayRadio = {
                                             if (!isOnline) {
@@ -967,6 +1308,14 @@ fun MusicScreen(
                                 }
                             }
                         }
+                    }
+                }
+            }
+
+            if (fullExplore.isNotEmpty()) {
+                fullExplore.forEachIndexed { eIdx, section ->
+                    item(key = "explore_full_${section.title}_$eIdx") {
+                        ExploreFeedSectionBlock(section = section, keyPrefix = "expl_full_$eIdx", playerController = playerController, onExpandPlayer = onExpandPlayer, onTrackClick = onTrackClick, isOnline = isOnline, context = context)
                     }
                 }
             }
@@ -1005,6 +1354,14 @@ fun MusicScreen(
                 }
             }
 
+            if (mixedExploreTail.isNotEmpty()) {
+                mixedExploreTail.forEachIndexed { eIdx, section ->
+                    item(key = "explore_tail_${section.title}_$eIdx") {
+                        ExploreFeedSectionBlock(section = section, keyPrefix = "expl_tail_$eIdx", playerController = playerController, onExpandPlayer = onExpandPlayer, onTrackClick = onTrackClick, isOnline = isOnline, context = context)
+                    }
+                }
+            }
+
             itemsIndexed(restSections, key = { rIdx, section -> "pers_${section.title}_$rIdx" }) { rIdx, section ->
                 Column(modifier = Modifier.padding(bottom = 20.dp)) {
                     MusicSectionHeader(label = "YouTube Music", title = section.title, count = section.tracks.size, onClick = {
@@ -1014,10 +1371,26 @@ fun MusicScreen(
                         contentPadding = PaddingValues(horizontal = 16.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        itemsIndexed(section.tracks, key = { tIdx, track -> "pers_${section.title}_${track.id}_${rIdx}_$tIdx" }) { idx, track ->
+                        itemsIndexed(section.tracks, key = { tIdx, track -> "pers_${section.title}_${track.id}_${rIdx}_$tIdx" }) { _, track ->
                             TrackCard(track = track, onClick = {
-                                if (playerController != null) { playerController.playQueue(section.tracks, idx, false); onExpandPlayer() } else onTrackClick(track)
+                                if (playerController != null) { playerController.playWithRadio(track, false); onExpandPlayer() } else onTrackClick(track)
                             })
+                        }
+                    }
+                }
+            }
+            adaptiveSections.forEachIndexed { aIdx, section ->
+                item(key = "adaptive_${section.title}_$aIdx") {
+                    Column(modifier = Modifier.padding(bottom = 20.dp)) {
+                        MusicSectionHeader(label = stringResource(R.string.music_for_you), title = section.title, count = section.tracks.size, sublabel = stringResource(R.string.music_adaptive_sublabel), onClick = {
+                            if (playerController != null) { playerController.playQueue(section.tracks, 0, false); onExpandPlayer() }
+                        })
+                        LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            itemsIndexed(section.tracks, key = { tIdx, track -> "adaptive_${section.title}_${track.id}_${aIdx}_$tIdx" }) { _, track ->
+                                TrackCard(track = track, onClick = {
+                                    if (playerController != null) { playerController.playWithRadio(track, false); onExpandPlayer() } else onTrackClick(track)
+                                })
+                            }
                         }
                     }
                 }
@@ -1047,7 +1420,7 @@ fun MusicScreen(
                             itemsIndexed(guestHeroTracks.take(12), key = { i, track -> "ghero_${track.id}_$i" }) { _, track ->
                                 MusicHeroCard(track = track, onClick = {
                                     val idx = guestHeroTracks.indexOfFirst { t -> t.id == track.id }.coerceAtLeast(0)
-                                    if (playerController != null) { playerController.playQueue(guestHeroTracks, idx, false); onExpandPlayer() } else onTrackClick(track)
+                                    if (playerController != null) { playerController.playWithRadio(track, false); onExpandPlayer() } else onTrackClick(track)
                                 })
                             }
                         }
@@ -1089,7 +1462,7 @@ fun MusicScreen(
                         itemsIndexed(trendingMusic.take(20), key = { i, track -> "trend_${track.id}_$i" }) { _, track ->
                             TrackCard(track = track, onClick = {
                                 val idx = trendingMusic.indexOfFirst { t -> t.id == track.id }.coerceAtLeast(0)
-                                if (playerController != null) { playerController.playQueue(trendingMusic, idx, false); onExpandPlayer() } else onTrackClick(track)
+                                if (playerController != null) { playerController.playWithRadio(track, false); onExpandPlayer() } else onTrackClick(track)
                             })
                         }
                     }
@@ -1097,20 +1470,6 @@ fun MusicScreen(
             }
         }
     }
-    }
-
-    openPlaylist?.let { playlist ->
-        PlaylistDetailScreen(
-            playlist = playlist,
-            innerTubeClient = innerTubeClient,
-            cookie = cookie,
-            visitorData = visitorData,
-            dataSyncId = dataSyncId,
-            playerController = playerController,
-            onTrackClick = onTrackClick,
-            onExpandPlayer = onExpandPlayer,
-            onBack = { openPlaylist = null }
-        )
     }
 
     playlistTrackTarget?.let { track ->

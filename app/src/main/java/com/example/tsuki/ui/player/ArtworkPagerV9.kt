@@ -105,7 +105,7 @@ fun ArtworkPagerV9(
                 val dynamicCornerDp = (corner.value + absProgress * 14f).coerceAtMost(48f).dp
                 shape = RoundedCornerShape(dynamicCornerDp)
                 clip = true
-                shadowElevation = (20.dp.toPx() * (1f - absProgress * 0.4f) + absProgress * 8.dp.toPx()).coerceAtLeast(0f)
+                shadowElevation = (8.dp.toPx() * (1f - absProgress * 0.4f) + absProgress * 4.dp.toPx()).coerceAtLeast(0f)
                 alpha = (1f - absProgress * 0.35f).coerceIn(0.6f, 1f)
             }
             .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f))

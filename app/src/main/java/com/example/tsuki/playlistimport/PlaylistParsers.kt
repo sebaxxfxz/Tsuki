@@ -235,7 +235,33 @@ object ArchiveTuneBackupParser {
                         artistMap[sid] = aids.mapNotNull { artistNames[it] }
                     }
 
-                    if (likedCount > 0) {
+                    val playlistSongIds = if (targetCount > 0) {
+                        val ids = mutableListOf<String>()
+                        db.rawQuery("SELECT * FROM playlist_song_map WHERE playlistId=?", arrayOf(target.first)).use { c ->
+                            val songCol = c.getColumnIndex("songId")
+                            if (songCol >= 0) {
+                                while (c.moveToNext()) ids.add(c.getString(songCol))
+                            }
+                        }
+                        ids
+                    } else emptyList()
+
+                    if (playlistSongIds.isNotEmpty()) {
+                        for (sid in playlistSongIds) {
+                            db.rawQuery("SELECT title, duration, albumName, id, thumbnailUrl FROM song WHERE id=?", arrayOf(sid)).use { c ->
+                                if (!c.moveToFirst()) return@use
+                                val title = c.getString(0) ?: return@use
+                                if (title.isBlank()) return@use
+                                val dur = if (!c.isNull(1)) c.getInt(1) * 1000 else null
+                                val album = c.getString(2)?.takeIf { it.isNotBlank() }
+                                val songId = c.getString(3)
+                                val thumb = c.getString(4)?.takeIf { it.isNotBlank() }
+                                val artists = artistMap[songId] ?: emptyList()
+                                resultSongs.add(ImportedSong(title = title.trim(), artists = artists, album = album, durationMs = dur, videoId = songId.takeIf { it.length == 11 }, thumbnailUrl = thumb))
+                            }
+                        }
+                        playlistName = "${target.second} (ArchiveTune) • ${resultSongs.size}"
+                    } else if (likedCount > 0) {
                         val likedCur = db.rawQuery("SELECT title, duration, albumName, id, thumbnailUrl FROM song WHERE liked=1", null)
                         while (likedCur.moveToNext()) {
                             val title = likedCur.getString(0) ?: continue
